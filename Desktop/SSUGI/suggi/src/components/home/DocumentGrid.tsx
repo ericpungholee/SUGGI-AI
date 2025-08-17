@@ -49,15 +49,15 @@ export default function DocumentGrid() {
                         <div className='flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity'>
                             <button
                                 onClick={(e) => {
-                                    e.preventDefault
+                                    e.preventDefault()
                                 }}
                                 className="p-1 hover:bg-stone-light rounded"
                             >
-                                <Star className={`w-4 h-4 ${doc.starred ? 'fill-amber-400' : 'text-i k/40'}`} />
+                                <Star className={`w-4 h-4 ${doc.starred ? 'fill-amber-400' : 'text-ink/40'}`} />
                             </button>
                             <button
                                 onClick={(e) => {
-                                    e.preventDefault
+                                    e.preventDefault()
                                 }}
                                 className="p-1 hover:bg-stone-light rounded"
                             >

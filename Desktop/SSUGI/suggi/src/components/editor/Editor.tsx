@@ -1,15 +1,17 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from "react";
-import Toolbar from "./Toolbar";
+import Link from "next/link";
 import { FormatState } from "@/types";
+import { 
+    Bold, Italic, Underline, Strikethrough, 
+    List, ListOrdered, Quote, Link2, 
+    AlignLeft, AlignCenter, AlignRight, AlignJustify,
+    Code, Undo2, Redo2,
+    Palette, ArrowLeft
+} from "lucide-react";
 
 export default function Editor({ documentId, onContentChange }: { documentId: string; onContentChange?: (content: string) => void }) {
-    const [content, setContent] = useState(`
-        <h1>Welcome to Suggi</h1>
-        <p>Start writing your thoughts here...</p>
-    `)
-    const [showToolbar, setShowToolbar] = useState(false)
-    const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0 })
+    const [content, setContent] = useState('<p>Start writing your document here...</p>')
     const [formatState, setFormatState] = useState<FormatState>({
         bold: false,
         italic: false,
@@ -17,72 +19,58 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
         strikethrough: false,
         subscript: false,
         superscript: false,
-        color: '#2C2416',
+        color: '#000000',
         backgroundColor: 'transparent',
         fontSize: '16px',
-        fontFamily: 'Georgia, serif',
+        fontFamily: 'Arial, sans-serif',
         alignment: 'left',
         listType: 'none',
         headingLevel: 'none'
     })
     
     const editorRef = useRef<HTMLDivElement>(null)
-    const [isInitialized, setIsInitialized] = useState(false)
     const [undoStack, setUndoStack] = useState<string[]>([])
     const [redoStack, setRedoStack] = useState<string[]>([])
+    const [isUndoRedo, setIsUndoRedo] = useState(false)
 
-    // Sync content with parent component
-    useEffect(() => {
-        if (isInitialized) {
-            onContentChange?.(content)
-        }
-    }, [content, onContentChange, isInitialized])
+    // Helper function to reset format state
+    const resetFormatState = useCallback(() => {
+        setFormatState(prev => ({
+            ...prev,
+            bold: false,
+            italic: false,
+            underline: false,
+            strikethrough: false,
+            subscript: false,
+            superscript: false,
+            color: '#000000',
+            backgroundColor: 'transparent',
+            fontSize: '16px',
+            fontFamily: 'Arial, sans-serif',
+            alignment: 'left',
+            listType: 'none',
+            headingLevel: 'none'
+        }))
+    }, [])
 
     // Initialize editor content
     useEffect(() => {
-        if (editorRef.current && !isInitialized) {
+        if (editorRef.current && content) {
             editorRef.current.innerHTML = content
-            setIsInitialized(true)
             setUndoStack([content])
         }
-    }, [content, isInitialized])
+    }, [])
+
+    // Sync content with parent component
+    useEffect(() => {
+        onContentChange?.(content)
+    }, [content, onContentChange])
 
     // Save content to undo stack
     const saveToUndoStack = useCallback((newContent: string) => {
-        setUndoStack(prev => [...prev, newContent].slice(-50)) // Keep last 50 states
-        setRedoStack([]) // Clear redo stack when new content is added
+        setUndoStack(prev => [...prev, newContent].slice(-50))
+        setRedoStack([])
     }, [])
-
-    // Undo functionality
-    const undo = useCallback(() => {
-        if (undoStack.length > 1) {
-            const currentContent = undoStack[undoStack.length - 1]
-            const previousContent = undoStack[undoStack.length - 2]
-            
-            setRedoStack(prev => [...prev, currentContent])
-            setUndoStack(prev => prev.slice(0, -1))
-            
-            if (editorRef.current) {
-                editorRef.current.innerHTML = previousContent
-                setContent(previousContent)
-            }
-        }
-    }, [undoStack])
-
-    // Redo functionality
-    const redo = useCallback(() => {
-        if (redoStack.length > 0) {
-            const nextContent = redoStack[redoStack.length - 1]
-            
-            setUndoStack(prev => [...prev, nextContent])
-            setRedoStack(prev => prev.slice(0, -1))
-            
-            if (editorRef.current) {
-                editorRef.current.innerHTML = nextContent
-                setContent(nextContent)
-            }
-        }
-    }, [redoStack])
 
     // Update format state based on current selection
     const updateFormatState = useCallback(() => {
@@ -92,11 +80,9 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
         const range = selection.getRangeAt(0)
         const container = range.commonAncestorContainer
         
-        // Find the closest formatting element
         let element = container.nodeType === Node.ELEMENT_NODE ? container as Element : container.parentElement
         if (!element) return
 
-        // Check formatting state
         const newFormatState: Partial<FormatState> = {}
         
         newFormatState.bold = !!element.closest('strong, b')
@@ -106,21 +92,18 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
         newFormatState.subscript = !!element.closest('sub')
         newFormatState.superscript = !!element.closest('sup')
         
-        // Check color and background
         const computedStyle = window.getComputedStyle(element)
         newFormatState.color = computedStyle.color
         newFormatState.backgroundColor = computedStyle.backgroundColor !== 'rgba(0, 0, 0, 0)' ? computedStyle.backgroundColor : 'transparent'
         newFormatState.fontSize = computedStyle.fontSize
         newFormatState.fontFamily = computedStyle.fontFamily
         
-        // Check alignment
         if (element.closest('p, div, h1, h2, h3, h4, h5, h6')) {
             const blockElement = element.closest('p, div, h1, h2, h3, h4, h5, h6') as Element
             const textAlign = window.getComputedStyle(blockElement).textAlign
             newFormatState.alignment = textAlign
         }
         
-        // Check list type
         if (element.closest('ul')) {
             newFormatState.listType = 'unordered'
         } else if (element.closest('ol')) {
@@ -129,71 +112,70 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
             newFormatState.listType = 'none'
         }
         
-        // Check heading level
         const headingMatch = element.closest('h1, h2, h3, h4, h5, h6')?.tagName.toLowerCase()
         newFormatState.headingLevel = headingMatch || 'none'
         
         setFormatState(prev => ({ ...prev, ...newFormatState }))
     }, [])
 
-    const handleTextSelection = useCallback(() => {
-        console.log('=== handleTextSelection called ===')
-        const selection = window.getSelection()
-        console.log('Selection object:', selection)
-        console.log('Selection text:', selection?.toString())
-        console.log('Selection range count:', selection?.rangeCount)
-        
-        if (selection && selection.toString().length > 0) {
-            console.log('Text selected, showing toolbar')
-            const range = selection.getRangeAt(0)
-            const rect = range.getBoundingClientRect()
-            const editorRect = editorRef.current?.getBoundingClientRect()
+    // Undo functionality
+    const undo = useCallback(() => {
+        console.log('Undo called. Stack size:', undoStack.length)
+        if (undoStack.length > 1) {
+            const currentContent = undoStack[undoStack.length - 1]
+            const previousContent = undoStack[undoStack.length - 2]
             
-            console.log('Selection rect:', rect)
-            console.log('Editor rect:', editorRect)
+            setRedoStack(prev => [...prev, currentContent])
+            setUndoStack(prev => prev.slice(0, -1))
             
-            if (editorRect) {
-                const newPosition = {
-                    top: rect.top - 60,
-                    left: Math.min(
-                        Math.max(rect.left + rect.width / 2, 100),
-                        window.innerWidth - 100
-                    ),
-                }
-                console.log('Setting toolbar position:', newPosition)
-                setToolbarPosition(newPosition)
-                setShowToolbar(true)
+            if (editorRef.current) {
+                setIsUndoRedo(true)
+                editorRef.current.innerHTML = previousContent
+                setContent(previousContent)
+                console.log('Undo applied, content restored')
+                // Update format state after undo
+                setTimeout(() => {
+                    updateFormatState()
+                    setIsUndoRedo(false)
+                }, 0)
             }
-            
-            updateFormatState()
         } else {
-            console.log('No text selected, hiding toolbar')
-            setShowToolbar(false)
+            console.log('Cannot undo: stack too small')
         }
-    }, [updateFormatState])
+    }, [undoStack, updateFormatState])
+
+    // Redo functionality
+    const redo = useCallback(() => {
+        console.log('Redo called. Stack size:', redoStack.length)
+        if (redoStack.length > 0) {
+            const nextContent = redoStack[redoStack.length - 1]
+            
+            setUndoStack(prev => [...prev, nextContent])
+            setRedoStack(prev => prev.slice(0, -1))
+            
+            if (editorRef.current) {
+                setIsUndoRedo(true)
+                editorRef.current.innerHTML = nextContent
+                setContent(nextContent)
+                console.log('Redo applied, content restored')
+                // Update format state after redo
+                setTimeout(() => {
+                    updateFormatState()
+                    setIsUndoRedo(false)
+                }, 0)
+            }
+        } else {
+            console.log('Cannot redo: stack empty')
+        }
+    }, [redoStack, updateFormatState])
 
     const handleFormat = useCallback((command: string, value?: string) => {
-        console.log('=== handleFormat called ===')
-        console.log('Command:', command, 'Value:', value)
-        
         const selection = window.getSelection()
-        console.log('Current selection:', selection?.toString())
-        console.log('Selection range count:', selection?.rangeCount)
-        
-        if (!selection || selection.rangeCount === 0) {
-            console.log('No selection found, returning')
-            return
-        }
+        if (!selection || selection.rangeCount === 0) return
 
         const range = selection.getRangeAt(0)
-        if (!range) {
-            console.log('No range found, returning')
-            return
-        }
+        if (!range) return
 
-        console.log('Range found, applying format:', command)
-
-        // Save current state for undo
         if (editorRef.current) {
             saveToUndoStack(editorRef.current.innerHTML)
         }
@@ -203,111 +185,79 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
             
             switch (command) {
                 case 'bold':
-                    console.log('Applying bold format')
                     success = applyInlineFormat('strong', range)
                     break
                 case 'italic':
-                    console.log('Applying italic format')
                     success = applyInlineFormat('em', range)
                     break
                 case 'underline':
-                    console.log('Applying underline format')
                     success = applyInlineFormat('u', range)
                     break
                 case 'strikeThrough':
-                    console.log('Applying strikethrough format')
                     success = applyInlineFormat('s', range)
                     break
                 case 'subscript':
-                    console.log('Applying subscript format')
                     success = applyInlineFormat('sub', range)
                     break
                 case 'superscript':
-                    console.log('Applying superscript format')
                     success = applyInlineFormat('sup', range)
                     break
                 case 'insertUnorderedList':
-                    console.log('Applying unordered list format')
                     success = applyListFormat('ul', range)
                     break
                 case 'insertOrderedList':
-                    console.log('Applying ordered list format')
                     success = applyListFormat('ol', range)
                     break
                 case 'justifyLeft':
-                    console.log('Applying left alignment')
                     success = applyAlignment('left', range)
                     break
                 case 'justifyCenter':
-                    console.log('Applying center alignment')
                     success = applyAlignment('center', range)
                     break
                 case 'justifyRight':
-                    console.log('Applying right alignment')
                     success = applyAlignment('right', range)
                     break
                 case 'justifyFull':
-                    console.log('Applying justify alignment')
                     success = applyAlignment('justify', range)
                     break
                 case 'formatBlock':
                     if (value) {
-                        console.log('Applying block format:', value)
                         success = applyBlockFormat(value, range)
                     }
                     break
                 case 'createLink':
                     if (value) {
-                        console.log('Creating link:', value)
                         success = applyLinkFormat(value, range)
                     }
                     break
                 case 'backColor':
                     if (value) {
-                        console.log('Applying background color:', value)
                         success = applyBackgroundColor(value, range)
                     }
                     break
                 case 'foreColor':
                     if (value) {
-                        console.log('Applying text color:', value)
                         success = applyTextColor(value, range)
                     }
                     break
                 case 'fontSize':
                     if (value) {
-                        console.log('Applying font size:', value)
                         success = applyFontSize(value, range)
                     }
                     break
                 case 'fontFamily':
                     if (value) {
-                        console.log('Applying font family:', value)
                         success = applyFontFamily(value, range)
                     }
                     break
-                default:
-                    console.log('Unknown command:', command)
-                    return
             }
             
-            console.log('Format result:', success)
-            
             if (success) {
-                // Update content state after formatting
                 if (editorRef.current) {
                     const newContent = editorRef.current.innerHTML
-                    console.log('Content updated, new content length:', newContent.length)
                     setContent(newContent)
                 }
-                
-                // Update format state
                 updateFormatState()
-                
-                // Hide toolbar after formatting
-                setShowToolbar(false)
-                
-                // Focus back to editor
                 editorRef.current?.focus()
             }
             
@@ -316,14 +266,13 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
         }
     }, [saveToUndoStack, updateFormatState])
 
-    // Modern formatting functions
+    // Formatting functions
     const applyInlineFormat = (tagName: string, range: Range): boolean => {
         try {
             const element = document.createElement(tagName)
             range.surroundContents(element)
             return true
         } catch (error) {
-            // If surroundContents fails, try a different approach
             try {
                 const element = document.createElement(tagName)
                 const fragment = range.extractContents()
@@ -516,50 +465,20 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                         handleFormat('insertOrderedList')
                     }
                     break
-                case 'q':
-                    if (isShift) {
-                        e.preventDefault()
-                        handleFormat('formatBlock', 'blockquote')
-                    }
-                    break
-                case 'k':
-                    if (isShift) {
-                        e.preventDefault()
-                        handleFormat('formatBlock', 'pre')
-                    }
-                    break
-                case 'h':
-                    if (isShift) {
-                        e.preventDefault()
-                        handleFormat('backColor', 'yellow')
-                    }
-                    break
-                case '=':
-                    if (isShift) {
-                        e.preventDefault()
-                        handleFormat('superscript')
-                    } else {
-                        e.preventDefault()
-                        handleFormat('subscript')
-                    }
-                    break
-                case 'x':
-                    if (isShift) {
-                        e.preventDefault()
-                        handleFormat('strikeThrough')
-                    }
-                    break
             }
         }
     }, [handleFormat, undo, redo])
 
     // Handle content changes from the editor
     const handleContentChange = useCallback(() => {
-        if (editorRef.current) {
+        if (editorRef.current && !isUndoRedo) {
             const newContent = editorRef.current.innerHTML
             setContent(newContent)
+            // Save to undo stack when content changes (but not during undo/redo)
+            saveToUndoStack(newContent)
+            console.log('Content changed, saved to undo stack. Stack size:', undoStack.length + 1)
         }
-    }, [])
+    }, [saveToUndoStack, isUndoRedo, undoStack.length])
 
     // Add selection change listener
     useEffect(() => {
@@ -567,43 +486,15 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
             const selection = window.getSelection()
             if (selection && selection.toString().length > 0) {
                 updateFormatState()
+            } else {
+                // Reset format state when no text is selected
+                resetFormatState()
             }
         }
 
         document.addEventListener('selectionchange', handleSelectionChange)
         return () => document.removeEventListener('selectionchange', handleSelectionChange)
-    }, [updateFormatState])
-
-    // Hide toolbar when clicking outside
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            const target = e.target as Element
-            
-            if (target.closest('.toolbar-container')) {
-                return
-            }
-            
-            if (editorRef.current && editorRef.current.contains(target)) {
-                return
-            }
-            
-            setShowToolbar(false)
-        }
-        
-        document.addEventListener('mousedown', handleClickOutside)
-        return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [])
-
-    // Debug logging
-    useEffect(() => {
-        console.log('Editor state changed:', {
-            showToolbar,
-            toolbarPosition,
-            formatState,
-            undoStackLength: undoStack.length,
-            redoStackLength: redoStack.length
-        })
-    }, [showToolbar, toolbarPosition, formatState, undoStack.length, redoStack.length])
 
     const getWordCount = () => {
         const text = content.replace(/<[^>]*>/g, '')
@@ -614,43 +505,251 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
         return content.replace(/<[^>]*>/g, '').length
     }
 
-    const getParagraphCount = () => {
-        const paragraphs = content.match(/<p[^>]*>.*?<\/p>/g) || []
-        return paragraphs.length
-    }
+    const fontSizes = ['12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px', '36px', '48px']
+    const fontFamilies = [
+        { name: 'Arial', value: 'Arial, sans-serif' },
+        { name: 'Georgia', value: 'Georgia, serif' },
+        { name: 'Times', value: 'Times New Roman, serif' },
+        { name: 'Courier', value: 'Courier New, monospace' },
+        { name: 'Verdana', value: 'Verdana, sans-serif' },
+        { name: 'Helvetica', value: 'Helvetica, sans-serif' }
+    ]
 
     return (
         <div className="flex-1 flex flex-col relative">
-            {/* Floating Toolbar */}
-            {showToolbar && (
-                <Toolbar
-                    position={toolbarPosition}
-                    onFormat={handleFormat}
-                    formatState={formatState}
-                    onUndo={undo}
-                    onRedo={redo}
-                    canUndo={undoStack.length > 1}
-                    canRedo={redoStack.length > 0}
-                />
-            )}
+            {/* Fixed Toolbar - Google Docs Style */}
+            <div className="h-14 editor-toolbar flex items-center px-4 gap-2">
+                {/* Back Button */}
+                <Link href="/home" className="p-2 hover:bg-gray-100 rounded transition-colors mr-2">
+                    <ArrowLeft className="w-4 h-4 text-gray-600" />
+                </Link>
+                
+                <div className="w-px h-6 bg-gray-300"></div>
+                
+                {/* Undo/Redo */}
+                <div className="flex items-center gap-1 mr-2">
+                    <button
+                        onClick={undo}
+                        disabled={undoStack.length <= 1}
+                        className="p-2 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Undo (Ctrl+Z)"
+                    >
+                        <Undo2 className="w-4 h-4 text-gray-600" />
+                    </button>
+                    <button
+                        onClick={redo}
+                        disabled={redoStack.length === 0}
+                        className="p-2 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Redo (Ctrl+Shift+Z)"
+                    >
+                        <Redo2 className="w-4 h-4 text-gray-600" />
+                    </button>
+                </div>
+                
+                <div className="w-px h-6 bg-gray-300"></div>
+
+                {/* Font Family */}
+                <select
+                    value={fontFamilies.find(f => f.value === formatState.fontFamily)?.value || 'Arial, sans-serif'}
+                    onChange={(e) => handleFormat('fontFamily', e.target.value)}
+                    className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                    {fontFamilies.map((font) => (
+                        <option key={font.value} value={font.value}>{font.name}</option>
+                    ))}
+                </select>
+
+                {/* Font Size */}
+                <select
+                    value={formatState.fontSize}
+                    onChange={(e) => handleFormat('fontSize', e.target.value)}
+                    className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-16"
+                >
+                    {fontSizes.map((size) => (
+                        <option key={size} value={size}>{size}</option>
+                    ))}
+                </select>
+
+                <div className="w-px h-6 bg-gray-300"></div>
+
+                {/* Text Formatting */}
+                <button
+                    onClick={() => handleFormat('bold')}
+                    className={`p-2 rounded transition-colors ${formatState.bold ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    title="Bold (Ctrl+B)"
+                >
+                    <Bold className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={() => handleFormat('italic')}
+                    className={`p-2 rounded transition-colors ${formatState.italic ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    title="Italic (Ctrl+I)"
+                >
+                    <Italic className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={() => handleFormat('underline')}
+                    className={`p-2 rounded transition-colors ${formatState.underline ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    title="Underline (Ctrl+U)"
+                >
+                    <Underline className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={() => handleFormat('strikeThrough')}
+                    className={`p-2 rounded transition-colors ${formatState.strikethrough ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    title="Strikethrough"
+                >
+                    <Strikethrough className="w-4 h-4" />
+                </button>
+
+                <div className="w-px h-6 bg-gray-300"></div>
+
+                {/* Text Color */}
+                <div className="relative">
+                    <button
+                        onClick={() => {
+                            const color = prompt('Enter color (e.g., #000000, red, blue):', formatState.color)
+                            if (color) handleFormat('foreColor', color)
+                        }}
+                        className="p-2 hover:bg-gray-100 rounded transition-colors"
+                        title="Text Color"
+                    >
+                        <Palette className="w-4 h-4 text-gray-600" />
+                    </button>
+                </div>
+
+                <div className="w-px h-6 bg-gray-300"></div>
+
+                {/* Headings */}
+                <button
+                    onClick={() => handleFormat('formatBlock', 'h1')}
+                    className={`px-3 py-1 rounded text-sm transition-colors ${formatState.headingLevel === 'h1' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    title="Heading 1"
+                >
+                    H1
+                </button>
+                <button
+                    onClick={() => handleFormat('formatBlock', 'h2')}
+                    className={`px-3 py-1 rounded text-sm transition-colors ${formatState.headingLevel === 'h2' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    title="Heading 2"
+                >
+                    H2
+                </button>
+                <button
+                    onClick={() => handleFormat('formatBlock', 'h3')}
+                    className={`px-3 py-1 rounded text-sm transition-colors ${formatState.headingLevel === 'h3' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    title="Heading 3"
+                >
+                    H3
+                </button>
+
+                <div className="w-px h-6 bg-gray-300"></div>
+
+                {/* Lists */}
+                <button
+                    onClick={() => handleFormat('insertUnorderedList')}
+                    className={`p-2 rounded transition-colors ${formatState.listType === 'unordered' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    title="Bullet List"
+                >
+                    <List className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={() => handleFormat('insertOrderedList')}
+                    className={`p-2 rounded transition-colors ${formatState.listType === 'ordered' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    title="Numbered List"
+                >
+                    <ListOrdered className="w-4 h-4" />
+                </button>
+
+                <div className="w-px h-6 bg-gray-300"></div>
+
+                {/* Alignment */}
+                <button
+                    onClick={() => handleFormat('justifyLeft')}
+                    className={`p-2 rounded transition-colors ${formatState.alignment === 'left' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    title="Align Left"
+                >
+                    <AlignLeft className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={() => handleFormat('justifyCenter')}
+                    className={`p-2 rounded transition-colors ${formatState.alignment === 'center' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    title="Align Center"
+                >
+                    <AlignCenter className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={() => handleFormat('justifyRight')}
+                    className={`p-2 rounded transition-colors ${formatState.alignment === 'right' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    title="Align Right"
+                >
+                    <AlignRight className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={() => handleFormat('justifyFull')}
+                    className={`p-2 rounded transition-colors ${formatState.alignment === 'justify' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    title="Justify"
+                >
+                    <AlignJustify className="w-4 h-4" />
+                </button>
+
+                <div className="w-px h-6 bg-gray-300"></div>
+
+                {/* Special Formats */}
+                <button
+                    onClick={() => handleFormat('formatBlock', 'blockquote')}
+                    className="p-2 hover:bg-gray-100 rounded transition-colors"
+                    title="Quote Block"
+                >
+                    <Quote className="w-4 h-4 text-gray-600" />
+                </button>
+                <button
+                    onClick={() => handleFormat('formatBlock', 'pre')}
+                    className="p-2 hover:bg-gray-100 rounded transition-colors"
+                    title="Code Block"
+                >
+                    <Code className="w-4 h-4 text-gray-600" />
+                </button>
+                <button
+                    onClick={() => handleFormat('createLink')}
+                    className="p-2 hover:bg-gray-100 rounded transition-colors"
+                    title="Insert Link (Ctrl+K)"
+                >
+                    <Link2 className="w-4 h-4 text-gray-600" />
+                </button>
+            </div>
 
             {/* Writing Area */}
-            <div className="flex-1 overflow-y-auto p-6">
-                <div className="max-w-4xl mx-auto">
+            <div className="flex-1 overflow-y-auto editor-content">
+                <div className="max-w-4xl mx-auto p-8">
                     <div
                         ref={editorRef}
                         contentEditable
-                        className="prose prose-lg max-w-none focus:outline-none min-h-[600px] p-6 border border-brown-light/20 rounded-lg bg-white"
+                        className="min-h-[600px] focus:outline-none max-w-none"
                         style={{
-                            color: '#2C2416',
-                            lineHeight: '1.8',
-                            fontFamily: 'Georgia, serif',
+                            color: '#000000',
+                            lineHeight: '1.6',
+                            fontFamily: 'Arial, sans-serif',
+                            fontSize: '16px'
                         }}
                         onInput={handleContentChange}
                         onKeyDown={handleKeyDown}
-                        onMouseUp={handleTextSelection}
-                        onKeyUp={handleTextSelection}
-                        onBlur={() => setShowToolbar(false)}
+                        onClick={() => {
+                            const selection = window.getSelection()
+                            if (!selection || selection.toString().length === 0) {
+                                // Reset format state when clicking in empty areas
+                                resetFormatState()
+                            }
+                        }}
+                        onBlur={() => {
+                            // Reset format state when editor loses focus
+                            setTimeout(() => {
+                                const selection = window.getSelection()
+                                if (!selection || selection.toString().length === 0) {
+                                    resetFormatState()
+                                }
+                            }, 100)
+                        }}
                         suppressContentEditableWarning={true}
                         role="textbox"
                         aria-label="Rich text editor"
@@ -660,30 +759,13 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
             </div>
 
             {/* Bottom Status Bar */}
-            <div className="h-12 border-t border-brown-light/20 bg-white/80 backdrop-blur-sm px-6 flex items-center justify-between text-sm text-ink/60">
-                <div className="flex items-center gap-6">
+            <div className="h-8 border-t border-gray-200 bg-gray-50 px-4 flex items-center justify-between text-xs text-gray-600">
+                <div className="flex items-center gap-4">
                     <span>{getWordCount()} words</span>
                     <span>{getCharCount()} characters</span>
-                    <span>{getParagraphCount()} paragraphs</span>
                 </div>
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={undo}
-                        disabled={undoStack.length <= 1}
-                        className="px-3 py-1 text-xs bg-stone-light hover:bg-brown-light/20 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
-                        title="Undo (Ctrl+Z)"
-                    >
-                        Undo
-                    </button>
-                    <button
-                        onClick={redo}
-                        disabled={redoStack.length === 0}
-                        className="px-3 py-1 text-xs bg-stone-light hover:bg-brown-light/20 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
-                        title="Redo (Ctrl+Shift+Z)"
-                    >
-                        Redo
-                    </button>
-                    <span className="text-xs text-ink/40">
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400">
                         Document ID: {documentId}
                     </span>
                 </div>

@@ -1,10 +1,12 @@
 'use client'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Home, FileText, Folder, Clock, Star, Settings, Plus, Search } from 'lucide-react'
 import { useState } from 'react'
 
 export default function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const router = useRouter()
 
   const menuItems = [
     { icon: Home, label: 'Home', href: '/home', active: true },
@@ -13,6 +15,13 @@ export default function Sidebar() {
     { icon: Star, label: 'Starred', href: '/home' },
     { icon: Folder, label: 'Folders', href: '/home' },
   ]
+
+  const handleNewDocument = () => {
+    // Generate a unique ID for the new document only when clicked
+    const newDocumentId = `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    // Navigate to the editor with the new document ID
+    router.push(`/editor/${newDocumentId}`)
+  }
 
   return (
     <aside className={`${
@@ -35,9 +44,11 @@ export default function Sidebar() {
 
       {/* New Document Button */}
       <div className="p-4">
-        <button className={`w-full flex items-center justify-center gap-2 px-4 py-3 bg-ink text-paper rounded-xl hover:bg-ink/90 transition-all ${
-          isCollapsed ? 'px-3' : ''
-        }`}>
+        <button 
+          onClick={handleNewDocument}
+          className={`w-full flex items-center justify-center gap-2 px-4 py-3 bg-ink text-paper rounded-xl hover:bg-ink/90 transition-all ${
+            isCollapsed ? 'px-3' : ''
+          }`}>
           <Plus className="w-5 h-5" />
           {!isCollapsed && <span>New Document</span>}
         </button>

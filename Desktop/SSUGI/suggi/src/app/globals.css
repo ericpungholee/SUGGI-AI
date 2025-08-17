@@ -18,6 +18,71 @@
   .glass {
     @apply bg-white/10 backdrop-blur-lg border border-white/20;
   }
+
+  /* Google Docs-like editor styling */
+  .editor-toolbar {
+    @apply bg-white border-b border-gray-200 shadow-sm;
+  }
+
+  .editor-toolbar button {
+    @apply transition-all duration-150;
+  }
+
+  .editor-toolbar button:hover {
+    @apply bg-gray-100;
+  }
+
+  .editor-toolbar button.active {
+    @apply bg-blue-100 text-blue-700;
+  }
+
+  .editor-content {
+    @apply bg-white text-gray-900;
+  }
+
+  .editor-content:focus {
+    @apply outline-none;
+  }
+
+  .editor-content p {
+    @apply mb-4 leading-relaxed;
+  }
+
+  .editor-content h1 {
+    @apply text-3xl font-bold mb-4 text-gray-900;
+  }
+
+  .editor-content h2 {
+    @apply text-2xl font-semibold mb-3 text-gray-900;
+  }
+
+  .editor-content h3 {
+    @apply text-xl font-semibold mb-2 text-gray-900;
+  }
+
+  .editor-content ul, .editor-content ol {
+    @apply mb-4 pl-6;
+  }
+
+  .editor-content li {
+    @apply mb-2;
+  }
+
+  .editor-content blockquote {
+    @apply border-l-4 border-gray-300 pl-4 py-2 my-4 bg-gray-50 italic;
+  }
+
+  .editor-content pre {
+    @apply bg-gray-100 p-4 rounded my-4 font-mono text-sm overflow-x-auto;
+  }
+
+  .editor-content code {
+    @apply bg-gray-100 px-1 py-0.5 rounded text-sm font-mono;
+  }
+
+  .editor-content a {
+    @apply text-blue-600 underline;
+  }
 }
 
 @keyframes fadeIn {
