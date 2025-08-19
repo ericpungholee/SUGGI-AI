@@ -83,7 +83,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
         const range = selection.getRangeAt(0)
         const container = range.commonAncestorContainer
         
-        let element = container.nodeType === Node.ELEMENT_NODE ? container as Element : container.parentElement
+        const element = container.nodeType === Node.ELEMENT_NODE ? container as Element : container.parentElement
         if (!element) return
 
         const newFormatState: Partial<FormatState> = {}
@@ -92,8 +92,8 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
         const startContainer = range.startContainer
         const endContainer = range.endContainer
         
-        let startElement = startContainer.nodeType === Node.ELEMENT_NODE ? startContainer as Element : startContainer.parentElement
-        let endElement = endContainer.nodeType === Node.ELEMENT_NODE ? endContainer as Element : endContainer.parentElement
+        const startElement = startContainer.nodeType === Node.ELEMENT_NODE ? startContainer as Element : startContainer.parentElement
+        const endElement = endContainer.nodeType === Node.ELEMENT_NODE ? endContainer as Element : endContainer.parentElement
         
         if (!startElement || !endElement) return
         
@@ -704,7 +704,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
         try {
             // Find the block element that contains the cursor
             const container = range.commonAncestorContainer
-            let blockElement = container.nodeType === Node.ELEMENT_NODE ? container as Element : container.parentElement
+            const blockElement = container.nodeType === Node.ELEMENT_NODE ? container as Element : container.parentElement
             
             if (!blockElement) return false
             

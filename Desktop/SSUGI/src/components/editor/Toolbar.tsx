@@ -9,7 +9,7 @@ import {
     ChevronDown
 } from "lucide-react";
 import { useState } from "react";
-import { FormatState, ToolbarProps } from "@/types";
+import { FormatState, ToolbarProps, ToolbarButton } from "@/types";
 
 export default function Toolbar({ position, onFormat, formatState, onUndo, onRedo, canUndo, canRedo }: ToolbarProps) {
     const [showColorPicker, setShowColorPicker] = useState(false)
@@ -200,7 +200,7 @@ export default function Toolbar({ position, onFormat, formatState, onUndo, onRed
         }
     }
 
-    const renderButtonGroup = (buttons: any[], groupName: string) => (
+    const renderButtonGroup = (buttons: ToolbarButton[], groupName: string) => (
         <div key={groupName} className="flex items-center gap-1">
             {buttons.map((button, index) => {
                 const Icon = button.icon

@@ -157,7 +157,7 @@ export interface KeyboardShortcut {
     command: FormatCommand;
     key: string;
     description: string;
-    modifier?: 'ctrl' | 'shift' | 'alt' | 'meta';
+    modifier?: 'ctrl' | 'shift' | 'alt' | 'meta' | 'ctrl+shift' | 'ctrl+alt' | 'shift+alt';
 }
 
 export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
@@ -205,18 +205,4 @@ export interface ToolbarPosition {
     visible: boolean;
 }
 
-// Export all types
-export type {
-    FormatState,
-    ToolbarButton,
-    EditorProps,
-    ToolbarProps,
-    Document,
-    DocumentMetadata,
-    FormatCommand,
-    FontOption,
-    ColorOption,
-    KeyboardShortcut,
-    EditorState,
-    ToolbarPosition
-};
+
