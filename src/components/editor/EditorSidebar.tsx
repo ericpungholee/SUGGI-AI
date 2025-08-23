@@ -7,8 +7,31 @@ interface EditorSidebarProps {
   documentId?: string
 }
 
-export default function EditorSidebar({ content = '', documentId }: EditorSidebarProps) {
+interface Heading {
+  id: string
+  text: string
+  level: number
+  tag: string
+}
+
+export default function EditorSidebar({ 
+  content = '', 
+  documentId
+}: EditorSidebarProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const [headings, setHeadings] = useState<Heading[]>([])
+
+  // Prevent hydration mismatch by only running on client
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (mounted && content) {
+      setHeadings(getHeadings())
+    }
+  }, [content, mounted])
 
   const getWordCount = () => {
     const text = content.replace(/<[^>]*>/g, '')
@@ -26,16 +49,35 @@ export default function EditorSidebar({ content = '', documentId }: EditorSideba
     return minutes
   }
 
-  const getHeadings = () => {
-    const tempDiv = document.createElement('div')
-    tempDiv.innerHTML = content
-    const headings = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6')
-    return Array.from(headings).map((heading, index) => ({
-      id: `heading-${index}`,
-      text: heading.textContent || '',
-      level: parseInt(heading.tagName.charAt(1)),
-      tag: heading.tagName.toLowerCase()
-    }))
+  const getHeadings = (): Heading[] => {
+    if (typeof window === 'undefined') return []
+    
+    try {
+      const tempDiv = document.createElement('div')
+      tempDiv.innerHTML = content
+      const headingElements = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6')
+      return Array.from(headingElements).map((heading, index) => ({
+        id: `heading-${index}`,
+        text: heading.textContent || '',
+        level: parseInt(heading.tagName.charAt(1)),
+        tag: heading.tagName.toLowerCase()
+      }))
+    } catch (error) {
+      console.error('Error parsing headings:', error)
+      return []
+    }
+  }
+
+  // Don't render anything until mounted to prevent hydration mismatch
+  if (!mounted) {
+    return (
+      <button
+        className="fixed right-4 top-24 p-3 bg-white border border-brown-light/20 rounded-lg shadow-sm hover:shadow-md transition-all hover:bg-stone-light group"
+        title="Open document info"
+      >
+        <FileText className="w-5 h-5 text-ink group-hover:text-purple-600 transition-colors" />
+      </button>
+    )
   }
 
   if (!isOpen) {
@@ -99,8 +141,8 @@ export default function EditorSidebar({ content = '', documentId }: EditorSideba
           Document Outline
         </h4>
         <div className="space-y-2 max-h-48 overflow-y-auto">
-          {getHeadings().length > 0 ? (
-            getHeadings().map((heading, index) => (
+          {headings.length > 0 ? (
+            headings.map((heading, index) => (
               <button 
                 key={heading.id}
                 className="w-full text-left px-3 py-2 text-sm text-ink/70 hover:bg-stone-light rounded-lg transition-colors flex items-center gap-2"

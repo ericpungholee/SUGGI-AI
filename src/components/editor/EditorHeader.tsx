@@ -34,7 +34,6 @@ export default function EditorHeader({ documentId }: { documentId: string }) {
     const handleTitleSave = () => {
         setIsEditingTitle(false)
         // Here you would save the title to your backend
-        console.log('Saving title:', title)
     }
 
     const handleManualSave = () => {

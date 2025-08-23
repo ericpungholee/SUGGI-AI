@@ -31,12 +31,13 @@ export async function POST(request: Request) {
             }
         })
 
-        await prisma.folder.create({
-            data: {
-                name: 'My Documents',
-                userId: user.id,
-            }
-        })
+        // Remove automatic folder creation - new users start with empty workspace
+        // await prisma.folder.create({
+        //     data: {
+        //         name: 'My Documents',
+        //         userId: user.id,
+        //     }
+        // })
 
         return NextResponse.json({
             user: {

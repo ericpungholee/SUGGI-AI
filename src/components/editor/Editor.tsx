@@ -1,17 +1,25 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormatState } from "@/types";
 import { 
     Bold, Italic, Underline, Strikethrough, 
     List, ListOrdered, Quote, Link2, 
     AlignLeft, AlignCenter, AlignRight, AlignJustify,
     Code, Undo2, Redo2,
-    Palette, ArrowLeft
+    Palette, ArrowLeft, Save, Trash2
 } from "lucide-react";
 
-export default function Editor({ documentId, onContentChange }: { documentId: string; onContentChange?: (content: string) => void }) {
+export default function Editor({ 
+  documentId, 
+  onContentChange
+}: { 
+  documentId: string; 
+  onContentChange?: (content: string) => void;
+}) {
     const [content, setContent] = useState('<p>Start writing your document here...</p>')
+    const [originalContent, setOriginalContent] = useState('')
     const [formatState, setFormatState] = useState<FormatState>({
         bold: false,
         italic: false,
@@ -32,9 +40,31 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
     const [undoStack, setUndoStack] = useState<string[]>([])
     const [redoStack, setRedoStack] = useState<string[]>([])
     const [isUndoRedo, setIsUndoRedo] = useState(false)
+    const [isSaving, setIsSaving] = useState(false)
+    const [lastSaved, setLastSaved] = useState<Date | null>(null)
+    const [saveError, setSaveError] = useState<string | null>(null)
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+    const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+    const [isLoading, setIsLoading] = useState(false)
+    const [isDeleting, setIsDeleting] = useState(false)
+    const [documentTitle, setDocumentTitle] = useState('Untitled Document')
+    const [originalTitle, setOriginalTitle] = useState('Untitled Document')
+    const [isSavingTitle, setIsSavingTitle] = useState(false)
+    const [mounted, setMounted] = useState(false)
+    
+    const router = useRouter()
     
     // Image editing state
     const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null)
+
+    // Auto-save timer
+    const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+    // Prevent hydration mismatch by only running on client
+    useEffect(() => {
+        setMounted(true)
+    }, [])
 
     // Helper function to reset format state
     const resetFormatState = useCallback(() => {
@@ -58,16 +88,273 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
 
     // Initialize editor content
     useEffect(() => {
-        if (editorRef.current && content) {
-            editorRef.current.innerHTML = content
-            setUndoStack([content])
+        if (!mounted) return
+        
+        if (documentId === 'new') {
+            // For new documents, use default content
+            if (editorRef.current) {
+                editorRef.current.innerHTML = content
+                setUndoStack([content])
+                setOriginalContent(content)
+            }
+        } else {
+            // Load existing document content
+            loadDocumentContent()
         }
-    }, [])
+    }, [documentId, mounted])
+
+        // Load document content from API
+        const loadDocumentContent = useCallback(async () => {
+            if (!mounted) return
+            
+            try {
+                setIsLoading(true)
+                const response = await fetch(`/api/documents/${documentId}`)
+                
+                if (response.ok) {
+                    const document = await response.json()
+                    
+                    // Handle content that might be JSON or string
+                    let documentContent = '<p>Start writing your document here...</p>'
+                    if (document.content) {
+                        if (typeof document.content === 'string') {
+                            documentContent = document.content
+                        } else if (typeof document.content === 'object' && document.content.html) {
+                            documentContent = document.content.html
+                        } else if (typeof document.content === 'object') {
+                            // If content is an object, try to extract HTML or convert to string
+                            documentContent = JSON.stringify(document.content)
+                        }
+                    }
+                    
+                    // If we still don't have valid HTML, use default content
+                    if (!documentContent || documentContent === '{}' || documentContent === 'null') {
+                        documentContent = '<p>Start writing your document here...</p>'
+                    }
+                    
+                    setContent(documentContent)
+                    setOriginalContent(documentContent)
+                    setUndoStack([documentContent])
+                    
+                    // Set document title with proper fallback
+                    const title = document.title && document.title.trim() !== '' 
+                        ? document.title.trim() 
+                        : 'Untitled Document'
+                    setDocumentTitle(title)
+                    setOriginalTitle(title)
+                    
+                    if (editorRef.current) {
+                        editorRef.current.innerHTML = documentContent
+                    }
+                } else {
+                    console.error('Failed to load document, status:', response.status)
+                    // Use default content if loading fails
+                    if (editorRef.current) {
+                        editorRef.current.innerHTML = content
+                        setUndoStack([content])
+                        setOriginalContent(content)
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading document:', error)
+                // Use default content if loading fails
+                if (editorRef.current) {
+                    editorRef.current.innerHTML = content
+                    setUndoStack([content])
+                    setOriginalContent(content)
+                }
+            } finally {
+                setIsLoading(false)
+            }
+        }, [documentId, content, mounted])
 
     // Sync content with parent component
     useEffect(() => {
         onContentChange?.(content)
     }, [content, onContentChange])
+
+    // Check for unsaved changes (content and title)
+    useEffect(() => {
+        if (documentId !== 'new') {
+            const hasContentChanges = originalContent !== content
+            const hasTitleChanges = documentTitle.trim() !== originalTitle.trim()
+            setHasUnsavedChanges(hasContentChanges || hasTitleChanges)
+        } else {
+            setHasUnsavedChanges(false)
+        }
+    }, [content, originalContent, documentId, documentTitle, originalTitle])
+
+    // Close modals when clicking outside
+    useEffect(() => {
+        if (!mounted) return
+        
+        const handleClickOutside = (event: MouseEvent) => {
+            if (showDeleteConfirm && !(event.target as Element).closest('.delete-modal-container')) {
+                setShowDeleteConfirm(false)
+            }
+        }
+
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside)
+        }
+    }, [showDeleteConfirm, mounted])
+
+
+
+    // Save document function
+    const saveDocument = useCallback(async (contentToSave: string, showSuccessMessage = true) => {
+        if (documentId === 'new') return // Don't save for new documents
+        
+        try {
+            setIsSaving(true)
+            setSaveError(null)
+            
+            const response = await fetch(`/api/documents/${documentId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    title: documentTitle.trim(),
+                    content: {
+                        html: contentToSave,
+                        plainText: contentToSave.replace(/<[^>]*>/g, ''),
+                        wordCount: contentToSave.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length
+                    },
+                    plainText: contentToSave.replace(/<[^>]*>/g, ''),
+                    wordCount: contentToSave.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length
+                })
+            })
+
+            if (response.ok) {
+                const updatedDoc = await response.json()
+                setLastSaved(new Date())
+                setOriginalContent(contentToSave)
+                setOriginalTitle(documentTitle.trim())
+                setHasUnsavedChanges(false)
+                
+                if (showSuccessMessage) {
+                    // Show success indicator briefly
+                    setTimeout(() => {
+                        // Success state is handled by the UI
+                    }, 2000)
+                }
+            } else {
+                const errorData = await response.json()
+                throw new Error(errorData.error || 'Failed to save document')
+            }
+        } catch (error) {
+            console.error('Error saving document:', error)
+            setSaveError(error instanceof Error ? error.message : 'Failed to save document')
+            
+            // Clear error after 5 seconds
+            setTimeout(() => {
+                setSaveError(null)
+            }, 5000)
+        } finally {
+            setIsSaving(false)
+        }
+    }, [documentId])
+
+    // Manual save function
+    const handleManualSave = useCallback(async () => {
+        if (documentId === 'new') return
+        
+        const contentToSave = editorRef.current?.innerHTML || content
+        await saveDocument(contentToSave, true)
+    }, [documentId, content, saveDocument])
+
+    // Set up auto-save timer
+    useEffect(() => {
+        if (autoSaveTimerRef.current) {
+            clearTimeout(autoSaveTimerRef.current)
+        }
+
+        if (content && documentId !== 'new' && hasUnsavedChanges) {
+            autoSaveTimerRef.current = setTimeout(() => {
+                saveDocument(content, false) // Don't show success message for auto-save
+            }, 3000) // Auto-save after 3 seconds of inactivity
+        }
+
+        return () => {
+            if (autoSaveTimerRef.current) {
+                clearTimeout(autoSaveTimerRef.current)
+            }
+        }
+    }, [content, saveDocument, documentId, hasUnsavedChanges])
+
+    // Handle navigation with unsaved changes
+    const handleNavigation = useCallback((url: string) => {
+        if (hasUnsavedChanges) {
+            setShowUnsavedWarning(true)
+            // Store the intended destination
+            sessionStorage.setItem('pendingNavigation', url)
+        } else {
+            router.push(url)
+        }
+    }, [hasUnsavedChanges, router])
+
+    // Confirm navigation without saving
+    const confirmNavigation = useCallback(() => {
+        setShowUnsavedWarning(false)
+        const pendingUrl = sessionStorage.getItem('pendingNavigation')
+        if (pendingUrl) {
+            sessionStorage.removeItem('pendingNavigation')
+            router.push(pendingUrl)
+        }
+    }, [router])
+
+    // Cancel navigation
+    const cancelNavigation = useCallback(() => {
+        setShowUnsavedWarning(false)
+        sessionStorage.removeItem('pendingNavigation')
+    }, [])
+
+    // Save and navigate
+    const saveAndNavigate = useCallback(async () => {
+        if (documentId === 'new') return
+        
+        const contentToSave = editorRef.current?.innerHTML || content
+        await saveDocument(contentToSave, false)
+        
+        // After successful save, navigate
+        const pendingUrl = sessionStorage.getItem('pendingNavigation')
+        if (pendingUrl) {
+            sessionStorage.removeItem('pendingNavigation')
+            router.push(pendingUrl)
+        }
+    }, [documentId, content, saveDocument, router])
+
+    // Delete document function
+    const handleDeleteDocument = useCallback(async () => {
+        if (documentId === 'new') return
+        
+        try {
+            setIsDeleting(true)
+            const response = await fetch(`/api/documents/${documentId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+
+            if (response.ok) {
+                // Redirect to home page after successful deletion
+                router.push('/home')
+            } else {
+                const errorData = await response.json()
+                console.error('Failed to delete document:', errorData.error)
+                // You could show an error toast here
+            }
+        } catch (error) {
+            console.error('Error deleting document:', error)
+            // You could show an error toast here
+        } finally {
+            setIsDeleting(false)
+            setShowDeleteConfirm(false)
+        }
+    }, [documentId, router])
 
     // Save content to undo stack
     const saveToUndoStack = useCallback((newContent: string) => {
@@ -181,7 +468,6 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
 
     // Undo functionality
     const undo = useCallback(() => {
-        console.log('Undo called. Stack size:', undoStack.length)
         if (undoStack.length > 1) {
             const currentContent = undoStack[undoStack.length - 1]
             const previousContent = undoStack[undoStack.length - 2]
@@ -193,21 +479,17 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                 setIsUndoRedo(true)
                 editorRef.current.innerHTML = previousContent
                 setContent(previousContent)
-                console.log('Undo applied, content restored')
                 // Update format state after undo
                 setTimeout(() => {
                     updateFormatState()
                     setIsUndoRedo(false)
                 }, 0)
             }
-        } else {
-            console.log('Cannot undo: stack too small')
         }
     }, [undoStack, updateFormatState])
 
     // Redo functionality
     const redo = useCallback(() => {
-        console.log('Redo called. Stack size:', redoStack.length)
         if (redoStack.length > 0) {
             const nextContent = redoStack[redoStack.length - 1]
             
@@ -218,15 +500,12 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                 setIsUndoRedo(true)
                 editorRef.current.innerHTML = nextContent
                 setContent(nextContent)
-                console.log('Redo applied, content restored')
                 // Update format state after redo
                 setTimeout(() => {
                     updateFormatState()
                     setIsUndoRedo(false)
                 }, 0)
             }
-        } else {
-            console.log('Cannot redo: stack empty')
         }
     }, [redoStack, updateFormatState])
 
@@ -869,6 +1148,16 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
 
         if (isCtrl) {
             switch (e.key.toLowerCase()) {
+                case 's':
+                    e.preventDefault()
+                    handleManualSave()
+                    break
+                case 'delete':
+                    if (documentId !== 'new') {
+                        e.preventDefault()
+                        setShowDeleteConfirm(true)
+                    }
+                    break
                 case 'b':
                     e.preventDefault()
                     handleFormat('bold')
@@ -927,16 +1216,15 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     e.preventDefault()
                     handleFormat('justifyFull')
                     break
-                                 case 'o':
-                     if (isShift) {
-                         e.preventDefault()
-                         handleFormat('insertOrderedList')
-                     }
-                     break
-                 
-             }
-         }
-     }, [handleFormat, undo, redo])
+                case 'o':
+                    if (isShift) {
+                        e.preventDefault()
+                        handleFormat('insertOrderedList')
+                    }
+                    break
+            }
+        }
+     }, [handleFormat, undo, redo, handleManualSave])
 
     // Handle content changes from the editor
     const handleContentChange = useCallback(() => {
@@ -945,9 +1233,8 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
             setContent(newContent)
             // Save to undo stack when content changes (but not during undo/redo)
             saveToUndoStack(newContent)
-            console.log('Content changed, saved to undo stack. Stack size:', undoStack.length + 1)
         }
-    }, [saveToUndoStack, isUndoRedo, undoStack.length])
+    }, [saveToUndoStack, isUndoRedo])
 
     // Handle paste events to capture images
     const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -1354,6 +1641,8 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
 
     // Add selection change listener
     useEffect(() => {
+        if (!mounted) return
+        
         const handleSelectionChange = () => {
             const selection = window.getSelection()
             if (selection && selection.rangeCount > 0) {
@@ -1376,7 +1665,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
 
         document.addEventListener('selectionchange', handleSelectionChange)
         return () => document.removeEventListener('selectionchange', handleSelectionChange)
-    }, [updateFormatState, resetFormatState])
+    }, [updateFormatState, resetFormatState, mounted])
 
     const getWordCount = () => {
         const text = content.replace(/<[^>]*>/g, '')
@@ -1397,14 +1686,43 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
         { name: 'Helvetica', value: 'Helvetica, sans-serif' }
     ]
 
+    // Show loading state
+    if (isLoading) {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-white">
+                <div className="text-center">
+                    <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-gray-600">Loading document...</p>
+                </div>
+            </div>
+        )
+    }
+
+    // Don't render editor until mounted to prevent hydration mismatch
+    if (!mounted) {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-white">
+                <div className="text-center">
+                    <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-gray-600">Initializing editor...</p>
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div className="flex-1 flex flex-col relative">
             {/* Fixed Toolbar - Google Docs Style */}
             <div className="h-14 editor-toolbar flex items-center px-4 gap-2">
                 {/* Back Button */}
-                <Link href="/home" className="p-2 hover:bg-gray-100 rounded transition-colors mr-2">
+                <button 
+                    onClick={() => handleNavigation("/home")}
+                    className="p-2 hover:bg-gray-100 rounded transition-colors mr-2"
+                    title="Back to Home"
+                    suppressHydrationWarning
+                >
                     <ArrowLeft className="w-4 h-4 text-gray-600" />
-                </Link>
+                </button>
                 
                 <div className="w-px h-6 bg-gray-300"></div>
                 
@@ -1415,6 +1733,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                         disabled={undoStack.length <= 1}
                         className="p-2 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Undo (Ctrl+Z)"
+                        suppressHydrationWarning
                     >
                         <Undo2 className="w-4 h-4 text-gray-600" />
                     </button>
@@ -1423,6 +1742,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                         disabled={redoStack.length === 0}
                         className="p-2 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Redo (Ctrl+Shift+Z)"
+                        suppressHydrationWarning
                     >
                         <Redo2 className="w-4 h-4 text-gray-600" />
                     </button>
@@ -1430,27 +1750,168 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                 
                 <div className="w-px h-6 bg-gray-300"></div>
 
-                {/* Font Family */}
-                <select
-                    value={fontFamilies.find(f => f.value === formatState.fontFamily)?.value || 'Arial, sans-serif'}
-                    onChange={(e) => handleFormat('fontFamily', e.target.value)}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                    {fontFamilies.map((font) => (
-                        <option key={font.value} value={font.value}>{font.name}</option>
-                    ))}
-                </select>
+                                 {/* Document Title */}
+                 <div className="flex-1 max-w-md mx-4">
+                     <div className="relative">
+                         {isLoading ? (
+                             <div className="w-full px-3 py-2 text-lg font-medium text-gray-400 bg-gray-50 rounded animate-pulse">
+                                 Loading...
+                             </div>
+                         ) : (
+                             <input
+                                 type="text"
+                                 value={documentTitle}
+                                 onChange={(e) => {
+                                     const newTitle = e.target.value
+                                     setDocumentTitle(newTitle)
+                                 }}
+                                 onBlur={() => {
+                                     if (documentId !== 'new' && documentTitle.trim()) {
+                                         // Save title change
+                                         setIsSavingTitle(true)
+                                         const currentContent = editorRef.current?.innerHTML || content
+                                         fetch(`/api/documents/${documentId}`, {
+                                             method: 'PATCH',
+                                             headers: { 'Content-Type': 'application/json' },
+                                             body: JSON.stringify({ 
+                                                 title: documentTitle.trim(),
+                                                 content: {
+                                                     html: currentContent,
+                                                     plainText: currentContent.replace(/<[^>]*>/g, ''),
+                                                     wordCount: currentContent.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length
+                                                 }
+                                             })
+                                         }).then(response => {
+                                             if (response.ok) {
+                                                 // Update original content and title to reflect saved state
+                                                 setOriginalContent(currentContent)
+                                                 setOriginalTitle(documentTitle.trim())
+                                                 setHasUnsavedChanges(false)
+                                             }
+                                         }).catch(error => {
+                                             console.error('Failed to save title:', error)
+                                             setSaveError('Failed to save title')
+                                         }).finally(() => {
+                                             setIsSavingTitle(false)
+                                         })
+                                     }
+                                 }}
+                                 onKeyDown={(e) => {
+                                     if (e.key === 'Enter') {
+                                         e.preventDefault()
+                                         e.currentTarget.blur() // Trigger save on Enter
+                                     }
+                                     if (e.key === 'Escape') {
+                                         e.preventDefault()
+                                         // Reset title to original value
+                                         if (documentId !== 'new') {
+                                             // Reload the document to get the original title
+                                             loadDocumentContent()
+                                         }
+                                         e.currentTarget.blur()
+                                     }
+                                 }}
+                                 className={`w-full px-3 py-2 text-lg font-medium text-gray-900 bg-white border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors ${
+                                     isSavingTitle ? 'ring-2 ring-blue-300 bg-blue-50 border-blue-300' : ''
+                                 }`}
+                                 placeholder="Untitled Document"
+                                 suppressHydrationWarning
+                                 maxLength={100}
+                             />
+                         )}
+                         {documentTitle.length > 80 && !isLoading && (
+                             <div className="text-xs text-gray-400 mt-1">
+                                 {documentTitle.length}/100 characters
+                             </div>
+                         )}
+                         {documentId !== 'new' && !isLoading && isSavingTitle && (
+                             <div className="absolute right-2 top-1/2 transform -translate-y-1/2 text-xs text-gray-400">
+                                 <span className="text-blue-600">Saving...</span>
+                             </div>
+                         )}
+                     </div>
+                 </div>
 
-                {/* Font Size */}
-                <select
-                    value={formatState.fontSize}
-                    onChange={(e) => handleFormat('fontSize', e.target.value)}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-16"
-                >
-                    {fontSizes.map((size) => (
-                        <option key={size} value={size}>{size}</option>
-                    ))}
-                </select>
+                <div className="w-px h-6 bg-gray-300"></div>
+
+                                 {/* Save Button and Status */}
+                 <div className="flex items-center gap-2 mr-4">
+                     <button
+                         onClick={handleManualSave}
+                         disabled={isSaving || documentId === 'new' || !hasUnsavedChanges}
+                         className={`p-2 rounded-lg transition-all ${
+                             isSaving 
+                                 ? 'bg-blue-100 text-blue-700 cursor-not-allowed' 
+                                 : hasUnsavedChanges 
+                                     ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm' 
+                                     : 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                         }`}
+                         title={documentId === 'new' ? 'Save document first' : hasUnsavedChanges ? 'Save document (Ctrl+S)' : 'All changes saved'}
+                         suppressHydrationWarning
+                     >
+                         {isSaving ? (
+                             <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                         ) : (
+                             <Save className="w-4 h-4" />
+                         )}
+                     </button>
+                    
+                    {/* Save Status Indicator */}
+                    {saveError && (
+                        <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">
+                            <span className="text-red-600">⚠️</span>
+                            <span className="text-sm text-red-700">{saveError}</span>
+                        </div>
+                    )}
+                    
+                    {hasUnsavedChanges && !isSaving && !saveError && (
+                        <div className="flex items-center gap-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <span className="text-yellow-600">⚠️</span>
+                            <span className="text-sm text-yellow-700">Unsaved changes</span>
+                        </div>
+                    )}
+                </div>
+
+                <div className="w-px h-6 bg-gray-300"></div>
+
+                                 {/* Delete Button */}
+                 {documentId !== 'new' && (
+                     <button
+                         onClick={() => setShowDeleteConfirm(true)}
+                         disabled={isDeleting}
+                         className="p-2 rounded-lg transition-all bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 hover:border-red-300"
+                         title="Delete document"
+                         suppressHydrationWarning
+                     >
+                         <Trash2 className="w-4 h-4" />
+                     </button>
+                 )}
+
+                <div className="w-px h-6 bg-gray-300"></div>
+
+                                 {/* Font Family */}
+                 <select
+                     value={fontFamilies.find(f => f.value === formatState.fontFamily)?.value || 'Arial, sans-serif'}
+                     onChange={(e) => handleFormat('fontFamily', e.target.value)}
+                     className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                     suppressHydrationWarning
+                 >
+                     {fontFamilies.map((font) => (
+                         <option key={font.value} value={font.value}>{font.name}</option>
+                     ))}
+                 </select>
+ 
+                 {/* Font Size */}
+                 <select
+                     value={formatState.fontSize}
+                     onChange={(e) => handleFormat('fontSize', e.target.value)}
+                     className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-16"
+                     suppressHydrationWarning
+                 >
+                     {fontSizes.map((size) => (
+                         <option key={size} value={size}>{size}</option>
+                     ))}
+                 </select>
 
                 <div className="w-px h-6 bg-gray-300"></div>
 
@@ -1459,6 +1920,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     onClick={() => handleFormat('bold')}
                     className={`p-2 rounded transition-colors ${formatState.bold ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Bold (Ctrl+B)"
+                    suppressHydrationWarning
                 >
                     <Bold className="w-4 h-4" />
                 </button>
@@ -1466,6 +1928,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     onClick={() => handleFormat('italic')}
                     className={`p-2 rounded transition-colors ${formatState.italic ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Italic (Ctrl+I)"
+                    suppressHydrationWarning
                 >
                     <Italic className="w-4 h-4" />
                 </button>
@@ -1473,6 +1936,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     onClick={() => handleFormat('underline')}
                     className={`p-2 rounded transition-colors ${formatState.underline ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Underline (Ctrl+U)"
+                    suppressHydrationWarning
                 >
                     <Underline className="w-4 h-4" />
                 </button>
@@ -1480,6 +1944,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     onClick={() => handleFormat('strikeThrough')}
                     className={`p-2 rounded transition-colors ${formatState.strikethrough ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Strikethrough"
+                    suppressHydrationWarning
                 >
                     <Strikethrough className="w-4 h-4" />
                 </button>
@@ -1495,6 +1960,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                         }}
                         className="p-2 hover:bg-gray-100 rounded transition-colors"
                         title="Text Color"
+                        suppressHydrationWarning
                     >
                         <Palette className="w-4 h-4 text-gray-600" />
                     </button>
@@ -1507,6 +1973,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                      onClick={() => handleFormat('formatBlock', 'h1')}
                      className={`px-3 py-1 rounded text-sm transition-colors ${formatState.headingLevel === 'h1' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                      title="Heading 1"
+                     suppressHydrationWarning
                  >
                      H1
                  </button>
@@ -1514,6 +1981,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                      onClick={() => handleFormat('formatBlock', 'h2')}
                      className={`px-3 py-1 rounded text-sm transition-colors ${formatState.headingLevel === 'h2' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                      title="Heading 2"
+                     suppressHydrationWarning
                  >
                      H2
                  </button>
@@ -1521,6 +1989,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                      onClick={() => handleFormat('formatBlock', 'h3')}
                      className={`px-3 py-1 rounded text-sm transition-colors ${formatState.headingLevel === 'h3' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                      title="Heading 3"
+                     suppressHydrationWarning
                  >
                      H3
                  </button>
@@ -1528,6 +1997,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                      onClick={() => handleFormat('formatBlock', 'p')}
                      className={`px-3 py-1 rounded text-sm transition-colors ${formatState.headingLevel === 'p' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                      title="Paragraph (Ctrl+0)"
+                     suppressHydrationWarning
                  >
                      P
                  </button>
@@ -1539,6 +2009,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     onClick={() => handleFormat('insertUnorderedList')}
                     className={`p-2 rounded transition-colors ${formatState.listType === 'unordered' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Bullet List"
+                    suppressHydrationWarning
                 >
                     <List className="w-4 h-4" />
                 </button>
@@ -1546,6 +2017,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     onClick={() => handleFormat('insertOrderedList')}
                     className={`p-2 rounded transition-colors ${formatState.listType === 'ordered' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Numbered List"
+                    suppressHydrationWarning
                 >
                     <ListOrdered className="w-4 h-4" />
                 </button>
@@ -1557,6 +2029,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     onClick={() => handleFormat('justifyLeft')}
                     className={`p-2 rounded transition-colors ${formatState.alignment === 'left' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Align Left"
+                    suppressHydrationWarning
                 >
                     <AlignLeft className="w-4 h-4" />
                 </button>
@@ -1564,6 +2037,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     onClick={() => handleFormat('justifyCenter')}
                     className={`p-2 rounded transition-colors ${formatState.alignment === 'center' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Align Center"
+                    suppressHydrationWarning
                 >
                     <AlignCenter className="w-4 h-4" />
                 </button>
@@ -1571,6 +2045,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     onClick={() => handleFormat('justifyRight')}
                     className={`p-2 rounded transition-colors ${formatState.alignment === 'right' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Align Right"
+                    suppressHydrationWarning
                 >
                     <AlignRight className="w-4 h-4" />
                 </button>
@@ -1578,6 +2053,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     onClick={() => handleFormat('justifyFull')}
                     className={`p-2 rounded transition-colors ${formatState.alignment === 'justify' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Justify"
+                    suppressHydrationWarning
                 >
                     <AlignJustify className="w-4 h-4" />
                 </button>
@@ -1589,6 +2065,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     onClick={() => handleFormat('formatBlock', 'blockquote')}
                     className="p-2 hover:bg-gray-100 rounded transition-colors"
                     title="Quote Block"
+                    suppressHydrationWarning
                 >
                     <Quote className="w-4 h-4 text-gray-600" />
                 </button>
@@ -1596,6 +2073,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     onClick={() => handleFormat('formatBlock', 'pre')}
                     className="p-2 hover:bg-gray-100 rounded transition-colors"
                     title="Code Block"
+                    suppressHydrationWarning
                 >
                     <Code className="w-4 h-4 text-gray-600" />
                 </button>
@@ -1603,6 +2081,7 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     onClick={() => handleFormat('createLink')}
                     className="p-2 hover:bg-gray-100 rounded transition-colors"
                     title="Insert Link (Ctrl+K)"
+                    suppressHydrationWarning
                 >
                     <Link2 className="w-4 h-4 text-gray-600" />
                 </button>
@@ -1704,6 +2183,15 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                 <div className="flex items-center gap-4">
                     <span>{getWordCount()} words</span>
                     <span>{getCharCount()} characters</span>
+                    {isSaving && <span className="text-blue-600">Saving...</span>}
+                    {lastSaved && !isSaving && (
+                        <span className="text-green-600">
+                            Saved {lastSaved.toLocaleTimeString()}
+                        </span>
+                    )}
+                    {hasUnsavedChanges && !isSaving && (
+                        <span className="text-yellow-600">Unsaved changes</span>
+                    )}
                 </div>
                 <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-400">
@@ -1711,6 +2199,90 @@ export default function Editor({ documentId, onContentChange }: { documentId: st
                     </span>
                 </div>
             </div>
+
+            {/* Unsaved Changes Warning Modal */}
+            {showUnsavedWarning && (
+                <div className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl p-6 max-w-md mx-4 shadow-2xl border border-gray-200 transform transition-all duration-200 scale-100">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
+                                <span className="text-yellow-600 text-xl">⚠️</span>
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Unsaved Changes</h3>
+                        </div>
+                        <p className="text-gray-600 mb-6">
+                            You have unsaved changes. Do you want to save them before leaving?
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={cancelNavigation}
+                                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors font-medium"
+                                suppressHydrationWarning
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmNavigation}
+                                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors font-medium"
+                                suppressHydrationWarning
+                            >
+                                Leave without saving
+                            </button>
+                            <button
+                                onClick={saveAndNavigate}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                                suppressHydrationWarning
+                            >
+                                Save and leave
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-50">
+                    <div className="delete-modal-container bg-white rounded-xl p-6 max-w-md mx-4 shadow-2xl border border-gray-200 transform transition-all duration-200 scale-100">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                                <Trash2 className="w-5 h-5 text-red-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Delete Document</h3>
+                        </div>
+                        <p className="text-gray-600 mb-6">
+                            Are you sure you want to delete "{documentTitle}"? This action cannot be undone.
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => setShowDeleteConfirm(false)}
+                                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors font-medium"
+                                suppressHydrationWarning
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDeleteDocument}
+                                disabled={isDeleting}
+                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium"
+                                suppressHydrationWarning
+                            >
+                                {isDeleting ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                        Deleting...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Trash2 className="w-4 h-4" />
+                                        Delete Document
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

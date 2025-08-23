@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { use } from 'react'
 import Editor from '@/components/editor/Editor'
 import EditorSidebar from '@/components/editor/EditorSidebar'
@@ -8,6 +8,10 @@ export default function EditorPage({ params }: { params: Promise<{ id: string }>
   const { id } = use(params)
   const [content, setContent] = useState('')
 
+  const handleContentChange = useCallback((newContent: string) => {
+    setContent(newContent)
+  }, [])
+
   return (
     <div className="h-screen flex flex-col bg-white">
       {/* Main Editor Area */}
@@ -15,7 +19,7 @@ export default function EditorPage({ params }: { params: Promise<{ id: string }>
         {/* Editor */}
         <Editor 
           documentId={id} 
-          onContentChange={setContent}
+          onContentChange={handleContentChange}
         />
         
         {/* Sidebar */}
