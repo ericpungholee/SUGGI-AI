@@ -1,36 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SSUGI - AI Writing App
+
+Write with intention, create with purpose.
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+ 
+- PostgreSQL database
+- npm or yarn
+
+### Environment Variables
+
+Create a `.env.local` file in the root directory with the following variables:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# NextAuth Configuration
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your-secret-key-here
+
+# Database
+DATABASE_URL="postgresql://username:password@localhost:5432/ssugi"
+
+# Google OAuth (Optional)
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Installation
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Install dependencies:
+```bash
+npm install
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+2. Set up the database:
+```bash
+npm run db:generate
+npm run db:push
+```
 
-## Learn More
+3. Run the development server:
+```bash
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Features
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Clean, distraction-free writing interface
+- AI-powered writing assistance
+- Document organization with folders
+- User authentication and authorization
+- Responsive design for all devices
 
-## Deploy on Vercel
+## Tech Stack
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- **Frontend**: Next.js 15, React 19, TypeScript, Tailwind CSS
+- **Backend**: Next.js API routes, Prisma ORM
+- **Authentication**: NextAuth.js
+- **Database**: PostgreSQL
+- **Styling**: Tailwind CSS
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Project Structure
+
+```
+src/
+├── app/                 # Next.js App Router
+│   ├── api/            # API routes
+│   ├── auth/           # Authentication pages
+│   ├── editor/         # Document editor
+│   └── home/           # Dashboard
+├── components/          # Reusable components
+├── lib/                 # Utility functions
+└── types/               # TypeScript type definitions
+```
+
+## Troubleshooting
+
+### NextAuth Errors
+
+If you encounter NextAuth errors:
+
+1. Ensure all environment variables are set correctly
+2. Check that the database is running and accessible
+3. Verify the API route is accessible at `/api/auth/signin`
+4. Check browser console for detailed error messages
+
+### Database Issues
+
+If you have database connection problems:
+
+1. Verify PostgreSQL is running
+2. Check your `DATABASE_URL` format
+3. Ensure the database exists
+4. Run `npm run db:generate` to regenerate Prisma client
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License.

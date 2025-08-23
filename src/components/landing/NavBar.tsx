@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { Feather } from "lucide-react";
 
 export default function NavBar() {
     const [scrolled, setScrolled] = useState(false);
@@ -21,13 +21,7 @@ export default function NavBar() {
                 <div className='flex justify-between items-center h-16'>
                     <div className='flex items-center'>
                         <Link href="/" className="flex items-center">
-                            <Image
-                                src="/journal-ai-high-resolution-logo-transparent (2).png"
-                                alt="Suggi Logo"
-                                width={40}
-                                height={40}
-                                className="w-10 h-10"
-                            />
+                            <Feather className="w-10 h-10 text-brown-medium" />
                             <span className="ml-3 text-2xl font-serif text-ink">Suggi</span>
                         </Link>
                     </div>

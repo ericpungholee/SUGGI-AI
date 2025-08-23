@@ -1,12 +1,14 @@
 'use client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Home, FileText, Folder, Clock, Star, Settings, Plus, Search } from 'lucide-react'
+import { Home, FileText, Folder, Clock, Star, Settings, Plus, Search, User, LogOut, Feather } from 'lucide-react'
 import { useState } from 'react'
+import { useSession, signOut } from 'next-auth/react'
 
 export default function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const router = useRouter()
+  const { data: session } = useSession()
 
   const menuItems = [
     { icon: Home, label: 'Home', href: '/home', active: true },
@@ -29,8 +31,9 @@ export default function Sidebar() {
     } bg-white border-r border-brown-light/20 flex flex-col transition-all duration-300`}>
       {/* Logo */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-brown-light/20">
-        <Link href="/" className={`font-serif text-2xl text-ink ${isCollapsed ? 'hidden' : 'block'}`}>
-          Suggi
+        <Link href="/" className={`flex items-center gap-2 ${isCollapsed ? 'hidden' : 'flex'}`}>
+          <Feather className="w-6 h-6 text-brown-medium" />
+          <span className="font-serif text-2xl text-ink">Suggi</span>
         </Link>
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
@@ -89,11 +92,26 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Settings */}
+      {/* User Profile & Sign Out */}
       <div className="p-4 border-t border-brown-light/20">
-        <button className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-ink/60 hover:bg-stone-light/50 hover:text-ink transition-all">
-          <Settings className="w-5 h-5" />
-          {!isCollapsed && <span>Settings</span>}
+        {session?.user && (
+          <div className="flex items-center gap-3 mb-3 px-3">
+            <div className="w-8 h-8 bg-brown-light/30 rounded-full flex items-center justify-center">
+              <User className="w-4 h-4 text-ink" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-ink truncate">{session.user.name}</p>
+              <p className="text-xs text-ink/60 truncate">{session.user.email}</p>
+            </div>
+          </div>
+        )}
+        
+        <button 
+          onClick={() => signOut({ callbackUrl: '/' })}
+          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-ink/60 hover:bg-stone-light/50 hover:text-ink transition-all"
+        >
+          <LogOut className="w-5 h-5" />
+          {!isCollapsed && <span>Sign out</span>}
         </button>
       </div>
     </aside>
