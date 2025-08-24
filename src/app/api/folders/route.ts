@@ -52,7 +52,7 @@ export async function GET(request: Request) {
             id: folder.id,
             name: folder.name,
             count: folder._count.documents.length + folder._count.children.length,
-            color: getRandomColor(folder.id), // Generate consistent color based on ID
+            color: getColorFromIcon(folder.icon), // Use the actual selected color
             icon: folder.icon
         }))
 
@@ -129,23 +129,19 @@ export async function POST(request: Request) {
     }
 }
 
-function getRandomColor(id: string): string {
-    const colors = [
-        'bg-blue-100',
-        'bg-green-100', 
-        'bg-purple-100',
-        'bg-amber-100',
-        'bg-pink-100',
-        'bg-indigo-100',
-        'bg-red-100',
-        'bg-yellow-100'
-    ]
+function getColorFromIcon(icon: string | null): string {
+    if (!icon) return 'bg-blue-100' // Default color
     
-    // Use the ID to generate a consistent color
-    const hash = id.split('').reduce((a, b) => {
-        a = ((a << 5) - a) + b.charCodeAt(0)
-        return a & a
-    }, 0)
+    const colorMap: { [key: string]: string } = {
+        'blue': 'bg-blue-100',
+        'green': 'bg-green-100',
+        'purple': 'bg-purple-100',
+        'amber': 'bg-amber-100',
+        'pink': 'bg-pink-100',
+        'indigo': 'bg-indigo-100',
+        'red': 'bg-red-100',
+        'yellow': 'bg-yellow-100'
+    }
     
-    return colors[Math.abs(hash) % colors.length]
+    return colorMap[icon] || 'bg-blue-100' // Return mapped color or default
 }

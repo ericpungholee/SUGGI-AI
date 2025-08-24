@@ -2,12 +2,16 @@
 import { Grid3x3, List, SortAsc } from 'lucide-react'
 import { useState } from 'react'
 
-export default function HomeHeader() {
+interface HomeHeaderProps {
+  title?: string
+}
+
+export default function HomeHeader({ title = "My Documents" }: HomeHeaderProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
 
   return (
     <header className="h-16 bg-white border-b border-brown-light/20 px-8 flex items-center justify-between">
-      <h1 className="text-2xl font-medium text-ink">My Documents</h1>
+      <h1 className="text-2xl font-medium text-ink">{title}</h1>
       
       <div className="flex items-center gap-4">
         {/* Sort */}

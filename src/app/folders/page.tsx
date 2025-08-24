@@ -33,7 +33,7 @@ export default async function FoldersPage() {
                 <ClientOnly fallback={
                     <header className="h-16 bg-white border-b border-brown-light/20"></header>
                 }>
-                    <HomeHeader />
+                    <HomeHeader title="My Folders" />
                 </ClientOnly>
 
                 {/* Content */}

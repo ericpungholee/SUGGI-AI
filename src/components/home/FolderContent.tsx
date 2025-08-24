@@ -89,9 +89,9 @@ export default function FolderContent({ folderId }: FolderContentProps) {
                     <div className="w-32 h-9 bg-gray-200 rounded-lg animate-pulse"></div>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {[...Array(6)].map((_, i) => (
-                        <div key={i} className="bg-white border border-brown-light/20 rounded-xl p-4 animate-pulse">
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {[...Array(8)].map((_, i) => (
+                        <div key={i} className="bg-white border border-brown-light/20 rounded-xl p-5 animate-pulse">
                             <div className="w-12 h-12 bg-gray-200 rounded-lg mb-3"></div>
                             <div className="h-4 bg-gray-200 rounded mb-2"></div>
                             <div className="h-3 bg-gray-200 rounded"></div>
@@ -121,11 +121,11 @@ export default function FolderContent({ folderId }: FolderContentProps) {
 
                 {/* Documents */}
                 {documents.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                         {documents.map((doc) => (
                             <div
                                 key={doc.id}
-                                className="group relative bg-white border border-brown-light/20 rounded-xl p-4 hover:shadow-md transition-all hover:-translate-y-0.5"
+                                className="group relative bg-white border border-brown-light/20 rounded-xl p-5 hover:shadow-md transition-all hover:-translate-y-0.5"
                             >
                                 {/* 3-dot menu */}
                                 <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -153,15 +153,14 @@ export default function FolderContent({ folderId }: FolderContentProps) {
                                     <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-3">
                                         <FileText className="w-6 h-6 text-ink/60" />
                                     </div>
-                                    <h4 className="font-medium text-ink text-sm mb-1 line-clamp-2">{doc.title}</h4>
-                                    <p className="text-xs text-ink/40 mb-2 line-clamp-2">{doc.preview}</p>
+                                    <h4 className="font-medium text-ink mb-2 line-clamp-1 hover:text-brown-medium transition-colors">{doc.title}</h4>
+                                    <p className="text-sm text-ink/60 mb-3 line-clamp-2">{doc.preview}</p>
                                     <div className="flex items-center justify-between text-xs text-ink/40">
-                                        <span>{doc.wordCount} words</span>
                                         <div className="flex items-center gap-1">
-                                            {doc.starred && <Star className="w-3 h-3 fill-current text-amber-400" />}
                                             <Clock className="w-3 h-3" />
                                             <span>{doc.lastModified}</span>
                                         </div>
+                                        <span>{doc.wordCount} words</span>
                                     </div>
                                 </div>
                             </div>

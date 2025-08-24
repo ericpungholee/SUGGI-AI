@@ -10,17 +10,17 @@ interface CreateFolderModalProps {
 }
 
 const folderIcons = [
-    { name: 'folder', icon: Folder, color: 'bg-blue-100' },
-    { name: 'folder-open', icon: Folder, color: 'bg-green-100' },
-    { name: 'folder-plus', icon: Folder, color: 'bg-purple-100' },
-    { name: 'folder-star', icon: Folder, color: 'bg-amber-100' },
-    { name: 'folder-heart', icon: Folder, color: 'bg-pink-100' },
-    { name: 'folder-music', icon: Folder, color: 'bg-indigo-100' },
+    { name: 'blue', icon: Folder, color: 'bg-blue-100', bgColor: 'bg-blue-100' },
+    { name: 'green', icon: Folder, color: 'bg-green-100', bgColor: 'bg-green-100' },
+    { name: 'purple', icon: Folder, color: 'bg-purple-100', bgColor: 'bg-purple-100' },
+    { name: 'amber', icon: Folder, color: 'bg-amber-100', bgColor: 'bg-amber-100' },
+    { name: 'pink', icon: Folder, color: 'bg-pink-100', bgColor: 'bg-pink-100' },
+    { name: 'indigo', icon: Folder, color: 'bg-indigo-100', bgColor: 'bg-indigo-100' },
 ]
 
 export default function CreateFolderModal({ isOpen, onClose, onFolderCreated, parentId }: CreateFolderModalProps) {
     const [folderName, setFolderName] = useState('')
-    const [selectedIcon, setSelectedIcon] = useState('folder')
+    const [selectedIcon, setSelectedIcon] = useState('blue')
     const [isCreating, setIsCreating] = useState(false)
 
     if (!isOpen) return null
@@ -45,7 +45,7 @@ export default function CreateFolderModal({ isOpen, onClose, onFolderCreated, pa
 
             if (response.ok) {
                 setFolderName('')
-                setSelectedIcon('folder')
+                setSelectedIcon('blue')
                 onFolderCreated()
                 onClose()
             } else {
@@ -62,7 +62,7 @@ export default function CreateFolderModal({ isOpen, onClose, onFolderCreated, pa
     const handleClose = () => {
         if (!isCreating) {
             setFolderName('')
-            setSelectedIcon('folder')
+            setSelectedIcon('blue')
             onClose()
         }
     }
@@ -117,7 +117,7 @@ export default function CreateFolderModal({ isOpen, onClose, onFolderCreated, pa
                                     }`}
                                     disabled={isCreating}
                                 >
-                                    <div className={`w-8 h-8 ${iconOption.color} rounded-lg flex items-center justify-center mx-auto mb-2`}>
+                                    <div className={`w-8 h-8 ${iconOption.bgColor} rounded-lg flex items-center justify-center mx-auto mb-2`}>
                                         <iconOption.icon className="w-5 h-5 text-ink/60" />
                                     </div>
                                     {selectedIcon === iconOption.name && (
@@ -128,21 +128,33 @@ export default function CreateFolderModal({ isOpen, onClose, onFolderCreated, pa
                         </div>
                     </div>
 
-                    <div className="flex gap-3 pt-4">
+                    <div className="flex gap-3 pt-4 border-t border-gray-200">
                         <button
                             type="button"
                             onClick={handleClose}
-                            className="flex-1 px-4 py-2 border border-brown-light/20 text-ink rounded-lg hover:bg-stone-light transition-colors"
+                            className="flex-1 px-4 py-2 bg-white border-2 border-black rounded-lg hover:bg-gray-100 transition-colors text-black font-semibold shadow-sm"
                             disabled={isCreating}
+                            style={{ backgroundColor: '#ffffff', color: '#000000', borderColor: '#000000' }}
                         >
                             Cancel
                         </button>
                         <button
                             type="submit"
-                            disabled={!folderName.trim() || isCreating}
-                            className="flex-1 px-4 py-2 bg-brown-medium text-white rounded-lg hover:bg-brown-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="flex-1 px-4 py-2 bg-white border-2 border-black rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-black font-semibold shadow-sm"
+                            style={{ backgroundColor: '#ffffff', color: '#000000', borderColor: '#000000' }}
+                            disabled={isCreating}
                         >
-                            {isCreating ? 'Creating...' : 'Create Folder'}
+                            {isCreating ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                                    Creating...
+                                </>
+                            ) : (
+                                <>
+                                    <Check className="w-4 h-4" />
+                                    Create Folder
+                                </>
+                            )}
                         </button>
                     </div>
                 </form>

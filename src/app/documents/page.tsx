@@ -32,7 +32,7 @@ export default async function AllDocumentsPage() {
                 <ClientOnly fallback={
                     <header className="h-16 bg-white border-b border-brown-light/20"></header>
                 }>
-                    <HomeHeader />
+                    <HomeHeader title="My Documents" />
                 </ClientOnly>
 
                 {/* Content */}

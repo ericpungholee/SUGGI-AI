@@ -19,11 +19,10 @@ export default function CreateFolderButton() {
         <>
             <button 
                 onClick={handleCreateFolder}
-                className="inline-flex items-center gap-2 bg-brown-medium text-white px-4 py-2 rounded-lg hover:bg-brown-dark transition-colors border-2 border-red-500"
-                style={{ minWidth: '120px', minHeight: '40px', color: 'white' }}
+                className="inline-flex items-center justify-center bg-white w-12 h-12 rounded-lg hover:bg-gray-100 transition-colors shadow-sm border border-gray-200"
+                title="Create New Folder"
             >
-                <Plus className="w-4 h-4" style={{ color: 'white' }} />
-                <span style={{ color: 'white' }}>New Folder</span>
+                <Plus className="w-6 h-6 text-black" />
             </button>
 
             <CreateFolderModal

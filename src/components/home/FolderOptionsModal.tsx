@@ -19,6 +19,7 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
     const [editName, setEditName] = useState('')
     const [isUpdating, setIsUpdating] = useState(false)
     const [isDeleting, setIsDeleting] = useState(false)
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
     if (!isOpen || !folder) return null
 
@@ -60,10 +61,6 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
     }
 
     const handleDelete = async () => {
-        if (!confirm(`Are you sure you want to delete "${folder.name}"? This action cannot be undone.`)) {
-            return
-        }
-
         setIsDeleting(true)
         try {
             const response = await fetch(`/api/folders/${folder.id}`, {
@@ -88,6 +85,7 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
         if (!isUpdating && !isDeleting) {
             setIsEditing(false)
             setEditName('')
+            setShowDeleteConfirm(false)
             onClose()
         }
     }
@@ -166,16 +164,62 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
                     {/* Delete Button */}
                     <div className="pt-4 border-t border-brown-light/20">
                         <button
-                            onClick={handleDelete}
+                            onClick={() => setShowDeleteConfirm(true)}
                             className="w-full flex items-center gap-3 px-4 py-3 text-left text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             disabled={isUpdating || isDeleting}
                         >
                             <Trash2 className="w-5 h-5" />
-                            <span>{isDeleting ? 'Deleting...' : 'Delete folder'}</span>
+                            <span>Delete folder</span>
                         </button>
                     </div>
                 </div>
             </div>
+
+            {/* Delete Confirmation Modal */}
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl p-6 max-w-md mx-4 shadow-2xl border border-gray-200 transform transition-all duration-200 scale-100">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                                <Trash2 className="w-5 h-5 text-red-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Delete Folder</h3>
+                        </div>
+                        <p className="text-gray-600 mb-6">
+                            Are you sure you want to delete "{folder.name}"? This action cannot be undone and will also delete all documents and subfolders inside.
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => setShowDeleteConfirm(false)}
+                                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors font-medium"
+                                disabled={isDeleting}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowDeleteConfirm(false)
+                                    handleDelete()
+                                }}
+                                disabled={isDeleting}
+                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium"
+                            >
+                                {isDeleting ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                        Deleting...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Trash2 className="w-4 h-4" />
+                                        Delete Folder
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

@@ -51,7 +51,7 @@ export default async function Home() {
                 <ClientOnly fallback={
                     <header className="h-16 bg-white border-b border-brown-light/20"></header>
                 }>
-                    <HomeHeader />
+                    <HomeHeader title="Home" />
                 </ClientOnly>
 
                 {/* Content */}

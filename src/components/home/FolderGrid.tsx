@@ -129,11 +129,11 @@ export default function FolderGrid({ showCreateButton = true }: FolderGridProps)
                 <p className="text-ink/50 mb-6">Create your first folder to organize your documents</p>
                 <button 
                     onClick={handleCreateFolder}
-                    className="inline-flex items-center gap-2 bg-brown-medium text-white px-4 py-2 rounded-lg hover:bg-brown-dark transition-colors"
-                    style={{ color: 'white' }}
+                    className="inline-flex items-center justify-center bg-white w-12 h-12 rounded-lg hover:bg-gray-100 transition-colors shadow-sm border border-gray-200"
+                    title="Create Folder"
+                    style={{ backgroundColor: 'white', borderColor: '#e5e7eb' }}
                 >
-                    <Plus className="w-4 h-4" style={{ color: 'white' }} />
-                    <span style={{ color: 'white' }}>Create Folder</span>
+                    <Plus className="w-6 h-6 text-black" style={{ color: 'black' }} />
                 </button>
             </div>
         )
@@ -146,11 +146,11 @@ export default function FolderGrid({ showCreateButton = true }: FolderGridProps)
                     <h2 className="text-lg font-medium text-ink">Your Folders</h2>
                     <button
                         onClick={handleCreateFolder}
-                        className="inline-flex items-center gap-2 bg-brown-medium text-white px-4 py-2 rounded-lg hover:bg-brown-dark transition-colors"
-                        style={{ color: 'white' }}
+                        className="inline-flex items-center justify-center bg-white w-12 h-12 rounded-lg hover:bg-gray-100 transition-colors shadow-sm border border-gray-200"
+                        title="Create New Folder"
+                        style={{ backgroundColor: 'white', borderColor: '#e5e7eb' }}
                     >
-                        <Plus className="w-4 h-4" style={{ color: 'white' }} />
-                        <span style={{ color: 'white' }}>New Folder</span>
+                        <Plus className="w-6 h-6 text-black" style={{ color: 'black' }} />
                     </button>
                 </div>
             )}
