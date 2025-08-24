@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
-export async function GET() {
+export async function GET(request: Request) {
     try {
         const session = await getServerSession(authOptions)
         
@@ -14,11 +14,14 @@ export async function GET() {
             )
         }
 
+        const { searchParams } = new URL(request.url)
+        const parentId = searchParams.get('parentId')
+
         const folders = await prisma.folder.findMany({
             where: {
                 userId: session.user.id,
                 isDeleted: false,
-                parentId: null // Only top-level folders for now
+                parentId: parentId || null
             },
             orderBy: {
                 updatedAt: 'desc'
@@ -33,6 +36,11 @@ export async function GET() {
                             where: {
                                 isDeleted: false
                             }
+                        },
+                        children: {
+                            where: {
+                                isDeleted: false
+                            }
                         }
                     }
                 }
@@ -43,8 +51,9 @@ export async function GET() {
         const transformedFolders = folders.map(folder => ({
             id: folder.id,
             name: folder.name,
-            count: folder._count.documents.length,
-            color: getRandomColor(folder.id) // Generate consistent color based on ID
+            count: folder._count.documents.length + folder._count.children.length,
+            color: getRandomColor(folder.id), // Generate consistent color based on ID
+            icon: folder.icon
         }))
 
         return NextResponse.json(transformedFolders)
@@ -52,6 +61,69 @@ export async function GET() {
         console.error('Error fetching folders:', error)
         return NextResponse.json(
             { error: 'Failed to fetch folders' },
+            { status: 500 }
+        )
+    }
+}
+
+export async function POST(request: Request) {
+    try {
+        const session = await getServerSession(authOptions)
+        
+        if (!session?.user?.id) {
+            return NextResponse.json(
+                { error: "Unauthorized" },
+                { status: 401 }
+            )
+        }
+
+        const { name, icon, parentId } = await request.json()
+
+        if (!name || !name.trim()) {
+            return NextResponse.json(
+                { error: "Folder name is required" },
+                { status: 400 }
+            )
+        }
+
+        // Check if folder with same name already exists for this user
+        const existingFolder = await prisma.folder.findFirst({
+            where: {
+                userId: session.user.id,
+                name: name.trim(),
+                isDeleted: false,
+                parentId: parentId || null
+            }
+        })
+
+        if (existingFolder) {
+            return NextResponse.json(
+                { error: "A folder with this name already exists" },
+                { status: 409 }
+            )
+        }
+
+        const newFolder = await prisma.folder.create({
+            data: {
+                name: name.trim(),
+                icon: icon || 'folder',
+                userId: session.user.id,
+                parentId: parentId || null
+            },
+            select: {
+                id: true,
+                name: true,
+                icon: true,
+                createdAt: true,
+                updatedAt: true
+            }
+        })
+
+        return NextResponse.json(newFolder, { status: 201 })
+    } catch (error) {
+        console.error('Error creating folder:', error)
+        return NextResponse.json(
+            { error: 'Failed to create folder' },
             { status: 500 }
         )
     }

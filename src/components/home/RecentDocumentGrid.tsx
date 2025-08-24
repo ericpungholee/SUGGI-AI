@@ -103,9 +103,10 @@ export default function RecentDocumentGrid() {
                 <button 
                     onClick={handleCreateDocument}
                     className="inline-flex items-center gap-2 bg-brown-medium text-white px-4 py-2 rounded-lg hover:bg-brown-dark transition-colors"
+                    style={{ color: 'white' }}
                 >
-                    <Plus className="w-4 h-4" />
-                    Create Document
+                    <Plus className="w-4 h-4" style={{ color: 'white' }} />
+                    <span style={{ color: 'white' }}>Create Document</span>
                 </button>
             </div>
         )
@@ -130,9 +131,10 @@ export default function RecentDocumentGrid() {
                     <button
                         onClick={handleCreateDocument}
                         className="inline-flex items-center gap-2 bg-brown-medium text-white px-3 py-2 rounded-lg hover:bg-brown-dark transition-colors text-sm"
+                        style={{ color: 'white' }}
                     >
-                        <Plus className="w-4 h-4" />
-                        New Document
+                        <Plus className="w-4 h-4" style={{ color: 'white' }} />
+                        <span style={{ color: 'white' }}>New Document</span>
                     </button>
                 </div>
             </div>

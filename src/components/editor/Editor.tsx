@@ -44,7 +44,6 @@ export default function Editor({
     const [lastSaved, setLastSaved] = useState<Date | null>(null)
     const [saveError, setSaveError] = useState<string | null>(null)
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
-    const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
     const [isLoading, setIsLoading] = useState(false)
     const [isDeleting, setIsDeleting] = useState(false)
@@ -57,9 +56,6 @@ export default function Editor({
     
     // Image editing state
     const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null)
-
-    // Auto-save timer
-    const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
 
     // Prevent hydration mismatch by only running on client
     useEffect(() => {
@@ -90,8 +86,13 @@ export default function Editor({
     useEffect(() => {
         if (!mounted) return
         
+        console.log('Initializing editor with documentId:', documentId)
+        
         if (documentId === 'new') {
             // For new documents, use default content
+            console.log('Setting up new document')
+            setDocumentTitle('Untitled Document')
+            setOriginalTitle('Untitled Document')
             if (editorRef.current) {
                 editorRef.current.innerHTML = content
                 setUndoStack([content])
@@ -103,70 +104,92 @@ export default function Editor({
         }
     }, [documentId, mounted])
 
-        // Load document content from API
-        const loadDocumentContent = useCallback(async () => {
-            if (!mounted) return
+    // Load document content from API
+    const loadDocumentContent = useCallback(async () => {
+        if (!mounted) return
+        
+        try {
+            setIsLoading(true)
+            const response = await fetch(`/api/documents/${documentId}`)
             
-            try {
-                setIsLoading(true)
-                const response = await fetch(`/api/documents/${documentId}`)
+            if (response.ok) {
+                const document = await response.json()
+                console.log('Loaded document:', document)
                 
-                if (response.ok) {
-                    const document = await response.json()
+                // Handle content that might be JSON or string
+                let documentContent = '<p>Start writing your document here...</p>'
+                if (document.content) {
+                    console.log('Raw document content:', document.content)
+                    console.log('Content type:', typeof document.content)
                     
-                    // Handle content that might be JSON or string
-                    let documentContent = '<p>Start writing your document here...</p>'
-                    if (document.content) {
-                        if (typeof document.content === 'string') {
-                            documentContent = document.content
-                        } else if (typeof document.content === 'object' && document.content.html) {
-                            documentContent = document.content.html
-                        } else if (typeof document.content === 'object') {
-                            // If content is an object, try to extract HTML or convert to string
-                            documentContent = JSON.stringify(document.content)
-                        }
-                    }
-                    
-                    // If we still don't have valid HTML, use default content
-                    if (!documentContent || documentContent === '{}' || documentContent === 'null') {
-                        documentContent = '<p>Start writing your document here...</p>'
-                    }
-                    
-                    setContent(documentContent)
-                    setOriginalContent(documentContent)
-                    setUndoStack([documentContent])
-                    
-                    // Set document title with proper fallback
-                    const title = document.title && document.title.trim() !== '' 
-                        ? document.title.trim() 
-                        : 'Untitled Document'
-                    setDocumentTitle(title)
-                    setOriginalTitle(title)
-                    
-                    if (editorRef.current) {
-                        editorRef.current.innerHTML = documentContent
+                    if (typeof document.content === 'string') {
+                        documentContent = document.content
+                        console.log('Content is string, using as-is')
+                    } else if (typeof document.content === 'object' && document.content.html) {
+                        documentContent = document.content.html
+                        console.log('Content is object with html, extracted:', documentContent)
+                    } else if (typeof document.content === 'object') {
+                        // If content is an object, try to extract HTML or convert to string
+                        documentContent = JSON.stringify(document.content)
+                        console.log('Content is object without html, stringified:', documentContent)
                     }
                 } else {
-                    console.error('Failed to load document, status:', response.status)
-                    // Use default content if loading fails
-                    if (editorRef.current) {
-                        editorRef.current.innerHTML = content
-                        setUndoStack([content])
-                        setOriginalContent(content)
-                    }
+                    console.log('No content field found in document')
                 }
-            } catch (error) {
-                console.error('Error loading document:', error)
+                
+                // If we still don't have valid HTML, use default content
+                if (!documentContent || documentContent === '{}' || documentContent === 'null' || documentContent === 'undefined') {
+                    documentContent = '<p>Start writing your document here...</p>'
+                }
+                
+                console.log('Setting document content:', documentContent)
+                setContent(documentContent)
+                setOriginalContent(documentContent)
+                setUndoStack([documentContent])
+                
+                // Set document title with proper fallback
+                const title = document.title && document.title.trim() !== '' 
+                    ? document.title.trim() 
+                    : 'Untitled Document'
+                console.log('Setting document title:', title)
+                setDocumentTitle(title)
+                setOriginalTitle(title)
+                
+                if (editorRef.current) {
+                    editorRef.current.innerHTML = documentContent
+                }
+            } else {
+                console.error('Failed to load document, status:', response.status)
                 // Use default content if loading fails
                 if (editorRef.current) {
                     editorRef.current.innerHTML = content
                     setUndoStack([content])
                     setOriginalContent(content)
                 }
-            } finally {
-                setIsLoading(false)
             }
-        }, [documentId, content, mounted])
+        } catch (error) {
+            console.error('Error loading document:', error)
+            // Use default content if loading fails
+            if (editorRef.current) {
+                editorRef.current.innerHTML = content
+                setUndoStack([content])
+                setOriginalContent(content)
+            }
+        } finally {
+            setIsLoading(false)
+        }
+    }, [documentId, content, mounted])
+
+    // Ensure editor content is synchronized after loading
+    useEffect(() => {
+        if (mounted && editorRef.current && content && content !== '<p>Start writing your document here...</p>') {
+            // Only update if the content is different from the default
+            if (editorRef.current.innerHTML !== content) {
+                console.log('Synchronizing editor content with state:', content)
+                editorRef.current.innerHTML = content
+            }
+        }
+    }, [content, mounted])
 
     // Sync content with parent component
     useEffect(() => {
@@ -200,8 +223,6 @@ export default function Editor({
         }
     }, [showDeleteConfirm, mounted])
 
-
-
     // Save document function
     const saveDocument = useCallback(async (contentToSave: string, showSuccessMessage = true) => {
         if (documentId === 'new') return // Don't save for new documents
@@ -209,6 +230,8 @@ export default function Editor({
         try {
             setIsSaving(true)
             setSaveError(null)
+            
+            console.log('Saving document:', { documentId, title: documentTitle, contentLength: contentToSave.length })
             
             const response = await fetch(`/api/documents/${documentId}`, {
                 method: 'PATCH',
@@ -229,6 +252,7 @@ export default function Editor({
 
             if (response.ok) {
                 const updatedDoc = await response.json()
+                console.log('Document saved successfully:', updatedDoc)
                 setLastSaved(new Date())
                 setOriginalContent(contentToSave)
                 setOriginalTitle(documentTitle.trim())
@@ -242,7 +266,8 @@ export default function Editor({
                 }
             } else {
                 const errorData = await response.json()
-                throw new Error(errorData.error || 'Failed to save document')
+                console.error('Save failed with status:', response.status, errorData)
+                throw new Error(errorData.error || `Failed to save document (${response.status})`)
             }
         } catch (error) {
             console.error('Error saving document:', error)
@@ -255,7 +280,21 @@ export default function Editor({
         } finally {
             setIsSaving(false)
         }
-    }, [documentId])
+    }, [documentId, documentTitle])
+
+    // Auto-save content periodically
+    useEffect(() => {
+        if (!mounted || documentId === 'new' || !hasUnsavedChanges) return
+        
+        const autoSaveTimer = setTimeout(() => {
+            if (hasUnsavedChanges && content !== originalContent) {
+                console.log('Auto-saving document...')
+                saveDocument(content, false)
+            }
+        }, 3000) // Auto-save every 3 seconds if there are unsaved changes
+        
+        return () => clearTimeout(autoSaveTimer)
+    }, [content, originalContent, hasUnsavedChanges, documentId, mounted, saveDocument])
 
     // Manual save function
     const handleManualSave = useCallback(async () => {
@@ -265,66 +304,10 @@ export default function Editor({
         await saveDocument(contentToSave, true)
     }, [documentId, content, saveDocument])
 
-    // Set up auto-save timer
-    useEffect(() => {
-        if (autoSaveTimerRef.current) {
-            clearTimeout(autoSaveTimerRef.current)
-        }
-
-        if (content && documentId !== 'new' && hasUnsavedChanges) {
-            autoSaveTimerRef.current = setTimeout(() => {
-                saveDocument(content, false) // Don't show success message for auto-save
-            }, 3000) // Auto-save after 3 seconds of inactivity
-        }
-
-        return () => {
-            if (autoSaveTimerRef.current) {
-                clearTimeout(autoSaveTimerRef.current)
-            }
-        }
-    }, [content, saveDocument, documentId, hasUnsavedChanges])
-
-    // Handle navigation with unsaved changes
+    // Handle navigation directly without warnings
     const handleNavigation = useCallback((url: string) => {
-        if (hasUnsavedChanges) {
-            setShowUnsavedWarning(true)
-            // Store the intended destination
-            sessionStorage.setItem('pendingNavigation', url)
-        } else {
-            router.push(url)
-        }
-    }, [hasUnsavedChanges, router])
-
-    // Confirm navigation without saving
-    const confirmNavigation = useCallback(() => {
-        setShowUnsavedWarning(false)
-        const pendingUrl = sessionStorage.getItem('pendingNavigation')
-        if (pendingUrl) {
-            sessionStorage.removeItem('pendingNavigation')
-            router.push(pendingUrl)
-        }
+        router.push(url)
     }, [router])
-
-    // Cancel navigation
-    const cancelNavigation = useCallback(() => {
-        setShowUnsavedWarning(false)
-        sessionStorage.removeItem('pendingNavigation')
-    }, [])
-
-    // Save and navigate
-    const saveAndNavigate = useCallback(async () => {
-        if (documentId === 'new') return
-        
-        const contentToSave = editorRef.current?.innerHTML || content
-        await saveDocument(contentToSave, false)
-        
-        // After successful save, navigate
-        const pendingUrl = sessionStorage.getItem('pendingNavigation')
-        if (pendingUrl) {
-            sessionStorage.removeItem('pendingNavigation')
-            router.push(pendingUrl)
-        }
-    }, [documentId, content, saveDocument, router])
 
     // Delete document function
     const handleDeleteDocument = useCallback(async () => {
@@ -1751,8 +1734,9 @@ export default function Editor({
                 <div className="w-px h-6 bg-gray-300"></div>
 
                                  {/* Document Title */}
-                 <div className="flex-1 max-w-md mx-4">
+                 <div className="flex-1 min-w-0 mx-4">
                      <div className="relative">
+
                          {isLoading ? (
                              <div className="w-full px-3 py-2 text-lg font-medium text-gray-400 bg-gray-50 rounded animate-pulse">
                                  Loading...
@@ -1760,7 +1744,7 @@ export default function Editor({
                          ) : (
                              <input
                                  type="text"
-                                 value={documentTitle}
+                                 value={documentTitle || 'Untitled Document'}
                                  onChange={(e) => {
                                      const newTitle = e.target.value
                                      setDocumentTitle(newTitle)
@@ -1770,24 +1754,11 @@ export default function Editor({
                                          // Save title change
                                          setIsSavingTitle(true)
                                          const currentContent = editorRef.current?.innerHTML || content
-                                         fetch(`/api/documents/${documentId}`, {
-                                             method: 'PATCH',
-                                             headers: { 'Content-Type': 'application/json' },
-                                             body: JSON.stringify({ 
-                                                 title: documentTitle.trim(),
-                                                 content: {
-                                                     html: currentContent,
-                                                     plainText: currentContent.replace(/<[^>]*>/g, ''),
-                                                     wordCount: currentContent.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length
-                                                 }
-                                             })
-                                         }).then(response => {
-                                             if (response.ok) {
-                                                 // Update original content and title to reflect saved state
-                                                 setOriginalContent(currentContent)
-                                                 setOriginalTitle(documentTitle.trim())
-                                                 setHasUnsavedChanges(false)
-                                             }
+                                         saveDocument(currentContent, false).then(() => {
+                                             // Update original content and title to reflect saved state
+                                             setOriginalContent(currentContent)
+                                             setOriginalTitle(documentTitle.trim())
+                                             setHasUnsavedChanges(false)
                                          }).catch(error => {
                                              console.error('Failed to save title:', error)
                                              setSaveError('Failed to save title')
@@ -1805,13 +1776,12 @@ export default function Editor({
                                          e.preventDefault()
                                          // Reset title to original value
                                          if (documentId !== 'new') {
-                                             // Reload the document to get the original title
-                                             loadDocumentContent()
+                                             setDocumentTitle(originalTitle)
                                          }
                                          e.currentTarget.blur()
                                      }
                                  }}
-                                 className={`w-full px-3 py-2 text-lg font-medium text-gray-900 bg-white border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors ${
+                                 className={`w-full px-3 py-2 text-lg font-medium text-gray-900 bg-white border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors min-w-0 ${
                                      isSavingTitle ? 'ring-2 ring-blue-300 bg-blue-50 border-blue-300' : ''
                                  }`}
                                  placeholder="Untitled Document"
@@ -1838,21 +1808,23 @@ export default function Editor({
                  <div className="flex items-center gap-2 mr-4">
                      <button
                          onClick={handleManualSave}
-                         disabled={isSaving || documentId === 'new' || !hasUnsavedChanges}
+                         disabled={isSaving || documentId === 'new'}
                          className={`p-2 rounded-lg transition-all ${
                              isSaving 
                                  ? 'bg-blue-100 text-blue-700 cursor-not-allowed' 
                                  : hasUnsavedChanges 
                                      ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm' 
-                                     : 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                                     : 'bg-green-100 text-green-700'
                          }`}
                          title={documentId === 'new' ? 'Save document first' : hasUnsavedChanges ? 'Save document (Ctrl+S)' : 'All changes saved'}
                          suppressHydrationWarning
                      >
                          {isSaving ? (
                              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                         ) : (
+                         ) : hasUnsavedChanges ? (
                              <Save className="w-4 h-4" />
+                         ) : (
+                             <div className="w-4 h-4 text-green-600">✓</div>
                          )}
                      </button>
                     
@@ -1864,12 +1836,9 @@ export default function Editor({
                         </div>
                     )}
                     
-                    {hasUnsavedChanges && !isSaving && !saveError && (
-                        <div className="flex items-center gap-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
-                            <span className="text-yellow-600">⚠️</span>
-                            <span className="text-sm text-yellow-700">Unsaved changes</span>
-                        </div>
-                    )}
+
+
+                    
                 </div>
 
                 <div className="w-px h-6 bg-gray-300"></div>
@@ -2124,6 +2093,12 @@ export default function Editor({
                             handleImageRightClick(e)
                         }}
                         onBlur={() => {
+                            // Save content when editor loses focus if there are unsaved changes
+                            if (documentId !== 'new' && hasUnsavedChanges && content !== originalContent) {
+                                console.log('Saving on blur...')
+                                saveDocument(content, false)
+                            }
+                            
                             // Only reset format state when editor loses focus and no text is selected
                             setTimeout(() => {
                                 const selection = window.getSelection()
@@ -2184,13 +2159,10 @@ export default function Editor({
                     <span>{getWordCount()} words</span>
                     <span>{getCharCount()} characters</span>
                     {isSaving && <span className="text-blue-600">Saving...</span>}
-                    {lastSaved && !isSaving && (
-                        <span className="text-green-600">
-                            Saved {lastSaved.toLocaleTimeString()}
-                        </span>
-                    )}
-                    {hasUnsavedChanges && !isSaving && (
-                        <span className="text-yellow-600">Unsaved changes</span>
+
+
+                    {saveError && (
+                        <span className="text-red-600">Save failed</span>
                     )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -2200,45 +2172,7 @@ export default function Editor({
                 </div>
             </div>
 
-            {/* Unsaved Changes Warning Modal */}
-            {showUnsavedWarning && (
-                <div className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl p-6 max-w-md mx-4 shadow-2xl border border-gray-200 transform transition-all duration-200 scale-100">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
-                                <span className="text-yellow-600 text-xl">⚠️</span>
-                            </div>
-                            <h3 className="text-lg font-semibold text-gray-900">Unsaved Changes</h3>
-                        </div>
-                        <p className="text-gray-600 mb-6">
-                            You have unsaved changes. Do you want to save them before leaving?
-                        </p>
-                        <div className="flex gap-3 justify-end">
-                            <button
-                                onClick={cancelNavigation}
-                                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors font-medium"
-                                suppressHydrationWarning
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={confirmNavigation}
-                                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors font-medium"
-                                suppressHydrationWarning
-                            >
-                                Leave without saving
-                            </button>
-                            <button
-                                onClick={saveAndNavigate}
-                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                                suppressHydrationWarning
-                            >
-                                Save and leave
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+
 
             {/* Delete Confirmation Modal */}
             {showDeleteConfirm && (

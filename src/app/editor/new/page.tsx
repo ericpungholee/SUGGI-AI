@@ -46,11 +46,12 @@ export default function NewDocumentPage() {
                 router.push(`/editor/${newDocument.id}`)
             } else {
                 const errorData = await response.json()
-                setError(errorData.error || 'Failed to create document')
+                console.error('Failed to create document:', response.status, errorData)
+                setError(errorData.error || `Failed to create document (${response.status})`)
             }
         } catch (err) {
             console.error('Error creating document:', err)
-            setError('Failed to create document. Please try again.')
+            setError('Failed to create document. Please check your connection and try again.')
         } finally {
             setIsCreating(false)
         }

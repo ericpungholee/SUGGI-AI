@@ -45,6 +45,15 @@ export async function GET(
             )
         }
 
+        console.log('API: Document content structure:', {
+            id: document.id,
+            title: document.title,
+            contentType: typeof document.content,
+            content: document.content,
+            plainText: document.plainText,
+            wordCount: document.wordCount
+        })
+
         return NextResponse.json(document)
     } catch (error) {
         console.error('Error fetching document:', error)
@@ -70,7 +79,7 @@ export async function PATCH(
         }
 
         const { id } = await params
-        const { title, content, plainText, wordCount, isStarred } = await request.json()
+        const { title, content, plainText, wordCount, isStarred, folderId } = await request.json()
 
         // Verify the document belongs to the user
         const existingDocument = await prisma.document.findFirst({
@@ -88,27 +97,86 @@ export async function PATCH(
             )
         }
 
+        // If moving to a different folder, verify the folder exists and belongs to the user
+        if (folderId !== undefined && folderId !== existingDocument.folderId) {
+            if (folderId) {
+                const targetFolder = await prisma.folder.findFirst({
+                    where: {
+                        id: folderId,
+                        userId: session.user.id,
+                        isDeleted: false
+                    }
+                })
+                
+                if (!targetFolder) {
+                    return NextResponse.json(
+                        { error: "Target folder not found" },
+                        { status: 404 }
+                    )
+                }
+            }
+        }
+
+        // Prepare update data with proper content structure
+        const updateData: any = {
+            updatedAt: new Date()
+        }
+
+        if (title !== undefined) {
+            updateData.title = title
+        }
+
+        if (content !== undefined) {
+            // Ensure content is properly structured
+            if (typeof content === 'string') {
+                updateData.content = {
+                    html: content,
+                    plainText: content.replace(/<[^>]*>/g, ''),
+                    wordCount: content.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length
+                }
+            } else if (typeof content === 'object' && content.html) {
+                updateData.content = content
+            }
+            
+            console.log('API: Saving content structure:', {
+                originalContent: content,
+                updateDataContent: updateData.content,
+                contentType: typeof updateData.content
+            })
+        }
+
+        if (plainText !== undefined) {
+            updateData.plainText = plainText
+        }
+
+        if (wordCount !== undefined) {
+            updateData.wordCount = wordCount
+        }
+
+        if (isStarred !== undefined) {
+            updateData.isStarred = isStarred
+        }
+
+        if (folderId !== undefined) {
+            updateData.folderId = folderId
+        }
+
         // Update the document
         const updatedDocument = await prisma.document.update({
             where: {
                 id: id
             },
-            data: {
-                ...(title && { title }),
-                ...(content && { content }),
-                ...(plainText !== undefined && { plainText }),
-                ...(wordCount !== undefined && { wordCount }),
-                ...(isStarred !== undefined && { isStarred }),
-                updatedAt: new Date()
-            },
+            data: updateData,
             select: {
                 id: true,
                 title: true,
+                content: true,
                 plainText: true,
                 wordCount: true,
                 isStarred: true,
                 updatedAt: true,
-                createdAt: true
+                createdAt: true,
+                folderId: true
             }
         })
 
