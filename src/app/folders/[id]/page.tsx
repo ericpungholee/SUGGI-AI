@@ -6,6 +6,7 @@ import ClientOnly from "@/components/ui/ClientOnly";
 import Sidebar from "@/components/home/Sidebar";
 import HomeHeader from "@/components/home/HomeHeader";
 import FolderContent from "@/components/home/FolderContent";
+import FolderOptionsButton from "@/components/home/FolderOptionsButton";
 
 interface FolderPageProps {
     params: {
@@ -42,6 +43,20 @@ export default async function FolderPage({ params }: FolderPageProps) {
                     id: true,
                     name: true
                 }
+            },
+            _count: {
+                select: {
+                    documents: {
+                        where: {
+                            isDeleted: false
+                        }
+                    },
+                    children: {
+                        where: {
+                            isDeleted: false
+                        }
+                    }
+                }
             }
         }
     });
@@ -49,6 +64,14 @@ export default async function FolderPage({ params }: FolderPageProps) {
     if (!folder) {
         notFound();
     }
+
+    // Transform the data to include count
+    const folderWithCount = {
+        id: folder.id,
+        name: folder.name,
+        icon: folder.icon,
+        count: folder._count.documents.length + folder._count.children.length
+    };
 
     return (
         <div className="flex h-screen bg-stone-light">
@@ -97,6 +120,11 @@ export default async function FolderPage({ params }: FolderPageProps) {
                                 <p className="text-ink/60">
                                     Created {new Date(folder.createdAt).toLocaleDateString()}
                                 </p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <ClientOnly fallback={<div className="w-32 h-10 bg-gray-200 rounded-lg animate-pulse"></div>}>
+                                    <FolderOptionsButton folder={folderWithCount} />
+                                </ClientOnly>
                             </div>
                         </div>
                     </div>

@@ -45,12 +45,10 @@ export default function FolderGrid({ showCreateButton = true }: FolderGridProps)
                 setFolders(data)
             } else {
                 const errorData = await response.json()
-                console.error('Failed to fetch folders:', errorData)
                 setError(errorData.error || 'Failed to fetch folders')
                 setFolders([])
             }
         } catch (error) {
-            console.error('Error fetching folders:', error)
             setError('Network error occurred')
             setFolders([])
         } finally {

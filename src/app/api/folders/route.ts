@@ -51,14 +51,13 @@ export async function GET(request: Request) {
         const transformedFolders = folders.map(folder => ({
             id: folder.id,
             name: folder.name,
-            count: folder._count.documents.length + folder._count.children.length,
+            count: folder._count.documents + folder._count.children,
             color: getColorFromIcon(folder.icon), // Use the actual selected color
             icon: folder.icon
         }))
 
         return NextResponse.json(transformedFolders)
     } catch (error) {
-        console.error('Error fetching folders:', error)
         return NextResponse.json(
             { error: 'Failed to fetch folders' },
             { status: 500 }
@@ -121,7 +120,6 @@ export async function POST(request: Request) {
 
         return NextResponse.json(newFolder, { status: 201 })
     } catch (error) {
-        console.error('Error creating folder:', error)
         return NextResponse.json(
             { error: 'Failed to create folder' },
             { status: 500 }

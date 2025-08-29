@@ -79,7 +79,6 @@ export async function PUT(
 
         return NextResponse.json(updatedFolder)
     } catch (error) {
-        console.error('Error updating folder:', error)
         return NextResponse.json(
             { error: 'Failed to update folder' },
             { status: 500 }
@@ -169,7 +168,6 @@ export async function DELETE(
 
         return NextResponse.json({ message: "Folder deleted successfully" })
     } catch (error) {
-        console.error('Error deleting folder:', error)
         return NextResponse.json(
             { error: 'Failed to delete folder' },
             { status: 500 }

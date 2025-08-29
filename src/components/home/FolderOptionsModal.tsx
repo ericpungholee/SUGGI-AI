@@ -1,6 +1,6 @@
 'use client'
-import { useState } from 'react'
-import { X, Edit, Trash2, Folder } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Edit, Trash2, Folder, Check, AlertCircle } from 'lucide-react'
 
 interface FolderOptionsModalProps {
     isOpen: boolean
@@ -20,12 +20,47 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
     const [isUpdating, setIsUpdating] = useState(false)
     const [isDeleting, setIsDeleting] = useState(false)
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+    const [successMessage, setSuccessMessage] = useState<string | null>(null)
+
+    // Reset state when modal opens/closes or folder changes
+    useEffect(() => {
+        if (isOpen && folder) {
+            console.log('Modal opening - resetting state for folder:', folder)
+            // Force reset all state when modal opens - always start in view mode
+            setIsEditing(false)
+            setEditName('')
+            setError(null)
+            setSuccessMessage(null)
+            setShowDeleteConfirm(false)
+            setIsUpdating(false)
+            setIsDeleting(false)
+        }
+    }, [isOpen, folder?.id])
 
     if (!isOpen || !folder) return null
 
+    // Debug: Log the current state
+    console.log('Modal render state:', { 
+        isEditing, 
+        editName, 
+        isOpen, 
+        folderName: folder.name,
+        folderCount: folder.count
+    })
+
+    // Simple check - if editing, show form; if not, show button
+    const shouldShowEditForm = isEditing
+    const shouldShowEditButton = !isEditing
+    
+    console.log('Render logic:', { shouldShowEditForm, shouldShowEditButton, isEditing, editName })
+
     const handleEdit = () => {
+        console.log('Edit button clicked, setting edit mode for folder:', folder.name)
         setEditName(folder.name)
         setIsEditing(true)
+        setError(null)
+        setSuccessMessage(null)
     }
 
     const handleSave = async () => {
@@ -34,7 +69,21 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
             return
         }
 
+        // Additional validation
+        if (editName.trim().length < 1) {
+            setError('Folder name cannot be empty')
+            return
+        }
+
+        if (editName.trim().length > 100) {
+            setError('Folder name is too long (max 100 characters)')
+            return
+        }
+        
         setIsUpdating(true)
+        setError(null)
+        setSuccessMessage(null)
+        
         try {
             const response = await fetch(`/api/folders/${folder.id}`, {
                 method: 'PUT',
@@ -47,14 +96,27 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
             })
 
             if (response.ok) {
+                setSuccessMessage('Folder renamed successfully!')
+                
+                // Call the update callback first
                 onFolderUpdated()
+                
+                // Reset the editing state
                 setIsEditing(false)
+                setEditName('')
+                
+                // Close the modal after a brief delay to show success message
+                setTimeout(() => {
+                    onClose()
+                }, 1500)
             } else {
-                const error = await response.json()
-                console.error('Failed to update folder:', error)
+                const errorData = await response.json()
+                const errorMessage = errorData.error || 'Failed to rename folder'
+                setError(errorMessage)
             }
         } catch (error) {
-            console.error('Error updating folder:', error)
+            const errorMessage = 'Network error occurred. Please try again.'
+            setError(errorMessage)
         } finally {
             setIsUpdating(false)
         }
@@ -72,10 +134,10 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
                 onClose()
             } else {
                 const error = await response.json()
-                console.error('Failed to delete folder:', error)
+                // Handle error silently or show user feedback
             }
         } catch (error) {
-            console.error('Error deleting folder:', error)
+            // Handle network error silently or show user feedback
         } finally {
             setIsDeleting(false)
         }
@@ -86,12 +148,21 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
             setIsEditing(false)
             setEditName('')
             setShowDeleteConfirm(false)
+            setError(null)
+            setSuccessMessage(null)
             onClose()
         }
     }
 
+    const handleCancelEdit = () => {
+        setIsEditing(false)
+        setEditName('')
+        setError(null)
+        setSuccessMessage(null)
+    }
+
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
                 <div className="flex items-center justify-between mb-6">
                     <h2 className="text-xl font-semibold text-ink">Folder Options</h2>
@@ -112,12 +183,30 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
                         </div>
                         <div>
                             <h3 className="font-medium text-ink">{folder.name}</h3>
-                            <p className="text-sm text-ink/60">{folder.count} items</p>
+                            <p className="text-sm text-ink/60">
+                                {typeof folder.count === 'number' && !isNaN(folder.count) ? folder.count : 0} items
+                            </p>
                         </div>
                     </div>
 
+                    {/* Success Message */}
+                    {successMessage && (
+                        <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <Check className="w-5 h-5 text-green-600" />
+                            <span className="text-green-800 text-sm">{successMessage}</span>
+                        </div>
+                    )}
+
+                    {/* Error Message */}
+                    {error && (
+                        <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                            <AlertCircle className="w-5 h-5 text-red-600" />
+                            <span className="text-red-800 text-sm">{error}</span>
+                        </div>
+                    )}
+
                     {/* Edit Name */}
-                    {isEditing ? (
+                    {shouldShowEditForm ? (
                         <div className="space-y-3">
                             <label htmlFor="editName" className="block text-sm font-medium text-ink">
                                 Folder Name
@@ -130,10 +219,11 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
                                 className="w-full px-3 py-2 border border-brown-light/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-brown-medium focus:border-transparent"
                                 disabled={isUpdating}
                                 autoFocus
+                                placeholder="Enter folder name"
                             />
                             <div className="flex gap-3">
                                 <button
-                                    onClick={() => setIsEditing(false)}
+                                    onClick={handleCancelEdit}
                                     className="px-4 py-2 border border-brown-light/20 text-ink rounded-lg hover:bg-stone-light transition-colors"
                                     disabled={isUpdating}
                                 >
@@ -142,9 +232,19 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
                                 <button
                                     onClick={handleSave}
                                     disabled={!editName.trim() || editName === folder.name || isUpdating}
-                                    className="px-4 py-2 bg-brown-medium text-white rounded-lg hover:bg-brown-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="px-4 py-2 bg-white text-black border border-brown-light/20 rounded-lg hover:bg-stone-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                                 >
-                                    {isUpdating ? 'Saving...' : 'Save'}
+                                    {isUpdating ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                                            Saving...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Check className="w-4 h-4" />
+                                            Save
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         </div>
@@ -177,7 +277,7 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
 
             {/* Delete Confirmation Modal */}
             {showDeleteConfirm && (
-                <div className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-50">
+                <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-[60]">
                     <div className="bg-white rounded-xl p-6 max-w-md mx-4 shadow-2xl border border-gray-200 transform transition-all duration-200 scale-100">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
@@ -223,3 +323,4 @@ export default function FolderOptionsModal({ isOpen, onClose, folder, onFolderUp
         </div>
     )
 }
+

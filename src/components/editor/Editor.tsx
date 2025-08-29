@@ -2176,7 +2176,7 @@ export default function Editor({
 
             {/* Delete Confirmation Modal */}
             {showDeleteConfirm && (
-                <div className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-50">
+                <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
                     <div className="delete-modal-container bg-white rounded-xl p-6 max-w-md mx-4 shadow-2xl border border-gray-200 transform transition-all duration-200 scale-100">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
