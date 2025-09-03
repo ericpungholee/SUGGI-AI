@@ -2,7 +2,6 @@
 import { useState, useCallback } from 'react'
 import { use } from 'react'
 import Editor from '@/components/editor/Editor'
-import EditorSidebar from '@/components/editor/EditorSidebar'
 
 export default function EditorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -20,12 +19,6 @@ export default function EditorPage({ params }: { params: Promise<{ id: string }>
         <Editor 
           documentId={id} 
           onContentChange={handleContentChange}
-        />
-        
-        {/* Sidebar */}
-        <EditorSidebar 
-          content={content}
-          documentId={id}
         />
       </div>
     </div>

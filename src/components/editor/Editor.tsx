@@ -8,8 +8,9 @@ import {
     List, ListOrdered, Quote, Link2, 
     AlignLeft, AlignCenter, AlignRight, AlignJustify,
     Code, Undo2, Redo2,
-    Palette, ArrowLeft, Save, Trash2
+    Palette, ArrowLeft, Save, Trash2, Feather, Check
 } from "lucide-react";
+import AIChatPanel from './AIChatPanel';
 
 export default function Editor({ 
   documentId, 
@@ -51,6 +52,11 @@ export default function Editor({
     const [originalTitle, setOriginalTitle] = useState('Untitled Document')
     const [isSavingTitle, setIsSavingTitle] = useState(false)
     const [mounted, setMounted] = useState(false)
+    const [justSaved, setJustSaved] = useState(false)
+    
+    // AI Chat Panel state
+    const [isAIChatOpen, setIsAIChatOpen] = useState(false)
+    const [aiChatWidth, setAiChatWidth] = useState(400)
     
     const router = useRouter()
     
@@ -201,11 +207,17 @@ export default function Editor({
         if (documentId !== 'new') {
             const hasContentChanges = originalContent !== content
             const hasTitleChanges = documentTitle.trim() !== originalTitle.trim()
-            setHasUnsavedChanges(hasContentChanges || hasTitleChanges)
+            const hasChanges = hasContentChanges || hasTitleChanges
+            setHasUnsavedChanges(hasChanges)
+            
+            // Clear justSaved state when user makes changes
+            if (hasChanges && justSaved) {
+                setJustSaved(false)
+            }
         } else {
             setHasUnsavedChanges(false)
         }
-    }, [content, originalContent, documentId, documentTitle, originalTitle])
+    }, [content, originalContent, documentId, documentTitle, originalTitle, justSaved])
 
     // Close modals when clicking outside
     useEffect(() => {
@@ -259,9 +271,10 @@ export default function Editor({
                 setHasUnsavedChanges(false)
                 
                 if (showSuccessMessage) {
-                    // Show success indicator briefly
+                    // Show green feedback for manual saves
+                    setJustSaved(true)
                     setTimeout(() => {
-                        // Success state is handled by the UI
+                        setJustSaved(false)
                     }, 2000)
                 }
             } else {
@@ -1205,9 +1218,15 @@ export default function Editor({
                         handleFormat('insertOrderedList')
                     }
                     break
+                case 'l':
+                    if (isShift) {
+                        e.preventDefault()
+                        setIsAIChatOpen(!isAIChatOpen)
+                    }
+                    break
             }
         }
-     }, [handleFormat, undo, redo, handleManualSave])
+     }, [handleFormat, undo, redo, handleManualSave, isAIChatOpen])
 
     // Handle content changes from the editor
     const handleContentChange = useCallback(() => {
@@ -1810,22 +1829,16 @@ export default function Editor({
                          onClick={handleManualSave}
                          disabled={isSaving || documentId === 'new'}
                          className={`p-2 rounded-lg transition-all ${
-                             isSaving 
-                                 ? 'bg-blue-100 text-blue-700 cursor-not-allowed' 
-                                 : hasUnsavedChanges 
-                                     ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm' 
-                                     : 'bg-green-100 text-green-700'
+                             justSaved
+                                 ? 'bg-white text-green-600 border-2 border-green-500'
+                                 : isSaving
+                                     ? 'bg-gray-100 text-gray-600 cursor-not-allowed'
+                                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                          }`}
                          title={documentId === 'new' ? 'Save document first' : hasUnsavedChanges ? 'Save document (Ctrl+S)' : 'All changes saved'}
                          suppressHydrationWarning
                      >
-                         {isSaving ? (
-                             <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                         ) : hasUnsavedChanges ? (
-                             <Save className="w-4 h-4" />
-                         ) : (
-                             <div className="w-4 h-4 text-green-600">✓</div>
-                         )}
+                         <Check className="w-4 h-4" />
                      </button>
                     
                     {/* Save Status Indicator */}
@@ -2055,10 +2068,31 @@ export default function Editor({
                     <Link2 className="w-4 h-4 text-gray-600" />
                 </button>
 
+                <div className="w-px h-6 bg-gray-300"></div>
+
+                {/* AI Chat Toggle */}
+                <button
+                    onClick={() => setIsAIChatOpen(!isAIChatOpen)}
+                    className={`p-2 rounded transition-colors ${
+                        isAIChatOpen 
+                            ? 'bg-black text-white' 
+                            : 'hover:bg-gray-100 text-black'
+                    }`}
+                    title="Toggle AI Assistant (Ctrl+Shift+L)"
+                    suppressHydrationWarning
+                >
+                    <Feather className="w-4 h-4" />
+                </button>
+
                 </div>
 
             {/* Writing Area */}
-            <div className="flex-1 overflow-y-auto editor-content">
+            <div 
+                className="flex-1 overflow-y-auto editor-content transition-all duration-300 ease-in-out"
+                style={{ 
+                    marginRight: isAIChatOpen ? `${aiChatWidth}px` : '0px'
+                }}
+            >
                 <div className="max-w-4xl mx-auto p-8">
                     <div
                         ref={editorRef}
@@ -2217,6 +2251,14 @@ export default function Editor({
                     </div>
                 </div>
             )}
+
+            {/* AI Chat Panel */}
+            <AIChatPanel
+                isOpen={isAIChatOpen}
+                onClose={() => setIsAIChatOpen(false)}
+                width={aiChatWidth}
+                onWidthChange={setAiChatWidth}
+            />
         </div>
     )
 }
