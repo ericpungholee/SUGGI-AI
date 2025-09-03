@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Home, FileText, Folder, Clock, Star, Settings, Plus, Search, User, LogOut, Feather } from 'lucide-react'
+import { Home, FileText, Folder, Clock, Star, Settings, Plus, User, LogOut, Feather } from 'lucide-react'
 import { useState } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 
@@ -57,29 +57,7 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* Search */}
-      {!isCollapsed && (
-        <div className="px-4 mb-4">
-          <form onSubmit={(e) => {
-            e.preventDefault()
-            const formData = new FormData(e.currentTarget)
-            const query = formData.get('search') as string
-            if (query.trim()) {
-              router.push(`/search?q=${encodeURIComponent(query.trim())}`)
-            }
-          }}>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" />
-              <input
-                name="search"
-                type="text"
-                placeholder="Search..."
-                className="w-full pl-10 pr-4 py-2 bg-stone-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brown-light/30 transition-all duration-300 hover:bg-stone-light/80 focus:bg-white"
-              />
-            </div>
-          </form>
-        </div>
-      )}
+
 
       {/* Navigation */}
       <nav className="flex-1 px-2">
