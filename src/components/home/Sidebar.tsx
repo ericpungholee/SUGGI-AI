@@ -31,7 +31,7 @@ export default function Sidebar() {
     } bg-white border-r border-brown-light/20 flex flex-col transition-all duration-300`}>
       {/* Logo */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-brown-light/20">
-        <Link href="/" className={`flex items-center gap-2 ${isCollapsed ? 'hidden' : 'flex'}`}>
+        <Link href={session ? "/home" : "/"} className={`flex items-center gap-2 ${isCollapsed ? 'hidden' : 'flex'}`}>
           <Feather className="w-6 h-6 text-brown-medium" />
           <span className="font-serif text-2xl text-ink">Suggi</span>
         </Link>
