@@ -123,11 +123,12 @@ export default function SearchContent() {
             )}
 
             {!loading && hasSearched && (
-                <div>
+                <div className="mb-6 bg-white border border-brown-light/20 rounded-xl p-6">
                     {results.length > 0 ? (
                         <div>
-                            <div className="mb-4">
-                                <h2 className="text-lg font-medium text-ink/70">
+                            <div className="flex items-center gap-3 mb-4">
+                                <Search className="w-5 h-5 text-brown-medium" />
+                                <h2 className="text-lg font-medium text-ink">
                                     {results.length} result{results.length !== 1 ? 's' : ''} for "{query}"
                                 </h2>
                             </div>
@@ -149,30 +150,26 @@ export default function SearchContent() {
                                         )
                                     } else {
                                         return (
-                                            <div key={`folder-${result.id}`} className="group relative bg-white border border-brown-light/20 rounded-xl p-5 hover:shadow-md transition-all hover:-translate-0.5">
-                                                <div className="flex items-start justify-between mb-3">
-                                                    <Folder className="w-5 h-5 text-blue-600" />
+                                            <Link
+                                                key={`folder-${result.id}`}
+                                                href={getResultLink(result)}
+                                                className="group bg-stone-light rounded-xl p-4 hover:bg-stone-light/80 transition-all hover:-translate-y-0.5 hover:shadow-md"
+                                            >
+                                                <div className="w-12 h-12 bg-brown-light/30 rounded-lg flex items-center justify-center mb-3">
+                                                    <Folder className="w-6 h-6 text-ink/60" />
                                                 </div>
-                                                
-                                                <Link href={getResultLink(result)} className="block">
-                                                    <h3 className="font-medium text-ink mb-2 line-clamp-1 hover:text-brown-medium transition-colors">
-                                                        {result.title}
-                                                    </h3>
-                                                    {result.preview && (
-                                                        <p className="text-sm text-ink/60 mb-3 line-clamp-2">
-                                                            {result.preview}
-                                                        </p>
+                                                <h5 className="font-medium text-ink text-sm mb-1 line-clamp-2 group-hover:text-brown-medium transition-colors">
+                                                    {result.title}
+                                                </h5>
+                                                <div className="flex items-center gap-1 text-xs text-ink/40">
+                                                    {result.lastModified && (
+                                                        <>
+                                                            <Clock className="w-3 h-3" />
+                                                            <span>{result.lastModified}</span>
+                                                        </>
                                                     )}
-                                                    <div className="flex items-center justify-between text-xs text-ink/40">
-                                                        {result.lastModified && (
-                                                            <div className="flex items-center gap-1">
-                                                                <Clock className="w-3 h-3" />
-                                                                <span>{result.lastModified}</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </Link>
-                                            </div>
+                                                </div>
+                                            </Link>
                                         )
                                     }
                                 })}

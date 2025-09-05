@@ -52,7 +52,7 @@ export default function DocumentCard({
     }
 
     return (
-        <div className={`group relative bg-white border border-brown-light/20 rounded-xl p-5 hover:shadow-md transition-all hover:-translate-0.5 ${className}`}>
+        <div className={`group relative bg-stone-light rounded-xl p-4 hover:bg-stone-light/80 transition-all hover:-translate-y-0.5 hover:shadow-md ${className}`}>
             <div className="flex items-start justify-between mb-3">
                 <FileText className="w-5 h-5 text-brown-medium" />
                 {showActions && (
