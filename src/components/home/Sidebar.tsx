@@ -13,10 +13,10 @@ export default function Sidebar() {
 
   const menuItems = [
     { icon: Home, label: 'Home', href: '/home' },
+    { icon: Folder, label: 'Folders', href: '/folders' },
     { icon: FileText, label: 'All Documents', href: '/documents' },
     { icon: Clock, label: 'Recent', href: '/recent' },
     { icon: Star, label: 'Starred', href: '/starred' },
-    { icon: Folder, label: 'Folders', href: '/folders' },
     { icon: Settings, label: 'Settings', href: '/settings' },
   ]
 

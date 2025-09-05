@@ -106,6 +106,27 @@ export async function POST(request: Request) {
 
         const { title, content, folderId } = await request.json()
 
+        // Check for recent duplicate creation (within last 2 seconds)
+        const recentDocument = await prisma.document.findFirst({
+            where: {
+                userId: session.user.id,
+                title: title || "Untitled Document",
+                createdAt: {
+                    gte: new Date(Date.now() - 2000) // 2 seconds ago
+                }
+            },
+            orderBy: {
+                createdAt: 'desc'
+            }
+        })
+
+        if (recentDocument) {
+            return NextResponse.json(
+                { error: "Document created too recently, please wait" },
+                { status: 429 }
+            )
+        }
+
         // Validate folderId if provided
         if (folderId) {
             const folder = await prisma.folder.findFirst({

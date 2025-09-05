@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { Loader2 } from 'lucide-react'
@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react'
 export default function NewDocumentPage() {
     const [isCreating, setIsCreating] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const hasInitiated = useRef(false)
     const { data: session, status } = useSession()
     const router = useRouter()
 
@@ -18,9 +19,12 @@ export default function NewDocumentPage() {
             return
         }
 
-        // Create new document automatically
-        createNewDocument()
-    }, [session, status, router])
+        // Only create document once using ref to prevent multiple calls
+        if (!hasInitiated.current && !isCreating) {
+            hasInitiated.current = true
+            createNewDocument()
+        }
+    }, [session, status, router, isCreating])
 
     const createNewDocument = async () => {
         if (isCreating) return
@@ -81,7 +85,10 @@ export default function NewDocumentPage() {
                     <p className="text-ink/60 mb-6">{error}</p>
                     <div className="flex gap-3 justify-center">
                         <button
-                            onClick={createNewDocument}
+                            onClick={() => {
+                                hasInitiated.current = false
+                                createNewDocument()
+                            }}
                             className="bg-brown-medium text-white px-4 py-2 rounded-lg hover:bg-brown-dark transition-colors"
                         >
                             Try Again

@@ -22,6 +22,7 @@ export default function FolderContent({ folderId }: FolderContentProps) {
     const [documents, setDocuments] = useState<Document[]>([])
     const [loading, setLoading] = useState(true)
     const [showAddModal, setShowAddModal] = useState(false)
+    const [starredDocs, setStarredDocs] = useState<Set<string>>(new Set())
     const router = useRouter()
 
     useEffect(() => {
@@ -37,6 +38,9 @@ export default function FolderContent({ folderId }: FolderContentProps) {
             if (docsResponse.ok) {
                 const docsData = await docsResponse.json()
                 setDocuments(docsData)
+                // Initialize starred state from fetched data
+                const starredIds = new Set(docsData.filter((doc: Document) => doc.starred).map((doc: Document) => doc.id))
+                setStarredDocs(starredIds)
             }
         } catch (error) {
             console.error('Error fetching folder content:', error)
@@ -47,6 +51,63 @@ export default function FolderContent({ folderId }: FolderContentProps) {
 
     const handleDocumentClick = (documentId: string) => {
         router.push(`/editor/${documentId}`)
+    }
+
+    const toggleStar = async (docId: string, e: React.MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        
+        const isCurrentlyStarred = starredDocs.has(docId)
+        
+        // Optimistically update UI
+        setStarredDocs(prev => {
+            const newSet = new Set(prev)
+            if (newSet.has(docId)) {
+                newSet.delete(docId)
+            } else {
+                newSet.add(docId)
+            }
+            return newSet
+        })
+
+        // Update star status in database via API
+        try {
+            const response = await fetch(`/api/documents/${docId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    isStarred: !isCurrentlyStarred
+                })
+            })
+
+            if (!response.ok) {
+                // Revert optimistic update on error
+                setStarredDocs(prev => {
+                    const newSet = new Set(prev)
+                    if (isCurrentlyStarred) {
+                        newSet.add(docId)
+                    } else {
+                        newSet.delete(docId)
+                    }
+                    return newSet
+                })
+                console.error('Failed to update star status')
+            }
+        } catch (error) {
+            // Revert optimistic update on error
+            setStarredDocs(prev => {
+                const newSet = new Set(prev)
+                if (isCurrentlyStarred) {
+                    newSet.add(docId)
+                } else {
+                    newSet.delete(docId)
+                }
+                return newSet
+            })
+            console.error('Error updating star status:', error)
+        }
     }
 
     const handleAddExistingDocument = () => {
@@ -127,9 +188,16 @@ export default function FolderContent({ folderId }: FolderContentProps) {
                                 key={doc.id}
                                 className="group relative bg-white border border-brown-light/20 rounded-xl p-5 hover:shadow-md transition-all hover:-translate-y-0.5"
                             >
-                                {/* 3-dot menu */}
+                                {/* Action buttons */}
                                 <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <div className="relative">
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={(e) => toggleStar(doc.id, e)}
+                                            className="p-1 hover:bg-gray-100 rounded transition-colors"
+                                            title={starredDocs.has(doc.id) ? "Remove from starred" : "Add to starred"}
+                                        >
+                                            <Star className={`w-4 h-4 ${starredDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : 'text-gray-500'}`} />
+                                        </button>
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation()

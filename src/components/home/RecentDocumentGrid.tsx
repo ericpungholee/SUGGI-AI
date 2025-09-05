@@ -49,6 +49,8 @@ export default function RecentDocumentGrid() {
         e.preventDefault()
         e.stopPropagation()
         
+        const isCurrentlyStarred = starredDocs.has(docId)
+        
         // Optimistically update UI
         setStarredDocs(prev => {
             const newSet = new Set(prev)
@@ -60,7 +62,44 @@ export default function RecentDocumentGrid() {
             return newSet
         })
 
-        // TODO: Update star status in database via API
+        // Update star status in database via API
+        try {
+            const response = await fetch(`/api/documents/${docId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    isStarred: !isCurrentlyStarred
+                })
+            })
+
+            if (!response.ok) {
+                // Revert optimistic update on error
+                setStarredDocs(prev => {
+                    const newSet = new Set(prev)
+                    if (isCurrentlyStarred) {
+                        newSet.add(docId)
+                    } else {
+                        newSet.delete(docId)
+                    }
+                    return newSet
+                })
+                console.error('Failed to update star status')
+            }
+        } catch (error) {
+            // Revert optimistic update on error
+            setStarredDocs(prev => {
+                const newSet = new Set(prev)
+                if (isCurrentlyStarred) {
+                    newSet.add(docId)
+                } else {
+                    newSet.delete(docId)
+                }
+                return newSet
+            })
+            console.error('Error updating star status:', error)
+        }
     }
 
     const handleMoreOptions = (e: React.MouseEvent) => {
