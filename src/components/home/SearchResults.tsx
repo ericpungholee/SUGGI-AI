@@ -102,7 +102,7 @@ export default function SearchResults({ results, query, isLoading, onClose }: Se
                             <Link
                                 key={doc.id}
                                 href={`/editor/${doc.id}`}
-                                className="group bg-stone-light rounded-xl p-4 hover:bg-stone-light/80 transition-all hover:-translate-y-0.5 hover:shadow-md"
+                                className="group relative bg-white border border-brown-light/20 rounded-xl p-5 hover:shadow-md transition-all hover:-translate-y-0.5"
                             >
                                 <div className="flex items-start justify-between mb-3">
                                     <FileText className="w-5 h-5 text-brown-medium" />
