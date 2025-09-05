@@ -11,7 +11,7 @@ import {
 import { useState } from "react";
 import { FormatState, ToolbarProps, ToolbarButton } from "@/types";
 
-export default function Toolbar({ position, onFormat, formatState, onUndo, onRedo, canUndo, canRedo }: ToolbarProps) {
+export default function Toolbar({ position, onFormat, formatState, onUndo, onRedo, canUndo, canRedo, onAIClick }: ToolbarProps) {
     const [showColorPicker, setShowColorPicker] = useState(false)
     const [showFontSizePicker, setShowFontSizePicker] = useState(false)
     const [showFontFamilyPicker, setShowFontFamilyPicker] = useState(false)
@@ -393,10 +393,7 @@ export default function Toolbar({ position, onFormat, formatState, onUndo, onRed
                 
                 {/* AI Writing Assistant */}
                 <button
-                    onClick={() => {
-                        // AI features
-                        alert('AI features coming soon!')
-                    }}
+                    onClick={onAIClick}
                     className="p-2 hover:bg-purple-50 rounded-lg transition-all duration-200 hover:scale-105 group relative"
                     title="AI Writing Assistant"
                 >

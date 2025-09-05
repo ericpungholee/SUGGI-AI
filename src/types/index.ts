@@ -38,6 +38,7 @@ export interface ToolbarProps {
     onRedo: () => void;
     canUndo: boolean;
     canRedo: boolean;
+    onAIClick?: () => void;
 }
 
 // Document Types
@@ -203,6 +204,53 @@ export interface ToolbarPosition {
     top: number;
     left: number;
     visible: boolean;
+}
+
+// AI Types
+export interface AIMessage {
+    id: string;
+    type: 'user' | 'assistant';
+    content: string;
+    timestamp: Date;
+    metadata?: {
+        documentId?: string;
+        contextUsed?: string[];
+        tokenUsage?: {
+            prompt: number;
+            completion: number;
+            total: number;
+        };
+    };
+}
+
+export interface AIProposal {
+    id: string;
+    originalText: string;
+    proposedText: string;
+    reason: string;
+    confidence: number;
+    action: 'improve' | 'expand' | 'summarize' | 'rewrite';
+}
+
+export interface AIConversation {
+    id: string;
+    documentId?: string;
+    lastMessage?: string;
+    updatedAt: Date;
+}
+
+export interface DocumentProcessingStatus {
+    isProcessed: boolean;
+    chunkCount: number;
+    lastProcessed?: Date;
+}
+
+export interface WebSearchResult {
+    title: string;
+    url: string;
+    snippet: string;
+    publishedDate?: string;
+    source?: string;
 }
 
 

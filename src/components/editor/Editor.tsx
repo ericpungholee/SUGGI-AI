@@ -2258,6 +2258,7 @@ export default function Editor({
                 onClose={() => setIsAIChatOpen(false)}
                 width={aiChatWidth}
                 onWidthChange={setAiChatWidth}
+                documentId={documentId}
             />
         </div>
     )
