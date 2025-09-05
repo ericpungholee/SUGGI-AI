@@ -1,8 +1,9 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { Search, FileText, Folder, Clock, Star, X } from 'lucide-react'
+import { Search, Folder, Clock, X } from 'lucide-react'
 import Link from 'next/link'
+import DocumentCard from '../ui/DocumentCard'
 
 interface SearchResult {
     id: string
@@ -131,45 +132,50 @@ export default function SearchContent() {
                                 </h2>
                             </div>
                             
-                            <div className="space-y-3">
-                                {results.map((result) => (
-                                    <Link
-                                        key={`${result.type}-${result.id}`}
-                                        href={getResultLink(result)}
-                                        className="block bg-white border border-brown-light/20 rounded-xl p-4 hover:shadow-md transition-all hover:-translate-0.5"
-                                    >
-                                        <div className="flex items-start gap-3">
-                                            {getResultIcon(result)}
-                                            <div className="flex-1 min-w-0">
-                                                <h3 className="font-medium text-ink mb-1 line-clamp-1">
-                                                    {result.title}
-                                                </h3>
-                                                {result.preview && (
-                                                    <p className="text-sm text-ink/60 mb-2 line-clamp-2">
-                                                        {result.preview}
-                                                    </p>
-                                                )}
-                                                <div className="flex items-center gap-4 text-xs text-ink/40">
-                                                    {result.lastModified && (
-                                                        <div className="flex items-center gap-1">
-                                                            <Clock className="w-3 h-3" />
-                                                            <span>{result.lastModified}</span>
-                                                        </div>
-                                                    )}
-                                                    {result.wordCount && (
-                                                        <span>{result.wordCount} words</span>
-                                                    )}
-                                                    {result.starred && (
-                                                        <div className="flex items-center gap-1">
-                                                            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                                                            <span>Starred</span>
-                                                        </div>
-                                                    )}
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                {results.map((result) => {
+                                    if (result.type === 'document') {
+                                        return (
+                                            <DocumentCard
+                                                key={`document-${result.id}`}
+                                                id={result.id}
+                                                title={result.title}
+                                                preview={result.preview || ''}
+                                                lastModified={result.lastModified || ''}
+                                                wordCount={result.wordCount || 0}
+                                                starred={result.starred || false}
+                                                showActions={false}
+                                            />
+                                        )
+                                    } else {
+                                        return (
+                                            <div key={`folder-${result.id}`} className="group relative bg-white border border-brown-light/20 rounded-xl p-5 hover:shadow-md transition-all hover:-translate-0.5">
+                                                <div className="flex items-start justify-between mb-3">
+                                                    <Folder className="w-5 h-5 text-blue-600" />
                                                 </div>
+                                                
+                                                <Link href={getResultLink(result)} className="block">
+                                                    <h3 className="font-medium text-ink mb-2 line-clamp-1 hover:text-brown-medium transition-colors">
+                                                        {result.title}
+                                                    </h3>
+                                                    {result.preview && (
+                                                        <p className="text-sm text-ink/60 mb-3 line-clamp-2">
+                                                            {result.preview}
+                                                        </p>
+                                                    )}
+                                                    <div className="flex items-center justify-between text-xs text-ink/40">
+                                                        {result.lastModified && (
+                                                            <div className="flex items-center gap-1">
+                                                                <Clock className="w-3 h-3" />
+                                                                <span>{result.lastModified}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </Link>
                                             </div>
-                                        </div>
-                                    </Link>
-                                ))}
+                                        )
+                                    }
+                                })}
                             </div>
                         </div>
                     ) : (
