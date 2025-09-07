@@ -180,6 +180,19 @@ export async function PATCH(
             }
         })
 
+        // Trigger vectorization in the background if content was updated
+        if (content !== undefined) {
+            try {
+                const { processDocument } = await import("@/lib/ai")
+                // Don't await this to avoid blocking the response
+                processDocument(id, session.user.id, { forceReprocess: true }).catch(error => {
+                    console.error('Background vectorization failed:', error)
+                })
+            } catch (error) {
+                console.error('Error starting background vectorization:', error)
+            }
+        }
+
         return NextResponse.json(updatedDocument)
     } catch (error) {
         console.error('Error updating document:', error)

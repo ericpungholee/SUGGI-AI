@@ -77,9 +77,9 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
 
     // Generate AI response
     const response = await generateChatCompletion(messages, {
-      model: 'gpt-4',
+      model: 'gpt-4o-mini',
       temperature: 0.7,
-      max_tokens: 1000
+      max_completion_tokens: 1000
     })
 
     const aiMessage = response.choices[0]?.message?.content || 'I apologize, but I was unable to generate a response.'

@@ -22,6 +22,9 @@ export {
 } from './vector-search'
 export type { SearchResult, DocumentSearchOptions } from './vector-search'
 
+// Vector database services (PostgreSQL only)
+// Pinecone removed for simplicity - using PostgreSQL for vector storage
+
 // Document processing services
 export { 
   processDocument, 

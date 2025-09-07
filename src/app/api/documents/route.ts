@@ -196,6 +196,19 @@ export async function POST(request: Request) {
             folderId: newDocument.folderId
         }
 
+        // Trigger vectorization in the background if there's content
+        if (plainText && plainText.trim().length > 0) {
+            try {
+                const { processDocument } = await import("@/lib/ai")
+                // Don't await this to avoid blocking the response
+                processDocument(newDocument.id, session.user.id).catch(error => {
+                    console.error('Background vectorization failed:', error)
+                })
+            } catch (error) {
+                console.error('Error starting background vectorization:', error)
+            }
+        }
+
         return NextResponse.json(transformedDocument, { status: 201 })
     } catch (error) {
         console.error('Error creating document:', error)

@@ -13,7 +13,7 @@ export interface ChatMessage {
 export interface ChatCompletionOptions {
   model?: string
   temperature?: number
-  max_tokens?: number
+  max_completion_tokens?: number
   stream?: boolean
 }
 
@@ -31,19 +31,27 @@ export async function generateChatCompletion(
 ) {
   try {
     const {
-      model = 'gpt-4',
+      model = 'gpt-4o-mini',
       temperature = 0.7,
-      max_tokens = 2000,
+      max_completion_tokens = 2000,
       stream = false
     } = options
 
-    const response = await openai.chat.completions.create({
+    // Build request parameters
+    const requestParams: any = {
       model,
       messages,
-      temperature,
-      max_tokens,
+      max_completion_tokens,
       stream
-    })
+    }
+
+    // Only add temperature if the model supports it
+    // Some models like gpt-4o-mini support temperature, others don't
+    if (model.includes('gpt-4') || model.includes('gpt-3.5')) {
+      requestParams.temperature = temperature
+    }
+
+    const response = await openai.chat.completions.create(requestParams)
 
     return response
   } catch (error) {

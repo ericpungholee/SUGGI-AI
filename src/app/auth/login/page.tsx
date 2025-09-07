@@ -95,6 +95,7 @@ export default function LoginPage() {
                   className="w-full pl-10 pr-4 py-3 border border-brown-light/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-brown-medium/50 transition-all"
                   placeholder="you@example.com"
                   disabled={isLoading || isGoogleLoading}
+                  suppressHydrationWarning
                 />
               </div>
               {errors.email && (
@@ -114,6 +115,7 @@ export default function LoginPage() {
                   className="w-full pl-10 pr-4 py-3 border border-brown-light/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-brown-medium/50 transition-all"
                   placeholder="••••••••"
                   disabled={isLoading || isGoogleLoading}
+                  suppressHydrationWarning
                 />
               </div>
               {errors.password && (
@@ -135,6 +137,7 @@ export default function LoginPage() {
               type="submit"
               disabled={isLoading || isGoogleLoading}
               className="w-full py-3 bg-ink text-paper rounded-lg hover:bg-ink/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              suppressHydrationWarning
             >
               {isLoading ? (
                 <>
@@ -161,6 +164,7 @@ export default function LoginPage() {
               onClick={handleGoogleSignIn}
               disabled={isLoading || isGoogleLoading}
               className="mt-4 w-full py-3 bg-white border border-brown-light/30 rounded-lg hover:bg-stone-light transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+              suppressHydrationWarning
             >
               {isGoogleLoading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />

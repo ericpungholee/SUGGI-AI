@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
-import { X, Send, Bot, User, GripVertical, Feather, Paperclip, Sparkles, Search, FileText, Loader2 } from 'lucide-react'
+import { X, Send, Bot, User, GripVertical, Feather, Paperclip, Search, FileText, Loader2 } from 'lucide-react'
 import { AIMessage, AIConversation } from '@/types'
 
 interface AIChatPanelProps {
@@ -164,14 +164,14 @@ export default function AIChatPanel({
       }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-blue-50">
+      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-br from-purple-600 to-blue-600 rounded-lg flex items-center justify-center shadow-sm">
-            <Sparkles className="w-4 h-4 text-white" />
+          <div className="w-8 h-8 bg-ink rounded-lg flex items-center justify-center shadow-sm">
+            <Feather className="w-4 h-4 text-paper" />
           </div>
           <div>
-            <h3 className="font-semibold text-gray-900">AI Assistant</h3>
-            <p className="text-xs text-gray-500">
+            <h3 className="font-semibold text-ink">AI Assistant</h3>
+            <p className="text-xs text-ink/70">
               {documentId ? 'Document context enabled' : 'Writing helper'}
             </p>
           </div>
@@ -180,17 +180,17 @@ export default function AIChatPanel({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowQuickActions(!showQuickActions)}
-            className="p-1.5 hover:bg-purple-100 rounded transition-colors"
+            className="p-1.5 hover:bg-gray-100 rounded transition-colors"
             title="Quick Actions"
           >
-            <FileText className="w-4 h-4 text-purple-600" />
+            <FileText className="w-4 h-4 text-ink" />
           </button>
           <button
             onClick={onClose}
             className="p-1.5 hover:bg-gray-200 rounded transition-colors"
             title="Close"
           >
-            <X className="w-4 h-4 text-gray-600" />
+            <X className="w-4 h-4 text-ink" />
           </button>
         </div>
       </div>
@@ -198,25 +198,25 @@ export default function AIChatPanel({
       {/* Resize Handle */}
       <div
         ref={resizeRef}
-        className="absolute left-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-500 transition-colors group"
+        className="absolute left-0 top-0 w-1 h-full cursor-col-resize hover:bg-ink transition-colors group"
         onMouseDown={() => setIsResizing(true)}
       >
-        <div className="w-1 h-full bg-transparent group-hover:bg-blue-500 transition-colors" />
+        <div className="w-1 h-full bg-transparent group-hover:bg-ink transition-colors" />
         <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-3 h-8 bg-gray-300 rounded-r opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <GripVertical className="w-3 h-3 text-gray-600" />
+          <GripVertical className="w-3 h-3 text-ink" />
         </div>
       </div>
 
       {/* Quick Actions Panel */}
       {showQuickActions && (
         <div className="border-b border-gray-200 p-4 bg-white">
-          <h4 className="text-sm font-medium text-gray-700 mb-3">Quick Actions</h4>
+          <h4 className="text-sm font-medium text-ink mb-3">Quick Actions</h4>
           <div className="grid grid-cols-2 gap-2">
             {quickActions.map((action, index) => (
               <button
                 key={index}
                 onClick={() => handleQuickAction(action.action)}
-                className="text-left p-2 text-xs bg-gray-50 hover:bg-purple-50 rounded-lg transition-colors border border-gray-200 hover:border-purple-200"
+                className="text-left p-2 text-xs bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200 hover:border-gray-300 text-ink"
               >
                 {action.label}
               </button>
@@ -235,27 +235,27 @@ export default function AIChatPanel({
                 }`}
               >
                 {message.type === 'assistant' && (
-                  <div className="w-8 h-8 bg-gradient-to-br from-purple-600 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
-                    <Sparkles className="w-4 h-4 text-white" />
+                  <div className="w-8 h-8 bg-ink rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
+                    <Feather className="w-4 h-4 text-paper" />
                   </div>
                 )}
                 
                 <div
                   className={`max-w-[80%] rounded-lg px-4 py-2 shadow-sm ${
                     message.type === 'user'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-900 border border-gray-200'
+                      ? 'bg-ink text-paper'
+                      : 'bg-white text-ink border border-gray-200'
                   }`}
                 >
                   <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                   <div className="flex items-center justify-between mt-1">
                     <p className={`text-xs ${
-                      message.type === 'user' ? 'text-blue-100' : 'text-gray-500'
+                      message.type === 'user' ? 'text-paper/70' : 'text-ink/70'
                     }`}>
                       {formatTime(message.timestamp)}
                     </p>
                     {message.metadata?.tokenUsage && (
-                      <p className="text-xs text-gray-400">
+                      <p className="text-xs text-ink/50">
                         {message.metadata.tokenUsage.total} tokens
                       </p>
                     )}
@@ -264,7 +264,7 @@ export default function AIChatPanel({
 
                 {message.type === 'user' && (
                   <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
-                    <User className="w-4 h-4 text-gray-600" />
+                    <User className="w-4 h-4 text-ink" />
                   </div>
                 )}
               </div>
@@ -273,12 +273,12 @@ export default function AIChatPanel({
             {/* Loading indicator */}
             {isLoading && (
               <div className="flex gap-3 justify-start">
-                <div className="w-8 h-8 bg-gradient-to-br from-purple-600 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
-                  <Sparkles className="w-4 h-4 text-white" />
+                <div className="w-8 h-8 bg-ink rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
+                  <Feather className="w-4 h-4 text-paper" />
                 </div>
-                <div className="bg-white text-gray-900 border border-gray-200 rounded-lg px-4 py-2 shadow-sm">
+                <div className="bg-white text-ink border border-gray-200 rounded-lg px-4 py-2 shadow-sm">
                   <div className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
+                    <Loader2 className="w-4 h-4 animate-spin text-ink" />
                     <span className="text-sm">AI is thinking...</span>
                   </div>
                 </div>
@@ -295,20 +295,20 @@ export default function AIChatPanel({
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex items-center justify-center"
             title="Attach file"
           >
-            <Paperclip className="w-4 h-4 text-gray-600" />
+            <Paperclip className="w-4 h-4 text-ink" />
           </button>
           <textarea
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Ask me anything about your document..."
-            className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+            className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink focus:border-transparent transition-all text-ink"
             rows={2}
           />
           <button
             onClick={handleSendMessage}
             disabled={!inputValue.trim() || isLoading}
-            className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-sm"
+            className="px-4 py-2 bg-ink text-paper rounded-lg hover:bg-ink/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-sm"
           >
             {isLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -317,7 +317,7 @@ export default function AIChatPanel({
             )}
           </button>
         </div>
-        <p className="text-xs text-gray-500 mt-2">
+        <p className="text-xs text-ink/70 mt-2">
           Press Enter to send, Shift+Enter for new line
         </p>
       </div>
