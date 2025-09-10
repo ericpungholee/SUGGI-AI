@@ -38,7 +38,7 @@ export default function DocumentGrid() {
                 const data = await response.json()
                 setDocuments(data)
                 // Initialize starred state from fetched data
-                const starredIds = new Set(data.filter((doc: Document) => doc.starred).map((doc: Document) => doc.id))
+                const starredIds = new Set<string>(data.filter((doc: Document) => doc.starred).map((doc: Document) => doc.id))
                 setStarredDocs(starredIds)
             } else {
                 console.error('Failed to fetch documents')

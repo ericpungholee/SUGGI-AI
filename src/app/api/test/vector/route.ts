@@ -2,7 +2,8 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { searchSimilarDocuments, getDocumentStats, vectorDB } from "@/lib/ai"
+import { searchSimilarDocuments, getDocumentStats } from "@/lib/ai"
+import { vectorDB } from "@/lib/ai/vector-db"
 
 export async function GET(request: Request) {
     try {

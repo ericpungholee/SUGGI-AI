@@ -48,6 +48,7 @@ model Document {
   // AI relations
   chunks        DocumentChunk[]
   conversations AIConversation[]
+  versions      DocumentVersion[]
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -147,4 +148,20 @@ model AIConversation {
   @@index([userId])
   @@index([documentId])
   @@map("ai_conversations")
+}
+
+model DocumentVersion {
+  id            String   @id @default(cuid())
+  documentId    String
+  contentHash   String
+  contentLength Int
+  chunksCount   Int
+  vectorizedAt  DateTime @default(now())
+  createdAt     DateTime @default(now())
+  
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  
+  @@index([documentId])
+  @@index([contentHash])
+  @@map("document_versions")
 }

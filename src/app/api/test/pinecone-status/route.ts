@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { vectorDB } from "@/lib/ai"
+import { vectorDB } from "@/lib/ai/vector-db"
 
 export async function GET(request: Request) {
     try {

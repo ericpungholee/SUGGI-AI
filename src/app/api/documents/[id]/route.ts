@@ -185,7 +185,7 @@ export async function PATCH(
             try {
                 const { processDocument } = await import("@/lib/ai")
                 // Don't await this to avoid blocking the response
-                processDocument(id, session.user.id, { forceReprocess: true }).catch(error => {
+                processDocument(id, session.user.id, { useIncremental: true }).catch(error => {
                     console.error('Background vectorization failed:', error)
                 })
             } catch (error) {

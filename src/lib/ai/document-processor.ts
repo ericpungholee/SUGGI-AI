@@ -1,9 +1,11 @@
 import { prisma } from '@/lib/prisma'
 import { vectorizeDocument } from './vector-search'
+import { vectorizeDocumentIncremental, getVectorizationStatus } from './incremental-vectorization'
 
 export interface DocumentProcessingOptions {
   forceReprocess?: boolean
   batchSize?: number
+  useIncremental?: boolean
 }
 
 /**
@@ -15,7 +17,7 @@ export async function processDocument(
   options: DocumentProcessingOptions = {}
 ): Promise<void> {
   try {
-    const { forceReprocess = false } = options
+    const { forceReprocess = false, useIncremental = true } = options
 
     // Get document
     const document = await prisma.document.findFirst({
@@ -37,12 +39,6 @@ export async function processDocument(
       throw new Error('Document not found or access denied')
     }
 
-    // Check if already processed
-    if (document.isVectorized && !forceReprocess) {
-      console.log(`Document ${documentId} already vectorized`)
-      return
-    }
-
     // Use plainText if available, otherwise extract from content
     const content = document.plainText || extractTextFromContent(document.content)
 
@@ -51,8 +47,27 @@ export async function processDocument(
       return
     }
 
-    // Vectorize the document
-    await vectorizeDocument(documentId, content, userId)
+    // Use incremental vectorization by default for efficiency
+    if (useIncremental) {
+      const result = await vectorizeDocumentIncremental(documentId, content, forceReprocess)
+      
+      if (!result.success) {
+        console.error(`Incremental vectorization failed for document ${documentId}:`, result.errors)
+        // Fallback to full vectorization
+        await vectorizeDocument(documentId, content, userId)
+      } else {
+        console.log(`Document ${documentId} processed incrementally:`, {
+          chunksProcessed: result.chunksProcessed,
+          chunksAdded: result.chunksAdded,
+          chunksUpdated: result.chunksUpdated,
+          chunksDeleted: result.chunksDeleted,
+          processingTime: result.processingTime
+        })
+      }
+    } else {
+      // Use traditional full vectorization
+      await vectorizeDocument(documentId, content, userId)
+    }
 
     console.log(`Document ${documentId} processed successfully`)
   } catch (error) {
@@ -185,33 +200,33 @@ export async function getDocumentProcessingStatus(
   isProcessed: boolean
   chunkCount: number
   lastProcessed?: Date
+  needsUpdate: boolean
 }> {
   try {
-    const [document, chunkCount] = await Promise.all([
-      prisma.document.findFirst({
-        where: {
-          id: documentId,
-          userId,
-          isDeleted: false
-        },
-        select: {
-          isVectorized: true,
-          updatedAt: true
-        }
-      }),
-      prisma.documentChunk.count({
-        where: { documentId }
-      })
-    ])
+    // Verify document access
+    const document = await prisma.document.findFirst({
+      where: {
+        id: documentId,
+        userId,
+        isDeleted: false
+      },
+      select: {
+        id: true
+      }
+    })
 
     if (!document) {
       throw new Error('Document not found or access denied')
     }
 
+    // Get detailed vectorization status
+    const status = await getVectorizationStatus(documentId)
+
     return {
-      isProcessed: document.isVectorized,
-      chunkCount,
-      lastProcessed: document.isVectorized ? document.updatedAt : undefined
+      isProcessed: status.isVectorized,
+      chunkCount: status.chunksCount,
+      lastProcessed: status.lastVectorized,
+      needsUpdate: !status.needsUpdate
     }
   } catch (error) {
     console.error('Error getting document processing status:', error)

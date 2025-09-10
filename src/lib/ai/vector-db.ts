@@ -9,6 +9,10 @@ export interface VectorDocument {
     userId: string
     chunkIndex: number
     createdAt: string
+    contentType?: string
+    documentType?: string
+    tags?: string[]
+    importance?: number
   }
 }
 
@@ -29,6 +33,9 @@ export interface VectorSearchOptions {
   topK?: number
   filter?: Record<string, any>
   includeMetadata?: boolean
+  searchStrategy?: 'semantic' | 'hybrid' | 'keyword'
+  useHybridSearch?: boolean
+  threshold?: number
 }
 
 class VectorDatabase {
@@ -66,7 +73,7 @@ class VectorDatabase {
         console.log(`Creating Pinecone index: ${indexName}`)
         await this.pinecone.createIndex({
           name: indexName,
-          dimension: 1536, // OpenAI text-embedding-3-small dimension
+          dimension: 3072, // OpenAI text-embedding-3-large dimension
           metric: 'cosine',
           spec: {
             serverless: {
@@ -170,7 +177,14 @@ class VectorDatabase {
     }
 
     try {
-      const { topK = 10, filter = {}, includeMetadata = true } = options
+      const { 
+        topK = 10, 
+        filter = {}, 
+        includeMetadata = true,
+        searchStrategy = 'semantic',
+        useHybridSearch = false,
+        threshold = 0.1
+      } = options
 
       // Search with user filter - with integrated models, we just pass the query text
       const searchFilter = {
@@ -183,7 +197,7 @@ class VectorDatabase {
       const queryEmbedding = await createEmbedding(query)
 
       // Validate query embedding
-      const expectedDimension = 1536
+      const expectedDimension = 3072 // Updated for text-embedding-3-large
       if (!Array.isArray(queryEmbedding.embedding)) {
         throw new Error('Query embedding is not an array')
       }
@@ -197,22 +211,73 @@ class VectorDatabase {
       console.log('Query embedding generated, length:', queryEmbedding.embedding.length)
       console.log('First few values:', queryEmbedding.embedding.slice(0, 5))
 
+      // Use higher topK for hybrid search to allow for re-ranking
+      const searchTopK = useHybridSearch ? topK * 2 : topK
+
       const searchResponse = await this.index.query({
         vector: queryEmbedding.embedding,
-        topK,
+        topK: searchTopK,
         filter: searchFilter,
         includeMetadata
       })
 
-      return searchResponse.matches?.map(match => ({
+      let results = searchResponse.matches?.map(match => ({
         id: match.id,
         score: match.score || 0,
         content: '', // Will be populated from metadata or separate fetch
         metadata: match.metadata as any
       })) || []
+
+      // Apply threshold filtering
+      results = results.filter(result => result.score >= threshold)
+
+      // For hybrid search, implement keyword matching and re-ranking
+      if (useHybridSearch && searchStrategy === 'hybrid') {
+        results = await this.hybridSearchResults(query, results, topK)
+      }
+
+      return results.slice(0, topK)
     } catch (error) {
       console.error('Error searching vector database:', error)
       throw new Error('Failed to search vector database')
+    }
+  }
+
+  /**
+   * Hybrid search combining semantic and keyword matching
+   */
+  private async hybridSearchResults(
+    query: string,
+    semanticResults: VectorSearchResult[],
+    limit: number
+  ): Promise<VectorSearchResult[]> {
+    try {
+      const queryTerms = query.toLowerCase().split(/\s+/).filter(term => term.length > 2)
+      
+      // Score results with keyword matching
+      const scoredResults = semanticResults.map(result => {
+        const content = (result.metadata?.content || '').toLowerCase()
+        const keywordMatches = queryTerms.filter(term => content.includes(term)).length
+        const keywordScore = queryTerms.length > 0 ? keywordMatches / queryTerms.length : 0
+        
+        // Combine semantic and keyword scores
+        const combinedScore = (result.score * 0.7) + (keywordScore * 0.3)
+        
+        return {
+          ...result,
+          score: combinedScore,
+          semanticScore: result.score,
+          keywordScore
+        }
+      })
+
+      // Sort by combined score and return top results
+      return scoredResults
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+    } catch (error) {
+      console.error('Error in hybrid search:', error)
+      return semanticResults.slice(0, limit)
     }
   }
 

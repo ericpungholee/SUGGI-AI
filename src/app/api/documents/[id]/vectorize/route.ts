@@ -41,8 +41,11 @@ export async function POST(
             )
         }
 
-        // Process document for AI features
-        await processDocument(id, session.user.id, { forceReprocess: true })
+        // Process document for AI features with incremental vectorization
+        await processDocument(id, session.user.id, { 
+          forceReprocess: true,
+          useIncremental: true
+        })
 
         return NextResponse.json({
             success: true,

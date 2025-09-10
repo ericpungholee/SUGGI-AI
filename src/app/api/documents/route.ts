@@ -307,6 +307,12 @@ export async function PATCH(request: Request) {
                 message: `${result.count} document(s) removed from folder`,
                 affectedCount: result.count
             })
+        } else {
+            // This should never happen due to validation above, but TypeScript needs it
+            return NextResponse.json(
+                { error: "Invalid action" },
+                { status: 400 }
+            )
         }
 
     } catch (error) {

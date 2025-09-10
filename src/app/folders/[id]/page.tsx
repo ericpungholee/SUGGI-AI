@@ -69,8 +69,8 @@ export default async function FolderPage({ params }: FolderPageProps) {
     const folderWithCount = {
         id: folder.id,
         name: folder.name,
-        icon: folder.icon,
-        count: folder._count.documents.length + folder._count.children.length
+        icon: folder.icon || undefined,
+        count: folder._count.documents + folder._count.children
     };
 
     return (

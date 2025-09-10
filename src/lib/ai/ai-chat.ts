@@ -1,6 +1,7 @@
 import { generateChatCompletion, ChatMessage } from './openai'
 import { getDocumentContext } from './vector-search'
 import { prisma } from '@/lib/prisma'
+import { evaluateRAGResponse, storeEvaluationMetrics, ragMonitor } from './rag-evaluation'
 
 export interface AIChatRequest {
   message: string
@@ -8,6 +9,7 @@ export interface AIChatRequest {
   documentId?: string
   conversationId?: string
   includeContext?: boolean
+  abortSignal?: AbortSignal
 }
 
 export interface AIChatResponse {
@@ -19,6 +21,7 @@ export interface AIChatResponse {
     completion: number
     total: number
   }
+  cancelled?: boolean
 }
 
 export interface ConversationMessage {
@@ -43,22 +46,53 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
       userId,
       documentId,
       conversationId,
-      includeContext = true
+      includeContext = true,
+      abortSignal
     } = request
+
+    // Check if operation was cancelled before starting
+    if (abortSignal?.aborted) {
+      return {
+        message: 'Operation was cancelled',
+        conversationId: conversationId || '',
+        cancelled: true
+      }
+    }
 
     // Get or create conversation
     let conversation = conversationId 
       ? await getConversation(conversationId, userId)
       : await createConversation(userId, documentId)
 
-    // Get document context if requested
+    // Get document context if requested using advanced RAG
     let context = ''
     let contextUsed: string[] = []
     
     if (includeContext) {
-      context = await getDocumentContext(message, userId, documentId)
-      if (context) {
-        contextUsed = [context]
+      // Check for cancellation before context retrieval
+      if (abortSignal?.aborted) {
+        return {
+          message: 'Operation was cancelled',
+          conversationId: conversation.id,
+          cancelled: true
+        }
+      }
+
+      try {
+        context = await getDocumentContext(message, userId, documentId, 8) // Increased context chunks
+        if (context) {
+          contextUsed = [context]
+        }
+      } catch (contextError) {
+        if (abortSignal?.aborted) {
+          return {
+            message: 'Operation was cancelled',
+            conversationId: conversation.id,
+            cancelled: true
+          }
+        }
+        console.warn('Context retrieval failed:', contextError)
+        // Continue without context if retrieval fails
       }
     }
 
@@ -75,14 +109,75 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
       }
     ]
 
-    // Generate AI response
-    const response = await generateChatCompletion(messages, {
-      model: 'gpt-4o-mini',
-      temperature: 0.7,
-      max_completion_tokens: 1000
-    })
+    // Check for cancellation before AI generation
+    if (abortSignal?.aborted) {
+      return {
+        message: 'Operation was cancelled',
+        conversationId: conversation.id,
+        cancelled: true
+      }
+    }
 
-    const aiMessage = response.choices[0]?.message?.content || 'I apologize, but I was unable to generate a response.'
+    // Generate AI response
+    const startTime = Date.now()
+    let response: any
+    let aiMessage = 'I apologize, but I was unable to generate a response.'
+    let responseTime = 0
+
+    try {
+      response = await generateChatCompletion(messages, {
+        model: 'gpt-4o-mini',
+        temperature: 0.7,
+        max_tokens: 1000,
+        abortSignal // Pass abort signal to OpenAI
+      })
+
+      aiMessage = response.choices[0]?.message?.content || 'I apologize, but I was unable to generate a response.'
+      responseTime = Date.now() - startTime
+    } catch (generationError) {
+      if (abortSignal?.aborted) {
+        return {
+          message: 'Operation was cancelled',
+          conversationId: conversation.id,
+          cancelled: true
+        }
+      }
+      console.error('AI generation failed:', generationError)
+      throw generationError
+    }
+
+    // Evaluate RAG performance
+    if (context) {
+      try {
+        const metrics = await evaluateRAGResponse(
+          message,
+          context,
+          aiMessage,
+          responseTime,
+          contextUsed.length
+        )
+
+        // Store evaluation metrics
+        const evaluation = {
+          query: message,
+          timestamp: new Date(),
+          metrics,
+          contextChunks: contextUsed.length,
+          responseLength: aiMessage.length
+        }
+
+        await storeEvaluationMetrics(userId, evaluation)
+        ragMonitor.addEvaluation(evaluation)
+
+        console.log('RAG Evaluation:', {
+          query: message,
+          overallScore: metrics.overallScore,
+          responseTime: metrics.responseTime
+        })
+      } catch (error) {
+        console.error('Error evaluating RAG response:', error)
+      }
+    }
 
     // Save messages to conversation
     const userMessage: ConversationMessage = {
@@ -190,28 +285,33 @@ async function saveMessages(conversationId: string, messages: ConversationMessag
  * Build system prompt with context
  */
 function buildSystemPrompt(context: string, documentId?: string): string {
-  let prompt = `You are an AI writing assistant integrated into a document editor. You help users with writing, editing, research, and content generation.
+  let prompt = `You are an advanced AI writing assistant. You excel at understanding context, providing accurate information, and helping with complex writing tasks.
 
 Your capabilities:
+- Analyze and understand document content with high accuracy
+- Answer questions based on retrieved context with citations
 - Help improve writing quality, grammar, and style
-- Generate content based on user requests
-- Answer questions about documents
-- Provide research assistance
-- Suggest improvements and alternatives
+- Generate content that's contextually relevant and well-structured
+- Provide research assistance with proper source attribution
+- Suggest improvements and alternatives with clear reasoning
 
-Guidelines:
-- Be helpful, accurate, and concise
-- Provide specific, actionable suggestions
-- Maintain a professional but friendly tone
-- When suggesting changes, explain your reasoning
-- If you reference specific content, be clear about what you're referring to`
+Guidelines for accuracy:
+- When document context is provided, base your responses on it and cite sources
+- When no context is available, provide general assistance based on your training knowledge
+- Be clear about the limitations of your knowledge when context is not available
+- Provide specific, actionable suggestions with clear explanations
+- Maintain a professional but approachable tone
+- Be precise and avoid making assumptions not supported by the context
+- When suggesting changes, explain your reasoning`
 
   if (context) {
-    prompt += `\n\nRelevant document context:\n${context}`
+    prompt += `\n\n=== RELEVANT DOCUMENT CONTEXT ===\n${context}\n\nUse this context to provide accurate, well-informed responses. Always cite which document and section you're referencing.`
+  } else {
+    prompt += `\n\nNo specific document context was retrieved for this query. You can still provide helpful assistance based on your general knowledge, but be clear that you don't have access to specific document content.`
   }
 
   if (documentId) {
-    prompt += `\n\nYou are currently helping with document ID: ${documentId}`
+    prompt += `\n\nNote: You are currently helping with document ID: ${documentId}. If you cannot access the specific content of this document, explain that the document content is not currently available in your context.`
   }
 
   return prompt

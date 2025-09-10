@@ -220,6 +220,7 @@ export interface AIMessage {
             completion: number;
             total: number;
         };
+        cancelled?: boolean;
     };
 }
 

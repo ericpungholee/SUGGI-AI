@@ -38,8 +38,8 @@ export async function POST(request: Request) {
         // Extract content
         let content = document.plainText || ''
         if (!content && document.content) {
-            if (typeof document.content === 'object' && document.content.plainText) {
-                content = document.content.plainText
+            if (typeof document.content === 'object' && document.content !== null && 'plainText' in document.content) {
+                content = (document.content as any).plainText
             } else if (typeof document.content === 'string') {
                 content = document.content
             }

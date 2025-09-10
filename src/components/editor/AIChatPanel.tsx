@@ -29,6 +29,8 @@ export default function AIChatPanel({
   const [inputValue, setInputValue] = useState('')
   const [isResizing, setIsResizing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isCancelling, setIsCancelling] = useState(false)
+  const [currentOperationId, setCurrentOperationId] = useState<string | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [showQuickActions, setShowQuickActions] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -68,6 +70,7 @@ export default function AIChatPanel({
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return
 
+    const operationId = `ai-chat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     const userMessage: AIMessage = {
       id: Date.now().toString(),
       type: 'user',
@@ -78,6 +81,7 @@ export default function AIChatPanel({
     setMessages(prev => [...prev, userMessage])
     setInputValue('')
     setIsLoading(true)
+    setCurrentOperationId(operationId)
 
     try {
       const response = await fetch('/api/ai/chat', {
@@ -89,7 +93,8 @@ export default function AIChatPanel({
           message: userMessage.content,
           documentId,
           conversationId,
-          includeContext: true
+          includeContext: true,
+          operationId
         })
       })
 
@@ -107,7 +112,8 @@ export default function AIChatPanel({
         metadata: {
           documentId,
           contextUsed: data.contextUsed,
-          tokenUsage: data.tokenUsage
+          tokenUsage: data.tokenUsage,
+          cancelled: data.cancelled
         }
       }
 
@@ -124,6 +130,37 @@ export default function AIChatPanel({
       setMessages(prev => [...prev, errorMessage])
     } finally {
       setIsLoading(false)
+      setIsCancelling(false)
+      setCurrentOperationId(null)
+    }
+  }
+
+  const handleCancelOperation = async () => {
+    if (!currentOperationId || isCancelling) return
+
+    setIsCancelling(true)
+
+    try {
+      const response = await fetch('/api/ai/chat/cancel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          operationId: currentOperationId
+        })
+      })
+
+      if (response.ok) {
+        setIsLoading(false)
+        setCurrentOperationId(null)
+      } else {
+        console.error('Failed to cancel operation')
+      }
+    } catch (error) {
+      console.error('Error cancelling operation:', error)
+    } finally {
+      setIsCancelling(false)
     }
   }
 
@@ -170,7 +207,7 @@ export default function AIChatPanel({
             <Feather className="w-4 h-4 text-paper" />
           </div>
           <div>
-            <h3 className="font-semibold text-ink">AI Assistant</h3>
+            <h3 className="font-semibold text-ink">Suggi AI</h3>
             <p className="text-xs text-ink/70">
               {documentId ? 'Document context enabled' : 'Writing helper'}
             </p>
@@ -244,15 +281,22 @@ export default function AIChatPanel({
                   className={`max-w-[80%] rounded-lg px-4 py-2 shadow-sm ${
                     message.type === 'user'
                       ? 'bg-ink text-paper'
+                      : message.metadata?.cancelled
+                      ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
                       : 'bg-white text-ink border border-gray-200'
                   }`}
                 >
                   <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                   <div className="flex items-center justify-between mt-1">
                     <p className={`text-xs ${
-                      message.type === 'user' ? 'text-paper/70' : 'text-ink/70'
+                      message.type === 'user' 
+                        ? 'text-paper/70' 
+                        : message.metadata?.cancelled
+                        ? 'text-yellow-700'
+                        : 'text-ink/70'
                     }`}>
                       {formatTime(message.timestamp)}
+                      {message.metadata?.cancelled && ' (Cancelled)'}
                     </p>
                     {message.metadata?.tokenUsage && (
                       <p className="text-xs text-ink/50">
@@ -279,7 +323,7 @@ export default function AIChatPanel({
                 <div className="bg-white text-ink border border-gray-200 rounded-lg px-4 py-2 shadow-sm">
                   <div className="flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin text-ink" />
-                    <span className="text-sm">AI is thinking...</span>
+                    <span className="text-sm">Thinking...</span>
                   </div>
                 </div>
               </div>
@@ -305,17 +349,23 @@ export default function AIChatPanel({
             className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink focus:border-transparent transition-all text-ink"
             rows={2}
           />
-          <button
-            onClick={handleSendMessage}
-            disabled={!inputValue.trim() || isLoading}
-            className="px-4 py-2 bg-ink text-paper rounded-lg hover:bg-ink/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-sm"
-          >
-            {isLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
+          {isLoading ? (
+            <button
+              onClick={handleCancelOperation}
+              disabled={isCancelling}
+              className="px-4 py-2 bg-ink text-paper rounded-lg hover:bg-ink/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center shadow-sm"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              onClick={handleSendMessage}
+              disabled={!inputValue.trim()}
+              className="px-4 py-2 bg-ink text-paper rounded-lg hover:bg-ink/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-sm"
+            >
               <Send className="w-4 h-4" />
-            )}
-          </button>
+            </button>
+          )}
         </div>
         <p className="text-xs text-ink/70 mt-2">
           Press Enter to send, Shift+Enter for new line

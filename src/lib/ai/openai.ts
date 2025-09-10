@@ -13,8 +13,9 @@ export interface ChatMessage {
 export interface ChatCompletionOptions {
   model?: string
   temperature?: number
-  max_completion_tokens?: number
+  max_tokens?: number
   stream?: boolean
+  abortSignal?: AbortSignal
 }
 
 export interface EmbeddingOptions {
@@ -29,19 +30,25 @@ export async function generateChatCompletion(
   messages: ChatMessage[],
   options: ChatCompletionOptions = {}
 ) {
+  const {
+    model = 'gpt-4o-mini',
+    temperature = 0.7,
+    max_tokens = 2000,
+    stream = false,
+    abortSignal
+  } = options
+
   try {
-    const {
-      model = 'gpt-4o-mini',
-      temperature = 0.7,
-      max_completion_tokens = 2000,
-      stream = false
-    } = options
+    // Check if operation was cancelled
+    if (abortSignal?.aborted) {
+      throw new Error('Operation was cancelled')
+    }
 
     // Build request parameters
     const requestParams: any = {
       model,
       messages,
-      max_completion_tokens,
+      max_tokens,
       stream
     }
 
@@ -51,24 +58,31 @@ export async function generateChatCompletion(
       requestParams.temperature = temperature
     }
 
-    const response = await openai.chat.completions.create(requestParams)
+    // Create the request with abort signal support
+    const response = await openai.chat.completions.create(requestParams, {
+      signal: abortSignal
+    })
 
     return response
   } catch (error) {
+    if (abortSignal?.aborted) {
+      throw new Error('Operation was cancelled')
+    }
     console.error('OpenAI chat completion error:', error)
     throw new Error('Failed to generate AI response')
   }
 }
 
 /**
- * Generate text embeddings using OpenAI
+ * Generate text embeddings using OpenAI with best model
  */
 export async function generateEmbedding(
   text: string,
   options: EmbeddingOptions = {}
 ) {
   try {
-    const { model = 'text-embedding-3-small', dimensions = 1536 } = options
+    // Use the best available embedding model
+    const { model = 'text-embedding-3-large', dimensions = 3072 } = options
 
     const response = await openai.embeddings.create({
       model,
@@ -91,7 +105,7 @@ export async function generateEmbeddings(
   options: EmbeddingOptions = {}
 ) {
   try {
-    const { model = 'text-embedding-3-small', dimensions = 1536 } = options
+    const { model = 'text-embedding-3-large', dimensions = 3072 } = options
 
     const response = await openai.embeddings.create({
       model,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { processAIChat, AIChatRequest } from "@/lib/ai"
+import { registerOperation, unregisterOperation } from "./cancel/route"
 
 export async function POST(request: Request) {
     try {
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json()
-        const { message, documentId, conversationId, includeContext = true } = body
+        const { message, documentId, conversationId, includeContext = true, operationId } = body
 
         if (!message || typeof message !== 'string' || message.trim().length === 0) {
             return NextResponse.json(
@@ -24,17 +25,49 @@ export async function POST(request: Request) {
             )
         }
 
+        // Create abort controller for cancellation
+        const abortController = new AbortController()
+        
+        // Register operation for cancellation if operationId is provided
+        if (operationId) {
+            registerOperation(operationId, abortController)
+        }
+
         const aiRequest: AIChatRequest = {
             message: message.trim(),
             userId: session.user.id,
             documentId,
             conversationId,
-            includeContext
+            includeContext,
+            abortSignal: abortController.signal
         }
 
-        const response = await processAIChat(aiRequest)
-
-        return NextResponse.json(response)
+        try {
+            const response = await processAIChat(aiRequest)
+            
+            // Unregister operation on completion
+            if (operationId) {
+                unregisterOperation(operationId)
+            }
+            
+            return NextResponse.json(response)
+        } catch (error) {
+            // Unregister operation on error
+            if (operationId) {
+                unregisterOperation(operationId)
+            }
+            
+            // Check if it was cancelled
+            if (error instanceof Error && error.message.includes('cancelled')) {
+                return NextResponse.json({
+                    message: 'Operation was cancelled',
+                    conversationId: conversationId || '',
+                    cancelled: true
+                })
+            }
+            
+            throw error
+        }
     } catch (error) {
         console.error('AI chat API error:', error)
         return NextResponse.json(
