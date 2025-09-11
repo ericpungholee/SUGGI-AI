@@ -62,6 +62,20 @@
 
   .editor-content ul, .editor-content ol {
     @apply mb-4 pl-6;
+    list-style-position: outside;
+  }
+
+  /* Ensure list markers are visible inside the editor */
+  .editor-content ul {
+    list-style-type: disc;
+  }
+
+  .editor-content ol {
+    list-style-type: decimal;
+  }
+
+  .editor-content li {
+    list-style: inherit;
   }
 
   .editor-content li {

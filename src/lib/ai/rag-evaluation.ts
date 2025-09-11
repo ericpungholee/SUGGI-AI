@@ -109,7 +109,7 @@ Respond with a single number between 0.0 and 1.0 representing the overall retrie
     const response = await generateChatCompletion([
       { role: 'user', content: evaluationPrompt }
     ], {
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-nano',
       temperature: 0.1,
       max_tokens: 50
     })
@@ -146,7 +146,7 @@ Respond with a single number between 0.0 and 1.0 representing the overall respon
     const response_result = await generateChatCompletion([
       { role: 'user', content: evaluationPrompt }
     ], {
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-nano',
       temperature: 0.1,
       max_tokens: 50
     })

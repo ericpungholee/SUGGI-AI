@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
     console.log('Sending request to OpenAI...')
     const response = await generateChatCompletion(messages, {
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-nano',
       temperature: 0.7,
       max_tokens: 500
     })

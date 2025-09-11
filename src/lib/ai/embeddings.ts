@@ -527,7 +527,7 @@ Make sure each alternative:
     const response = await generateChatCompletion([
       { role: 'user', content: expansionPrompt }
     ], {
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-nano',
       temperature: 0.3, // Lower temperature for more conservative expansion
       max_tokens: 300
     })
@@ -579,7 +579,7 @@ Rewritten query:`
     const response = await generateChatCompletion([
       { role: 'user', content: rewritePrompt }
     ], {
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-nano',
       temperature: 0.1, // Very low temperature for conservative rewriting
       max_tokens: 100
     })
@@ -737,7 +737,7 @@ Compressed context:`
     const response = await generateChatCompletion([
       { role: 'user', content: compressionPrompt }
     ], {
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-nano',
       temperature: 0.3,
       max_tokens: Math.floor(maxTokens * 0.8) // Leave room for response
     })
@@ -783,7 +783,7 @@ Relevant Information:`
     const response = await generateChatCompletion([
       { role: 'user', content: extractionPrompt }
     ], {
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-nano',
       temperature: 0.2,
       max_tokens: 1000
     })
@@ -837,7 +837,7 @@ Rules:
       generateChatCompletion([
         { role: 'user', content: classificationPrompt }
       ], {
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-nano',
         temperature: 0.1,
         max_tokens: 200
       }),

@@ -135,7 +135,7 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
 
     try {
       response = await generateChatCompletion(messages, {
-        model: 'gpt-4o-mini',
+        model: process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini',
         temperature: 0.7,
         max_tokens: 1000,
         abortSignal // Pass abort signal to OpenAI

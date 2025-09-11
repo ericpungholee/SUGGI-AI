@@ -31,7 +31,7 @@ export async function generateChatCompletion(
   options: ChatCompletionOptions = {}
 ) {
   const {
-    model = 'gpt-4o-mini',
+    model = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini',
     temperature = 0.7,
     max_tokens = 2000,
     stream = false,
@@ -48,17 +48,72 @@ export async function generateChatCompletion(
     const requestParams: any = {
       model,
       messages,
-      max_tokens,
       stream
     }
 
+    // Use the correct parameter name based on model
+    if (model.includes('gpt-5') || model.includes('gpt-4o')) {
+      requestParams.max_completion_tokens = max_tokens
+    } else {
+      requestParams.max_tokens = max_tokens
+    }
+
     // Only add temperature if the model supports it
-    // Some models like gpt-4o-mini support temperature, others don't
-    if (model.includes('gpt-4') || model.includes('gpt-3.5')) {
+    // Most models support temperature, but some experimental ones might not
+    if (!model.includes('embedding') && !model.includes('davinci') && !model.includes('curie')) {
       requestParams.temperature = temperature
     }
 
-    // Create the request with abort signal support
+    // Use Responses API for newer models that require it
+    if (model.includes('gpt-5')) {
+      // Combine messages into a single input string preserving roles
+      const combinedInput = messages
+        .map(m => `${m.role.toUpperCase()}: ${m.content}`)
+        .join('\n\n')
+
+      const responsesPayload: any = {
+        model,
+        input: combinedInput,
+        max_output_tokens: max_tokens,
+        stream: stream ? true : false
+      }
+
+      // GPT-5 Responses API may not support temperature; omit to avoid 400
+      const resp = await openai.responses.create(
+        responsesPayload,
+        { signal: abortSignal }
+      )
+
+      // Normalize to Chat Completions-like shape for downstream code
+      // Prefer output_text; fallback to nested output structure if present
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r: any = resp
+      const nestedText = Array.isArray(r.output) && r.output.length > 0
+        ? (Array.isArray(r.output[0]?.content) && r.output[0].content.find((c: any) => c.type === 'output_text')?.text) || r.output[0]?.content?.[0]?.text
+        : undefined
+      const contentText = r.output_text || nestedText || r.choices?.[0]?.message?.content || ''
+
+      const normalized = {
+        choices: [
+          {
+            message: {
+              content: contentText
+            }
+          }
+        ],
+        usage: r.usage
+          ? {
+              prompt_tokens: r.usage.input_tokens,
+              completion_tokens: r.usage.output_tokens,
+              total_tokens: r.usage.total_tokens
+            }
+          : undefined
+      }
+
+      return normalized as any
+    }
+
+    // Fallback to Chat Completions API
     const response = await openai.chat.completions.create(requestParams, {
       signal: abortSignal
     })
@@ -68,8 +123,21 @@ export async function generateChatCompletion(
     if (abortSignal?.aborted) {
       throw new Error('Operation was cancelled')
     }
-    console.error('OpenAI chat completion error:', error)
-    throw new Error('Failed to generate AI response')
+    // Try to surface underlying API error details when available
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const err: any = error
+    console.error('OpenAI chat completion error details:', {
+      model,
+      error: err?.message || error,
+      status: err?.status,
+      response: err?.response?.data,
+      type: err?.type,
+      fullError: err
+    })
+    
+    // If we have a specific error message, include it
+    const errorMessage = err?.message || err?.error?.message || 'Unknown error'
+    throw new Error(`Failed to generate AI response: ${errorMessage}`)
   }
 }
 
@@ -82,7 +150,7 @@ export async function generateEmbedding(
 ) {
   try {
     // Use the best available embedding model
-    const { model = 'text-embedding-ada-002' } = options
+    const { model = (process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small') } = options
 
     const response = await openai.embeddings.create({
       model,
@@ -104,7 +172,7 @@ export async function generateEmbeddings(
   options: EmbeddingOptions = {}
 ) {
   try {
-    const { model = 'text-embedding-ada-002' } = options
+    const { model = (process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small') } = options
 
     const response = await openai.embeddings.create({
       model,
