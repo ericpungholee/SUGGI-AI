@@ -73,7 +73,7 @@ class VectorDatabase {
         console.log(`Creating Pinecone index: ${indexName}`)
         await this.pinecone.createIndex({
           name: indexName,
-          dimension: 3072, // OpenAI text-embedding-3-large dimension
+          dimension: 1536, // OpenAI text-embedding-ada-002 dimension
           metric: 'cosine',
           spec: {
             serverless: {
@@ -135,7 +135,7 @@ class VectorDatabase {
       const embeddings = await createEmbeddings(documents.map(doc => doc.content))
 
       // Validate embeddings
-      const expectedDimension = 1536
+      const expectedDimension = 1536 // Updated for text-embedding-ada-002
       for (let i = 0; i < embeddings.length; i++) {
         const embedding = embeddings[i].embedding
         if (!Array.isArray(embedding)) {
@@ -172,8 +172,23 @@ class VectorDatabase {
     userId: string,
     options: VectorSearchOptions = {}
   ): Promise<VectorSearchResult[]> {
-    if (!this.isInitialized) {
-      await this.initialize()
+    try {
+      if (!this.isInitialized) {
+        await this.initialize()
+      }
+
+      // Check if index is available
+      if (!this.index) {
+        throw new Error('Vector database index is not initialized')
+      }
+
+      // Check if Pinecone is available
+      if (!this.pinecone) {
+        throw new Error('Pinecone client is not initialized')
+      }
+    } catch (initError) {
+      console.error('Failed to initialize vector database:', initError)
+      throw new Error(`Vector database initialization failed: ${initError instanceof Error ? initError.message : 'Unknown error'}`)
     }
 
     try {
@@ -197,7 +212,7 @@ class VectorDatabase {
       const queryEmbedding = await createEmbedding(query)
 
       // Validate query embedding
-      const expectedDimension = 3072 // Updated for text-embedding-3-large
+      const expectedDimension = 1536 // Updated for text-embedding-ada-002
       if (!Array.isArray(queryEmbedding.embedding)) {
         throw new Error('Query embedding is not an array')
       }
@@ -214,6 +229,13 @@ class VectorDatabase {
       // Use higher topK for hybrid search to allow for re-ranking
       const searchTopK = useHybridSearch ? topK * 2 : topK
 
+      console.log('Executing Pinecone query with:', {
+        vectorLength: queryEmbedding.embedding.length,
+        topK: searchTopK,
+        filter: searchFilter,
+        includeMetadata
+      })
+
       const searchResponse = await this.index.query({
         vector: queryEmbedding.embedding,
         topK: searchTopK,
@@ -221,15 +243,22 @@ class VectorDatabase {
         includeMetadata
       })
 
+      console.log('Pinecone query response:', {
+        matchesCount: searchResponse.matches?.length || 0,
+        hasMatches: !!searchResponse.matches
+      })
+
       let results = searchResponse.matches?.map(match => ({
         id: match.id,
         score: match.score || 0,
-        content: '', // Will be populated from metadata or separate fetch
+        content: match.metadata?.content || '', // Get content from metadata
         metadata: match.metadata as any
       })) || []
 
       // Apply threshold filtering
       results = results.filter(result => result.score >= threshold)
+
+      console.log(`Filtered results after threshold ${threshold}:`, results.length)
 
       // For hybrid search, implement keyword matching and re-ranking
       if (useHybridSearch && searchStrategy === 'hybrid') {
@@ -238,13 +267,34 @@ class VectorDatabase {
 
       return results.slice(0, topK)
     } catch (error) {
-      console.error('Error searching vector database:', error)
-      throw new Error('Failed to search vector database')
+      console.error('Error searching vector database:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        query: query.substring(0, 100),
+        userId,
+        options,
+        isInitialized: this.isInitialized,
+        hasIndex: !!this.index,
+        indexName: this.currentIndexName
+      })
+      
+      // Check if it's a Pinecone-specific error
+      if (error instanceof Error) {
+        if (error.message.includes('API key') || error.message.includes('unauthorized')) {
+          throw new Error('Pinecone authentication failed. Please check your API key.')
+        } else if (error.message.includes('index') || error.message.includes('not found')) {
+          throw new Error('Pinecone index not found. Please check your index configuration.')
+        } else if (error.message.includes('dimension') || error.message.includes('vector')) {
+          throw new Error('Vector dimension mismatch. Please check your embedding model.')
+        }
+      }
+      
+      throw new Error(`Failed to search vector database: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
   /**
-   * Hybrid search combining semantic and keyword matching
+   * Enhanced hybrid search combining semantic and keyword matching
    */
   private async hybridSearchResults(
     query: string,
@@ -254,20 +304,49 @@ class VectorDatabase {
     try {
       const queryTerms = query.toLowerCase().split(/\s+/).filter(term => term.length > 2)
       
-      // Score results with keyword matching
+      // Enhanced scoring with multiple factors
       const scoredResults = semanticResults.map(result => {
         const content = (result.metadata?.content || '').toLowerCase()
+        
+        // 1. Basic keyword matching
         const keywordMatches = queryTerms.filter(term => content.includes(term)).length
         const keywordScore = queryTerms.length > 0 ? keywordMatches / queryTerms.length : 0
         
-        // Combine semantic and keyword scores
-        const combinedScore = (result.score * 0.7) + (keywordScore * 0.3)
+        // 2. Exact phrase matching bonus
+        const phraseScore = content.includes(query.toLowerCase()) ? 0.3 : 0
+        
+        // 3. Proximity scoring (terms close together get higher score)
+        let proximityScore = 0
+        if (queryTerms.length > 1) {
+          const termPositions = queryTerms.map(term => content.indexOf(term)).filter(pos => pos !== -1)
+          if (termPositions.length > 1) {
+            const avgDistance = termPositions.reduce((sum, pos, i) => 
+              i > 0 ? sum + Math.abs(pos - termPositions[i-1]) : sum, 0) / (termPositions.length - 1)
+            proximityScore = Math.max(0, 0.2 - (avgDistance / 200)) // Closer terms = higher score
+          }
+        }
+        
+        // 4. Content quality indicators
+        const hasNumbers = /\d+/.test(result.metadata?.content || '')
+        const hasSpecificTerms = /(?:specifically|particularly|exactly|precisely|detailed|analysis|research|study)/i.test(result.metadata?.content || '')
+        const qualityScore = (hasNumbers ? 0.1 : 0) + (hasSpecificTerms ? 0.1 : 0)
+        
+        // 5. Query intent matching
+        const isQuestion = query.includes('?')
+        const hasAnswers = isQuestion && /(?:answer|solution|explanation|because|due to|as a result)/i.test(result.metadata?.content || '')
+        const intentScore = hasAnswers ? 0.2 : 0
+        
+        // 6. Enhanced keyword score with all bonuses
+        const enhancedKeywordScore = keywordScore + phraseScore + proximityScore + qualityScore + intentScore
+        
+        // 7. Combine semantic and enhanced keyword scores
+        const combinedScore = (result.score * 0.6) + (enhancedKeywordScore * 0.4)
         
         return {
           ...result,
-          score: combinedScore,
+          score: Math.min(1, combinedScore), // Cap at 1.0
           semanticScore: result.score,
-          keywordScore
+          keywordScore: enhancedKeywordScore
         }
       })
 

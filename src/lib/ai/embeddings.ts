@@ -261,7 +261,7 @@ export function chunkText(text: string, chunkSize: number = 1000, overlap: numbe
  */
 export async function createEmbedding(text: string): Promise<EmbeddingResult> {
   try {
-    const embedding = await generateEmbedding(text)
+    const embedding = await generateEmbedding(text, { model: 'text-embedding-ada-002' })
     
     // Rough token count estimation (1 token ≈ 4 characters)
     const tokenCount = Math.ceil(text.length / 4)
@@ -306,11 +306,11 @@ export async function createEmbeddings(texts: string[]): Promise<EmbeddingResult
       throw new Error('No valid texts to process')
     }
     
-    const embeddings = await generateEmbeddings(validTexts)
+    const embeddings = await generateEmbeddings(validTexts, { model: 'text-embedding-ada-002' })
     console.log('Generated embeddings:', embeddings.length, 'embeddings')
     
     // Validate embeddings
-    const expectedDimension = 3072 // Updated for text-embedding-3-large
+    const expectedDimension = 1536 // Updated for text-embedding-ada-002
     for (let i = 0; i < embeddings.length; i++) {
       const embedding = embeddings[i]
       if (!Array.isArray(embedding)) {
@@ -497,9 +497,19 @@ export function cosineSimilarity(a: number[], b: number[]): number {
  */
 export async function expandQuery(query: string): Promise<string[]> {
   try {
+    // Only expand queries that are likely to benefit from expansion
+    const shouldExpand = query.length > 10 && 
+      !query.includes('?') && // Don't expand questions
+      !/^(what|who|when|where|why|how)\s/i.test(query) && // Don't expand simple questions
+      query.split(/\s+/).length >= 3 // Only expand multi-word queries
+    
+    if (!shouldExpand) {
+      return [query]
+    }
+
     const { generateChatCompletion } = await import('./openai')
     
-    const expansionPrompt = `Given the following search query, generate 3-5 alternative phrasings and related terms that would help find relevant information. Focus on synonyms, related concepts, and different ways to express the same idea.
+    const expansionPrompt = `Given the following search query, generate 2-3 alternative phrasings that would help find relevant information. Focus on synonyms and different ways to express the same core concept. Keep alternatives close to the original meaning.
 
 Original query: "${query}"
 
@@ -507,21 +517,19 @@ Generate alternatives in this format:
 1. [alternative query 1]
 2. [alternative query 2]
 3. [alternative query 3]
-4. [alternative query 4]
-5. [alternative query 5]
 
-Make sure each alternative is:
-- Semantically related to the original query
-- Uses different vocabulary or phrasing
-- Maintains the core intent
-- Is concise and searchable`
+Make sure each alternative:
+- Is semantically very close to the original query
+- Uses different vocabulary but same core meaning
+- Is concise and searchable
+- Maintains the specific intent`
 
     const response = await generateChatCompletion([
       { role: 'user', content: expansionPrompt }
     ], {
       model: 'gpt-4o-mini',
-      temperature: 0.7,
-      max_tokens: 500
+      temperature: 0.3, // Lower temperature for more conservative expansion
+      max_tokens: 300
     })
 
     const expandedText = response.choices[0]?.message?.content || ''
@@ -529,9 +537,9 @@ Make sure each alternative is:
       .split('\n')
       .filter(line => line.match(/^\d+\./))
       .map(line => line.replace(/^\d+\.\s*/, '').trim())
-      .filter(alt => alt.length > 0)
+      .filter(alt => alt.length > 0 && alt.length < query.length * 2) // Avoid overly long alternatives
 
-    return [query, ...alternatives].slice(0, 5) // Include original + up to 4 alternatives
+    return [query, ...alternatives].slice(0, 3) // Include original + up to 2 alternatives
   } catch (error) {
     console.error('Error expanding query:', error)
     return [query] // Fallback to original query
@@ -543,19 +551,28 @@ Make sure each alternative is:
  */
 export async function rewriteQuery(query: string): Promise<string> {
   try {
+    // Only rewrite queries that are likely to benefit from rewriting
+    const shouldRewrite = query.length > 5 && 
+      !query.includes('?') && // Don't rewrite questions
+      !/^(what|who|when|where|why|how)\s/i.test(query) && // Don't rewrite simple questions
+      query.split(/\s+/).length >= 2 // Only rewrite multi-word queries
+    
+    if (!shouldRewrite) {
+      return query
+    }
+
     const { generateChatCompletion } = await import('./openai')
     
     const rewritePrompt = `Rewrite the following search query to be more effective for finding relevant information in a document database. Focus on:
 
-1. Using specific, searchable keywords
-2. Including synonyms and related terms
-3. Making the query more explicit and detailed
-4. Adding context that would help find relevant content
-5. Using terms that are likely to appear in documents
+1. Using specific, searchable keywords that are likely to appear in documents
+2. Making the query more explicit and detailed
+3. Adding context that would help find relevant content
+4. Using terms that are commonly found in technical or research documents
 
 Original query: "${query}"
 
-Provide a rewritten query that is more likely to find relevant information. Keep it concise but comprehensive.
+Provide a rewritten query that is more likely to find relevant information. Keep it concise but comprehensive. Do not change the core meaning or intent.
 
 Rewritten query:`
 
@@ -563,14 +580,14 @@ Rewritten query:`
       { role: 'user', content: rewritePrompt }
     ], {
       model: 'gpt-4o-mini',
-      temperature: 0.2,
-      max_tokens: 150
+      temperature: 0.1, // Very low temperature for conservative rewriting
+      max_tokens: 100
     })
 
     const rewritten = response.choices[0]?.message?.content?.trim() || query
     
     // If the rewritten query is too different or too long, fallback to original
-    if (rewritten.length > query.length * 3 || rewritten.length < query.length * 0.5) {
+    if (rewritten.length > query.length * 2 || rewritten.length < query.length * 0.7) {
       return query
     }
     
@@ -919,9 +936,10 @@ export async function adaptiveRetrieval(
       threshold: intent.type === 'factual' ? 0.2 : 0.1 // Higher threshold for factual queries
     }
 
-    // Perform search with adaptive parameters
+    // Perform search with adaptive parameters - ensure no recursion
     const { searchSimilarDocuments } = await import('./vector-search')
-    const results = await searchSimilarDocuments(query, userId, adaptiveOptions)
+    const nonRecursiveOptions = { ...adaptiveOptions, useAdaptiveRetrieval: false }
+    const results = await searchSimilarDocuments(query, userId, nonRecursiveOptions)
 
     // Post-process results based on intent
     if (intent.type === 'summarization' && results.length > 3) {
@@ -938,8 +956,9 @@ export async function adaptiveRetrieval(
     return results.slice(0, intent.suggestedLimit)
   } catch (error) {
     console.error('Error in adaptive retrieval:', error)
-    // Fallback to standard search
+    // Fallback to standard search without adaptive retrieval
     const { searchSimilarDocuments } = await import('./vector-search')
-    return searchSimilarDocuments(query, userId, options)
+    const fallbackOptions = { ...options, useAdaptiveRetrieval: false }
+    return searchSimilarDocuments(query, userId, fallbackOptions)
   }
 }

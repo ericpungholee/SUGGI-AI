@@ -1,48 +1,64 @@
-import { NextResponse } from "next/server"
-import { getDocumentContext } from "@/lib/ai/vector-search"
+import { NextRequest, NextResponse } from 'next/server'
+import { searchSimilarDocuments } from '@/lib/ai/vector-search'
 
-export async function POST(request: Request) {
-    try {
-        const { userId, query, documentId } = await request.json()
+export async function POST(request: NextRequest) {
+  try {
+    const { query, documentId, userId } = await request.json()
 
-        if (!userId || !query) {
-            return NextResponse.json(
-                { error: "userId and query are required" },
-                { status: 400 }
-            )
-        }
-
-        console.log('=== DEBUG SEARCH ===')
-        console.log('User ID:', userId)
-        console.log('Query:', query)
-        console.log('Document ID:', documentId)
-
-        // Test document context retrieval
-        const context = await getDocumentContext(query, userId, documentId)
-        
-        console.log('Context retrieved:', context ? 'Yes' : 'No')
-        console.log('Context length:', context?.length || 0)
-
-        return NextResponse.json({
-            success: true,
-            message: "Debug search completed",
-            userId,
-            query,
-            documentId,
-            contextRetrieved: !!context,
-            contextLength: context?.length || 0,
-            contextPreview: context?.substring(0, 200) + '...' || 'No context'
-        })
-    } catch (error) {
-        console.error('Debug search error:', error)
-        return NextResponse.json(
-            { 
-                success: false,
-                error: 'Debug search failed', 
-                details: error instanceof Error ? error.message : 'Unknown error',
-                stack: error instanceof Error ? error.stack : undefined
-            },
-            { status: 500 }
-        )
+    if (!query || !documentId || !userId) {
+      return NextResponse.json({ 
+        error: 'Query, documentId, and userId are required' 
+      }, { status: 400 })
     }
+
+    console.log(`Debug search with query: "${query}"`)
+
+    // Test search results
+    const searchResults = await searchSimilarDocuments(query, userId, {
+      limit: 10,
+      threshold: 0.1,
+      includeContent: true,
+      useHybridSearch: true,
+      useQueryExpansion: true,
+      useQueryRewriting: true,
+      searchStrategy: 'adaptive',
+      useAdaptiveRetrieval: true
+    })
+
+    console.log(`Found ${searchResults.length} search results`)
+
+    // Filter by specific document
+    const relevantResults = searchResults.filter(result => result.documentId === documentId)
+    console.log(`Filtered to ${relevantResults.length} relevant results`)
+
+    return NextResponse.json({
+      success: true,
+      query,
+      documentId,
+      userId,
+      searchResults: {
+        total: searchResults.length,
+        relevant: relevantResults.length,
+        details: relevantResults.map(result => ({
+          id: result.id,
+          documentId: result.documentId,
+          documentTitle: result.documentTitle,
+          similarity: result.similarity,
+          contentLength: result.content?.length || 0,
+          contentPreview: result.content?.substring(0, 200) + '...',
+          fullContent: result.content,
+          metadata: result.metadata
+        }))
+      }
+    })
+  } catch (error) {
+    console.error('Error in debug search:', error)
+    return NextResponse.json(
+      { 
+        error: 'Debug search failed', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      }, 
+      { status: 500 }
+    )
+  }
 }

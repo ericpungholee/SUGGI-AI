@@ -82,12 +82,11 @@ export async function generateEmbedding(
 ) {
   try {
     // Use the best available embedding model
-    const { model = 'text-embedding-3-large', dimensions = 3072 } = options
+    const { model = 'text-embedding-ada-002' } = options
 
     const response = await openai.embeddings.create({
       model,
-      input: text,
-      dimensions
+      input: text
     })
 
     return response.data[0].embedding
@@ -105,12 +104,11 @@ export async function generateEmbeddings(
   options: EmbeddingOptions = {}
 ) {
   try {
-    const { model = 'text-embedding-3-large', dimensions = 3072 } = options
+    const { model = 'text-embedding-ada-002' } = options
 
     const response = await openai.embeddings.create({
       model,
-      input: texts,
-      dimensions
+      input: texts
     })
 
     return response.data.map(item => item.embedding)

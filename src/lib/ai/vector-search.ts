@@ -48,7 +48,7 @@ export async function searchSimilarDocuments(
   try {
     const {
       limit = 10,
-      threshold = 0.1,
+      threshold = 0.3, // Increased from 0.1 for better accuracy
       includeContent = true,
       useHybridSearch = true,
       useQueryExpansion = true,
@@ -66,8 +66,10 @@ export async function searchSimilarDocuments(
     console.log('Using advanced RAG search with strategy:', searchStrategy)
     
     // Use adaptive retrieval if enabled and strategy is adaptive
+    // But prevent infinite recursion by disabling adaptive retrieval in the call
     if (useAdaptiveRetrieval && searchStrategy === 'adaptive') {
-      return await adaptiveRetrieval(query, userId, options)
+      const adaptiveOptions = { ...options, useAdaptiveRetrieval: false }
+      return await adaptiveRetrieval(query, userId, adaptiveOptions)
     }
     
     // Step 1: Query preprocessing
@@ -102,180 +104,143 @@ export async function searchSimilarDocuments(
       queryVariations = [processedQuery]
     }
 
-    // Step 2: Generate embeddings for all query variations
-    let queryEmbeddings: any[] = []
-    let primaryQueryEmbedding: number[] = []
-    
-    try {
-      // Check for cancellation before embedding generation
-      if (abortSignal?.aborted) return []
-      
-      queryEmbeddings = await Promise.all(
-        queryVariations.map(q => createEmbedding(q))
-      )
-      primaryQueryEmbedding = queryEmbeddings[0].embedding
-    } catch (embeddingError) {
-      if (abortSignal?.aborted) return []
-      console.error('Error generating embeddings:', embeddingError)
-      throw new Error(`Failed to generate embeddings: ${embeddingError instanceof Error ? embeddingError.message : 'Unknown error'}`)
+    // Check for cancellation before vector search
+    if (abortSignal?.aborted) {
+      return []
     }
 
-    // Step 3: Get document chunks
-    console.log('Searching for chunks with userId:', userId)
-    let chunks: any[] = []
-    let documentChunks: DocumentChunk[] = []
+    // Step 2: Use Pinecone for vector search with fallback
+    let vectorResults: any[] = []
     
     try {
-      chunks = await prisma.documentChunk.findMany({
-        where: {
-          document: {
-            userId,
-            isDeleted: false
-          }
-        },
-        include: {
-          document: {
-            select: {
-              id: true,
-              title: true,
-              userId: true
-            }
-          }
-        }
+      const { vectorDB } = await import('./vector-db')
+      vectorResults = await vectorDB.searchDocuments(processedQuery, userId, {
+        topK: limit * 3, // Get more results for better re-ranking
+        threshold: Math.max(threshold, 0.2), // Higher minimum threshold for accuracy
+        includeMetadata: true,
+        searchStrategy: searchStrategy === 'hybrid' ? 'semantic' : searchStrategy,
+        useHybridSearch: useHybridSearch
       })
-      
-      console.log('Found chunks:', chunks.length)
 
-      if (chunks.length === 0) {
-        console.log('No document chunks found for user')
+      if (vectorResults.length === 0) {
+        console.log('No vector results found from Pinecone')
         return []
       }
 
-      // Convert to DocumentChunk format and handle dimension mismatches
-      documentChunks = chunks
-        .filter(chunk => chunk.embedding && Array.isArray(chunk.embedding))
-        .map(chunk => {
-          const embedding = chunk.embedding as number[]
-          
-          // Handle dimension mismatch between old (1536) and new (3072) embeddings
-          if (embedding.length === 1536) {
-            console.warn(`Chunk ${chunk.id} has old embedding dimension (1536). Consider re-vectorizing.`)
-            // Skip chunks with old dimensions to avoid poor search results
-            return null
-          }
-          
-          return {
-            id: chunk.id,
-            documentId: chunk.documentId,
-            content: chunk.content,
-            embedding: embedding,
-            chunkIndex: chunk.chunkIndex
+      console.log(`Found ${vectorResults.length} vector results from Pinecone`)
+    } catch (pineconeError) {
+      console.error('Pinecone search failed, falling back to PostgreSQL search:', {
+        error: pineconeError instanceof Error ? pineconeError.message : 'Unknown error',
+        query: processedQuery.substring(0, 100),
+        userId
+      })
+      
+      // Check for cancellation before fallback search
+      if (abortSignal?.aborted) {
+        return []
+      }
+      
+      try {
+        // Fallback to PostgreSQL search if Pinecone fails
+        const documents = await prisma.document.findMany({
+          where: {
+            userId,
+            isDeleted: false,
+            isVectorized: true
+          },
+          select: {
+            id: true,
+            title: true,
+            plainText: true,
+            content: true
           }
         })
-        .filter(chunk => chunk !== null) as DocumentChunk[]
 
-      if (documentChunks.length === 0) {
-        console.log('No chunks with valid embeddings found')
+        if (documents.length === 0) {
+          console.log('No vectorized documents found for fallback search')
+          return []
+        }
+
+        // Simple keyword-based fallback search
+        const queryTerms = processedQuery.toLowerCase().split(/\s+/).filter(term => term.length > 2)
+        const fallbackResults = documents
+          .filter(doc => {
+            const content = (doc.plainText || JSON.stringify(doc.content)).toLowerCase()
+            return queryTerms.some(term => content.includes(term))
+          })
+          .slice(0, limit)
+          .map(doc => ({
+            id: doc.id,
+            score: 0.5, // Default score for fallback
+            content: doc.plainText || JSON.stringify(doc.content),
+            metadata: {
+              documentId: doc.id,
+              documentTitle: doc.title,
+              userId: userId,
+              chunkIndex: 0,
+              createdAt: new Date().toISOString()
+            }
+          }))
+
+        vectorResults = fallbackResults
+        console.log(`Fallback search found ${vectorResults.length} results`)
+      } catch (fallbackError) {
+        console.error('Fallback search also failed:', fallbackError)
+        // Return empty results if both Pinecone and fallback fail
         return []
       }
-    } catch (dbError) {
-      console.error('Error fetching document chunks:', dbError)
-      throw new Error(`Failed to fetch document chunks: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`)
     }
 
-    // Step 4: Perform search based on strategy
-    let similarChunks: DocumentChunk[] = []
-    
-    try {
-      if (searchStrategy === 'hybrid' && useHybridSearch) {
-        // Use hybrid search combining semantic and keyword matching
-        similarChunks = hybridSearch(
-          processedQuery,
-          primaryQueryEmbedding,
-          documentChunks,
-          limit * 2, // Get more results for re-ranking
-          0.7, // semantic weight
-          0.3  // keyword weight
-        )
-      } else if (searchStrategy === 'semantic') {
-        // Use pure semantic search
-        similarChunks = findSimilarChunks(
-          primaryQueryEmbedding,
-          documentChunks,
-          limit * 2,
-          threshold
-        )
-      } else {
-        // Fallback to basic similarity
-        const similarities = documentChunks.map(chunk => ({
-          chunk,
-          similarity: cosineSimilarity(primaryQueryEmbedding, chunk.embedding)
-        }))
-
-        similarChunks = similarities
-          .filter(item => item.similarity >= threshold)
-          .sort((a, b) => b.similarity - a.similarity)
-          .slice(0, limit * 2)
-          .map(item => item.chunk)
+    // Step 3: Get document content from database for the results
+    const documentIds = vectorResults.map(result => result.metadata.documentId)
+    const documents = await prisma.document.findMany({
+      where: {
+        id: { in: documentIds },
+        userId,
+        isDeleted: false
+      },
+      select: {
+        id: true,
+        title: true,
+        plainText: true,
+        content: true
       }
-    } catch (searchError) {
-      console.error('Error in search operation:', searchError)
-      throw new Error(`Failed to perform search: ${searchError instanceof Error ? searchError.message : 'Unknown error'}`)
-    }
+    })
 
-    // Step 5: Re-rank results using multiple query variations
-    if (queryVariations.length > 1) {
-      try {
-        const rerankedChunks = await rerankWithMultipleQueries(
-          similarChunks,
-          queryVariations.slice(1), // Skip primary query
-          limit
-        )
-        similarChunks = rerankedChunks
-      } catch (rerankError) {
-        console.warn('Re-ranking failed, using original results:', rerankError)
-        // Continue with original results if re-ranking fails
-      }
-    }
-
-    // Step 6: Advanced context selection and filtering
-    let results: SearchResult[] = []
-    
-    try {
-      // Convert to SearchResult format first
-      const rawResults = similarChunks.map(chunk => {
-        const similarity = cosineSimilarity(primaryQueryEmbedding, chunk.embedding)
-        const dbChunk = chunks.find(c => c.id === chunk.id)
-        
-        if (!dbChunk) {
-          console.warn(`Could not find database chunk for id: ${chunk.id}`)
-          return {
-            documentId: chunk.documentId,
-            documentTitle: 'Unknown Document',
-            content: includeContent ? chunk.content : '',
-            similarity,
-            chunkIndex: chunk.chunkIndex
-          }
-        }
-        
+    // Step 4: Combine vector results with database content
+    const results: SearchResult[] = vectorResults.map(result => {
+      const dbDocument = documents.find(d => d.id === result.metadata.documentId)
+      
+      if (!dbDocument) {
+        console.warn(`Could not find database document for id: ${result.metadata.documentId}`)
         return {
-          documentId: chunk.documentId,
-          documentTitle: dbChunk.document.title,
-          content: includeContent ? chunk.content : '',
-          similarity,
-          chunkIndex: chunk.chunkIndex
+          documentId: result.metadata.documentId,
+          documentTitle: result.metadata.documentTitle,
+          content: includeContent ? result.content : '',
+          similarity: result.score,
+          chunkIndex: 0 // Single document = chunk 0
         }
-      })
+      }
+      
+      // Use the content from the database document (full content)
+      const content = includeContent ? (dbDocument.plainText || JSON.stringify(dbDocument.content)) : ''
+      
+      return {
+        documentId: result.metadata.documentId,
+        documentTitle: dbDocument.title,
+        content: content,
+        similarity: result.score,
+        chunkIndex: 0 // Single document = chunk 0
+      }
+    })
 
-      // Apply advanced filtering and selection
-      results = await selectBestContext(rawResults, query, limit)
-    } catch (conversionError) {
-      console.error('Error converting results:', conversionError)
-      throw new Error(`Failed to convert search results: ${conversionError instanceof Error ? conversionError.message : 'Unknown error'}`)
-    }
+    // Step 5: Apply advanced filtering and selection
+    console.log(`Before context selection: ${results.length} results`)
+    const filteredResults = await selectBestContext(results, query, limit)
+    console.log(`After context selection: ${filteredResults.length} results`)
 
-    console.log(`Found ${results.length} similar documents with advanced RAG`)
-    return results
+    console.log(`Found ${filteredResults.length} similar documents with Pinecone RAG`)
+    return filteredResults
   } catch (error) {
     console.error('Error searching similar documents:', {
       query,
@@ -367,29 +332,47 @@ async function selectBestContext(
   limit: number
 ): Promise<SearchResult[]> {
   try {
-    if (results.length === 0) return []
+    if (results.length === 0) {
+      console.log('No results to select from')
+      return []
+    }
+
+    console.log(`Starting context selection with ${results.length} results, limit: ${limit}`)
 
     // 1. Remove duplicates and very similar content
     const uniqueResults = removeDuplicateContent(results)
+    console.log(`After deduplication: ${uniqueResults.length} results`)
     
-    // 2. Apply content quality scoring
+    // 2. Apply enhanced content quality scoring
     const qualityScored = uniqueResults.map(result => ({
       ...result,
-      qualityScore: calculateContentQuality(result, query)
+      qualityScore: calculateEnhancedContentQuality(result, query)
     }))
+    console.log(`Quality scores: ${qualityScored.map(r => r.qualityScore.toFixed(3)).join(', ')}`)
 
-    // 3. Apply diversity scoring (prefer different documents)
-    const diversityScored = applyDiversityScoring(qualityScored)
+    // 3. Apply semantic relevance scoring
+    const relevanceScored = await calculateSemanticRelevance(qualityScored, query)
+    console.log(`Semantic scores: ${relevanceScored.map(r => r.semanticScore.toFixed(3)).join(', ')}`)
 
-    // 4. Sort by combined score (similarity + quality + diversity)
-    const finalResults = diversityScored
+    // 4. Apply diversity scoring (prefer different documents)
+    const diversityScored = applyDiversityScoring(relevanceScored)
+    console.log(`Diversity scores: ${diversityScored.map(r => r.diversityScore.toFixed(3)).join(', ')}`)
+
+    // 5. Apply query-specific scoring
+    const queryScored = applyQuerySpecificScoring(diversityScored, query)
+    console.log(`Query scores: ${queryScored.map(r => r.queryScore.toFixed(3)).join(', ')}`)
+
+    // 6. Sort by enhanced combined score
+    const finalResults = queryScored
       .sort((a, b) => {
-        const scoreA = a.similarity * 0.5 + a.qualityScore * 0.3 + (a.diversityScore || 0) * 0.2
-        const scoreB = b.similarity * 0.5 + b.qualityScore * 0.3 + (b.diversityScore || 0) * 0.2
+        const scoreA = calculateFinalScore(a, query)
+        const scoreB = calculateFinalScore(b, query)
         return scoreB - scoreA
       })
       .slice(0, limit)
 
+    console.log(`Final scores: ${finalResults.map(r => calculateFinalScore(r, query).toFixed(3)).join(', ')}`)
+    console.log(`Selected ${finalResults.length} high-quality results from ${results.length} candidates`)
     return finalResults
   } catch (error) {
     console.error('Error in context selection:', error)
@@ -419,29 +402,202 @@ function removeDuplicateContent(results: SearchResult[]): SearchResult[] {
 }
 
 /**
- * Calculate content quality score based on query relevance
+ * Calculate enhanced content quality score based on query relevance
  */
-function calculateContentQuality(result: SearchResult, query: string): number {
+function calculateEnhancedContentQuality(result: SearchResult, query: string): number {
   const content = result.content.toLowerCase()
   const queryTerms = query.toLowerCase().split(/\s+/).filter(term => term.length > 2)
   
-  // 1. Keyword density score
+  // 1. Enhanced keyword density score with phrase matching
   const keywordMatches = queryTerms.filter(term => content.includes(term)).length
   const keywordScore = queryTerms.length > 0 ? keywordMatches / queryTerms.length : 0
   
-  // 2. Content length score (prefer substantial content)
-  const lengthScore = Math.min(1, result.content.length / 500) // Normalize to 0-1
+  // 2. Exact phrase matching bonus
+  const phraseScore = content.includes(query.toLowerCase()) ? 0.3 : 0
   
-  // 3. Specificity score (prefer content with specific details)
+  // 3. Content length score (prefer substantial but not too long content)
+  const optimalLength = 300
+  const lengthScore = Math.min(1, 1 - Math.abs(result.content.length - optimalLength) / optimalLength)
+  
+  // 4. Enhanced specificity score
   const hasNumbers = /\d+/.test(result.content)
-  const hasSpecificTerms = /(?:specifically|particularly|exactly|precisely|detailed)/i.test(result.content)
-  const specificityScore = (hasNumbers ? 0.3 : 0) + (hasSpecificTerms ? 0.2 : 0)
+  const hasSpecificTerms = /(?:specifically|particularly|exactly|precisely|detailed|analysis|research|study|data|results)/i.test(result.content)
+  const hasTechnicalTerms = /(?:algorithm|method|approach|technique|process|procedure)/i.test(result.content)
+  const specificityScore = (hasNumbers ? 0.2 : 0) + (hasSpecificTerms ? 0.2 : 0) + (hasTechnicalTerms ? 0.1 : 0)
   
-  // 4. Structure score (prefer well-structured content)
-  const hasStructure = /(?:first|second|third|finally|in conclusion|however|therefore)/i.test(result.content)
-  const structureScore = hasStructure ? 0.2 : 0
+  // 5. Structure and coherence score
+  const hasStructure = /(?:first|second|third|finally|in conclusion|however|therefore|moreover|furthermore)/i.test(result.content)
+  const hasLists = /(?:^\s*[-*+]\s+|^\s*\d+\.\s+)/m.test(result.content)
+  const structureScore = (hasStructure ? 0.15 : 0) + (hasLists ? 0.1 : 0)
   
-  return keywordScore * 0.4 + lengthScore * 0.3 + specificityScore * 0.2 + structureScore * 0.1
+  // 6. Query intent matching
+  const isQuestion = query.includes('?')
+  const hasAnswers = isQuestion && /(?:answer|solution|explanation|because|due to|as a result)/i.test(result.content)
+  const intentScore = hasAnswers ? 0.2 : 0
+  
+  return keywordScore * 0.3 + phraseScore * 0.2 + lengthScore * 0.15 + specificityScore * 0.2 + structureScore * 0.1 + intentScore * 0.05
+}
+
+/**
+ * Calculate semantic relevance using embedding similarity
+ */
+async function calculateSemanticRelevance(
+  results: (SearchResult & { qualityScore: number })[],
+  query: string
+): Promise<(SearchResult & { qualityScore: number; semanticScore: number })[]> {
+  try {
+    const { createEmbedding } = await import('./embeddings')
+    const queryEmbedding = await createEmbedding(query)
+    
+    return results.map(result => {
+      // For single vector documents, we already have similarity from Pinecone
+      // But we can enhance it with additional semantic analysis
+      const baseSimilarity = result.similarity
+      
+      // Additional semantic scoring based on content analysis
+      const content = result.content.toLowerCase()
+      const queryTerms = query.toLowerCase().split(/\s+/)
+      
+      // Semantic word matching (not just exact matches)
+      const semanticMatches = queryTerms.filter(term => {
+        // Check for exact matches
+        if (content.includes(term)) return true
+        
+        // Check for semantic variations
+        const variations = getSemanticVariations(term)
+        return variations.some(variation => content.includes(variation))
+      }).length
+      
+      const semanticBonus = queryTerms.length > 0 ? semanticMatches / queryTerms.length : 0
+      const enhancedSimilarity = Math.min(1, baseSimilarity + semanticBonus * 0.2)
+      
+      return {
+        ...result,
+        semanticScore: enhancedSimilarity
+      }
+    })
+  } catch (error) {
+    console.error('Error calculating semantic relevance:', error)
+    return results.map(result => ({ ...result, semanticScore: result.similarity }))
+  }
+}
+
+/**
+ * Get semantic variations of a word for better matching
+ */
+function getSemanticVariations(word: string): string[] {
+  const variations: string[] = []
+  
+  // Common word variations
+  const commonVariations: Record<string, string[]> = {
+    'analyze': ['analysis', 'analyzing', 'analytical'],
+    'data': ['information', 'dataset', 'metrics'],
+    'method': ['approach', 'technique', 'process'],
+    'result': ['outcome', 'finding', 'conclusion'],
+    'study': ['research', 'investigation', 'examination'],
+    'test': ['testing', 'evaluation', 'assessment'],
+    'model': ['algorithm', 'system', 'framework'],
+    'performance': ['efficiency', 'effectiveness', 'accuracy'],
+    'improve': ['enhance', 'optimize', 'better'],
+    'problem': ['issue', 'challenge', 'difficulty']
+  }
+  
+  const lowerWord = word.toLowerCase()
+  if (commonVariations[lowerWord]) {
+    variations.push(...commonVariations[lowerWord])
+  }
+  
+  // Add plural/singular variations
+  if (word.endsWith('s') && word.length > 3) {
+    variations.push(word.slice(0, -1))
+  } else if (!word.endsWith('s')) {
+    variations.push(word + 's')
+  }
+  
+  return variations
+}
+
+/**
+ * Apply query-specific scoring based on query type
+ */
+function applyQuerySpecificScoring(
+  results: (SearchResult & { qualityScore: number; semanticScore: number; diversityScore: number })[],
+  query: string
+): (SearchResult & { qualityScore: number; semanticScore: number; diversityScore: number; queryScore: number })[] {
+  const isQuestion = query.includes('?')
+  const isHowTo = /how\s+to/i.test(query)
+  const isWhat = /what\s+is/i.test(query)
+  const isWhy = /why/i.test(query)
+  const isCompare = /compare|versus|vs|difference/i.test(query)
+  
+  return results.map(result => {
+    let queryScore = 0
+    
+    if (isQuestion) {
+      // Prefer content that directly answers questions
+      const hasAnswers = /(?:answer|solution|explanation|because|due to|as a result|therefore)/i.test(result.content)
+      queryScore += hasAnswers ? 0.3 : 0
+    }
+    
+    if (isHowTo) {
+      // Prefer step-by-step or procedural content
+      const hasSteps = /(?:step|first|second|third|then|next|finally|procedure|process)/i.test(result.content)
+      queryScore += hasSteps ? 0.3 : 0
+    }
+    
+    if (isWhat) {
+      // Prefer definitional or explanatory content
+      const hasDefinitions = /(?:is|are|means|refers to|defined as|consists of)/i.test(result.content)
+      queryScore += hasDefinitions ? 0.3 : 0
+    }
+    
+    if (isWhy) {
+      // Prefer content with reasoning or explanations
+      const hasReasoning = /(?:because|due to|as a result|therefore|consequently|reason|explanation)/i.test(result.content)
+      queryScore += hasReasoning ? 0.3 : 0
+    }
+    
+    if (isCompare) {
+      // Prefer content with comparisons or contrasts
+      const hasComparison = /(?:versus|compared to|difference|similar|different|better|worse|advantage|disadvantage)/i.test(result.content)
+      queryScore += hasComparison ? 0.3 : 0
+    }
+    
+    return {
+      ...result,
+      queryScore
+    }
+  })
+}
+
+/**
+ * Calculate final composite score for ranking
+ */
+function calculateFinalScore(
+  result: SearchResult & { 
+    qualityScore: number; 
+    semanticScore: number; 
+    diversityScore: number; 
+    queryScore: number 
+  },
+  query: string
+): number {
+  // Weighted combination of all scores
+  const weights = {
+    similarity: 0.25,      // Original similarity from vector search
+    quality: 0.25,         // Content quality score
+    semantic: 0.20,        // Enhanced semantic relevance
+    diversity: 0.15,       // Diversity across documents
+    query: 0.15           // Query-specific relevance
+  }
+  
+  return (
+    result.similarity * weights.similarity +
+    result.qualityScore * weights.quality +
+    result.semanticScore * weights.semantic +
+    result.diversityScore * weights.diversity +
+    result.queryScore * weights.query
+  )
 }
 
 /**
@@ -474,9 +630,11 @@ export async function getDocumentContext(
   limit: number = 5
 ): Promise<string> {
   try {
+    console.log(`Getting document context for query: "${query}" (user: ${userId}, doc: ${documentId})`)
+    
     const searchResults = await searchSimilarDocuments(query, userId, {
-      limit: limit * 2, // Get more results for better context
-      threshold: 0.15, // Slightly higher threshold for better quality
+      limit: limit * 4, // Get more results for better context selection
+      threshold: 0.15, // Lowered threshold to ensure we get some results
       includeContent: true,
       useHybridSearch: true,
       useQueryExpansion: true,
@@ -485,12 +643,17 @@ export async function getDocumentContext(
       useAdaptiveRetrieval: true
     })
 
+    console.log(`Found ${searchResults.length} search results`)
+
     // Filter by specific document if provided
     const relevantResults = documentId 
       ? searchResults.filter(result => result.documentId === documentId)
       : searchResults
 
+    console.log(`Filtered to ${relevantResults.length} relevant results`)
+
     if (relevantResults.length === 0) {
+      console.log('No relevant results found for context')
       return ''
     }
 
@@ -509,17 +672,17 @@ export async function getDocumentContext(
       return acc
     }, {} as Record<string, { title: string; chunks: SearchResult[] }>)
 
-    // Format context with document grouping
+    // Format context with document grouping and similarity scores
     let context = Object.entries(groupedResults)
       .map(([docId, docData]) => {
         const chunks = docData.chunks
           .sort((a, b) => a.chunkIndex - b.chunkIndex) // Sort by chunk order
           .map((result, index) => {
-            const content = result.content.length > 300 
-              ? result.content.substring(0, 300) + '...'
-              : result.content
+            // Don't truncate content - let the full content through
+            const content = result.content
             
-            return `  ${index + 1}. ${content}`
+            const similarity = (result.similarity * 100).toFixed(1)
+            return `  ${index + 1}. [Similarity: ${similarity}%] ${content}`
           })
           .join('\n\n')
 
@@ -527,17 +690,22 @@ export async function getDocumentContext(
       })
       .join('\n\n---\n\n')
 
+    // Add query context at the top
+    context = `Query: "${query}"\n\nRelevant Context (use document TITLES when citing sources):\n\n${context}`
+
     // Compress context if it's too long
-    if (context.length > 4000) { // Rough token limit
+    if (context.length > 12000) { // Increased token limit for better context
       try {
-        context = await compressContext(context, 2000)
+        console.log('Compressing context due to length')
+        context = await compressContext(context, 8000)
       } catch (error) {
         console.error('Error compressing context:', error)
         // Fallback to truncation
-        context = context.substring(0, 4000) + '...'
+        context = context.substring(0, 12000) + '...'
       }
     }
 
+    console.log(`Generated context with ${context.length} characters`)
     return context
   } catch (error) {
     console.error('Error getting document context:', {
@@ -574,43 +742,51 @@ export async function vectorizeDocument(
       throw new Error('Document not found or access denied')
     }
 
-    // Process document content into chunks using adaptive chunking
-    const { processDocumentContent } = await import('./embeddings')
-    const chunks = await processDocumentContent(content, documentId)
-
-    if (chunks.length === 0) {
+    if (!content || content.trim().length === 0) {
+      console.log(`Document ${documentId} has no content to vectorize`)
       return
     }
 
-    // Delete existing chunks for this document (both in DB and vector DB)
-    await prisma.documentChunk.deleteMany({
-      where: { documentId }
-    })
+    // Generate single embedding for the entire document
+    const { createEmbedding } = await import('./embeddings')
+    const embeddingResult = await createEmbedding(content)
 
-    // Create new chunks in database
-    await prisma.documentChunk.createMany({
-      data: chunks.map(chunk => ({
-        id: chunk.id,
-        documentId: chunk.documentId,
-        content: chunk.content,
-        embedding: chunk.embedding,
-        chunkIndex: chunk.chunkIndex
-      }))
-    })
+    // Store single vector in Pinecone
+    const { vectorDB } = await import('./vector-db')
+    const vectorDocument = {
+      id: documentId, // Use document ID as the vector ID
+      content: content,
+      metadata: {
+        documentId: documentId,
+        documentTitle: document.title,
+        userId: userId,
+        chunkIndex: 0, // Single document = chunk 0
+        createdAt: new Date().toISOString(),
+        contentType: 'text',
+        documentType: 'document',
+        wordCount: content.split(/\s+/).length
+      }
+    }
 
-    // Using PostgreSQL for vector storage (Pinecone removed for simplicity)
-    console.log('Using PostgreSQL for vector storage')
+    await vectorDB.upsertDocuments([vectorDocument])
+    console.log(`Stored single vector for document ${documentId} in Pinecone`)
 
-    // Update document as vectorized
+    // Update document as vectorized with the embedding
     await prisma.document.update({
       where: { id: documentId },
       data: {
         isVectorized: true,
-        embedding: chunks[0].embedding // Store first chunk embedding for quick access
+        embedding: embeddingResult.embedding, // Store the single document embedding
+        wordCount: content.split(/\s+/).length
       }
     })
 
-    console.log(`Document ${documentId} vectorized with ${chunks.length} chunks`)
+    // Clean up any existing chunks (we're using single vector now)
+    await prisma.documentChunk.deleteMany({
+      where: { documentId }
+    })
+
+    console.log(`Document ${documentId} vectorized with single vector`)
   } catch (error) {
     console.error('Error vectorizing document:', {
       documentId,

@@ -184,10 +184,14 @@ export async function PATCH(
         if (content !== undefined) {
             try {
                 const { processDocument } = await import("@/lib/ai")
-                // Don't await this to avoid blocking the response
-                processDocument(id, session.user.id, { useIncremental: true }).catch(error => {
+                // Force re-vectorization when content changes to ensure new content is indexed
+                processDocument(id, session.user.id, { 
+                    forceReprocess: true, 
+                    useIncremental: false 
+                }).catch(error => {
                     console.error('Background vectorization failed:', error)
                 })
+                console.log(`Triggered force re-vectorization for document ${id}`)
             } catch (error) {
                 console.error('Error starting background vectorization:', error)
             }

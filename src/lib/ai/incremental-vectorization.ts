@@ -148,7 +148,7 @@ async function processDocumentChange(
 }
 
 /**
- * Handle added content - create new chunks
+ * Handle added content - update the single document vector
  */
 async function handleAddedContent(
   documentId: string,
@@ -157,50 +157,116 @@ async function handleAddedContent(
 ): Promise<void> {
   if (!change.newContent) return
 
-  // Chunk the new content
-  const chunks = await chunkTextAdaptive(change.newContent, {
-    maxChunkSize: 1000,
-    overlap: 200,
-    preserveStructure: true
-  })
+  try {
+    // Get the current document content
+    const document = await prisma.document.findFirst({
+      where: { id: documentId },
+      select: { plainText: true, content: true, title: true, userId: true }
+    })
 
-  // Get the highest chunk index for this document
-  const lastChunk = await prisma.documentChunk.findFirst({
-    where: { documentId },
-    orderBy: { chunkIndex: 'desc' }
-  })
-
-  let startIndex = lastChunk ? lastChunk.chunkIndex + 1 : 0
-
-  // Create chunks for new content
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i]
-    
-    try {
-      // Generate embedding
-      const embedding = await createEmbedding(chunk.content)
-      
-      // Create chunk record
-      await prisma.documentChunk.create({
-        data: {
-          documentId,
-          content: chunk.content,
-          embedding: embedding.embedding,
-          chunkIndex: startIndex + i
-        }
-      })
-
-      result.chunksAdded++
-      result.chunksProcessed++
-    } catch (error) {
-      console.error(`Error creating chunk for added content:`, error)
-      result.errors.push(`Failed to create chunk ${startIndex + i}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    if (!document) {
+      result.errors.push('Document not found for content update')
+      return
     }
+
+    // For single vector approach, we need to re-vectorize the entire document
+    // The newContent passed here should be the full updated content
+    const fullContent = change.newContent || (document.plainText || extractTextFromContent(document.content))
+    
+    console.log(`Re-vectorizing document ${documentId} with full content (length: ${fullContent.length})`)
+
+    // Generate new embedding for the entire document
+    const embedding = await createEmbedding(fullContent)
+
+    // Update the single document vector in Pinecone
+    const { vectorDB } = await import('./vector-db')
+    const vectorDocument = {
+      id: documentId, // Use document ID as the vector ID
+      content: fullContent,
+      metadata: {
+        documentId: documentId,
+        documentTitle: document.title,
+        userId: document.userId,
+        chunkIndex: 0, // Single document = chunk 0
+        createdAt: new Date().toISOString(),
+        contentType: 'text',
+        documentType: 'document',
+        wordCount: fullContent.split(/\s+/).length
+      }
+    }
+
+    await vectorDB.upsertDocuments([vectorDocument])
+    console.log(`Updated single vector for document ${documentId} in Pinecone`)
+
+    // Update document in database
+    await prisma.document.update({
+      where: { id: documentId },
+      data: {
+        plainText: fullContent,
+        embedding: embedding.embedding,
+        wordCount: fullContent.split(/\s+/).length,
+        isVectorized: true
+      }
+    })
+
+    result.chunksUpdated++
+    result.chunksProcessed++
+  } catch (error) {
+    console.error(`Error updating document vector for added content:`, error)
+    result.errors.push(`Failed to update document vector: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 }
 
 /**
- * Handle modified content - update existing chunks
+ * Extract text content from document JSON content
+ */
+function extractTextFromContent(content: any): string {
+  if (typeof content === 'string') {
+    return content
+  }
+
+  if (typeof content === 'object' && content !== null) {
+    if (content.html) {
+      return stripHtml(content.html)
+    }
+    
+    if (content.plainText) {
+      return content.plainText
+    }
+
+    if (content.text) {
+      return content.text
+    }
+
+    if (Array.isArray(content)) {
+      return content
+        .map(block => {
+          if (typeof block === 'string') return block
+          if (block.text) return block.text
+          if (block.content) return block.content
+          return ''
+        })
+        .join('\n')
+    }
+
+    return JSON.stringify(content)
+  }
+
+  return ''
+}
+
+/**
+ * Strip HTML tags from text
+ */
+function stripHtml(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Handle modified content - update the single document vector
  */
 async function handleModifiedContent(
   documentId: string,
@@ -209,14 +275,7 @@ async function handleModifiedContent(
 ): Promise<void> {
   if (!change.newContent) return
 
-  // Find chunks that overlap with the modified range
-  const existingChunks = await prisma.documentChunk.findMany({
-    where: { documentId },
-    orderBy: { chunkIndex: 'asc' }
-  })
-
-  // For simplicity, if content is modified, we'll re-chunk the entire document
-  // In a more sophisticated implementation, we could identify specific chunks to update
+  // For modified content, we'll re-vectorize the entire document
   await revectorizeDocument(documentId, change.newContent, result)
 }
 
@@ -253,42 +312,62 @@ async function revectorizeDocument(
   content: string,
   result: VectorizationResult
 ): Promise<void> {
-  // Delete all existing chunks
-  await prisma.documentChunk.deleteMany({
-    where: { documentId }
-  })
+  try {
+    // Get document info
+    const document = await prisma.document.findFirst({
+      where: { id: documentId },
+      select: { title: true, userId: true }
+    })
 
-  // Chunk the entire content
-  const chunks = await chunkTextAdaptive(content, {
-    maxChunkSize: 1000,
-    overlap: 200,
-    preserveStructure: true
-  })
-
-  // Create new chunks
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i]
-    
-    try {
-      // Generate embedding
-      const embedding = await createEmbedding(chunk.content)
-      
-      // Create chunk record
-      await prisma.documentChunk.create({
-        data: {
-          documentId,
-          content: chunk.content,
-          embedding: embedding.embedding,
-          chunkIndex: i
-        }
-      })
-
-      result.chunksAdded++
-      result.chunksProcessed++
-    } catch (error) {
-      console.error(`Error creating chunk during re-vectorization:`, error)
-      result.errors.push(`Failed to create chunk ${i}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    if (!document) {
+      result.errors.push('Document not found for re-vectorization')
+      return
     }
+
+    // Generate single embedding for the entire document
+    const embedding = await createEmbedding(content)
+
+    // Update the single document vector in Pinecone
+    const { vectorDB } = await import('./vector-db')
+    const vectorDocument = {
+      id: documentId, // Use document ID as the vector ID
+      content: content,
+      metadata: {
+        documentId: documentId,
+        documentTitle: document.title,
+        userId: document.userId,
+        chunkIndex: 0, // Single document = chunk 0
+        createdAt: new Date().toISOString(),
+        contentType: 'text',
+        documentType: 'document',
+        wordCount: content.split(/\s+/).length
+      }
+    }
+
+    await vectorDB.upsertDocuments([vectorDocument])
+    console.log(`Re-vectorized single vector for document ${documentId} in Pinecone`)
+
+    // Update document in database
+    await prisma.document.update({
+      where: { id: documentId },
+      data: {
+        plainText: content,
+        embedding: embedding.embedding,
+        wordCount: content.split(/\s+/).length,
+        isVectorized: true
+      }
+    })
+
+    // Clean up any existing chunks (we're using single vector now)
+    await prisma.documentChunk.deleteMany({
+      where: { documentId }
+    })
+
+    result.chunksUpdated++
+    result.chunksProcessed++
+  } catch (error) {
+    console.error(`Error re-vectorizing document:`, error)
+    result.errors.push(`Failed to re-vectorize document: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 }
 

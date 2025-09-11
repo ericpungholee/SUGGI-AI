@@ -34,30 +34,14 @@ export async function trackDocumentChanges(
   newContent: string
 ): Promise<DocumentChange[]> {
   try {
-    // Get the latest version
-    const latestVersion = await prisma.documentVersion.findFirst({
-      where: { documentId },
-      orderBy: { createdAt: 'desc' }
+    // Get the current document content from the main document table
+    const currentDocument = await prisma.document.findFirst({
+      where: { id: documentId },
+      select: { plainText: true, content: true }
     })
 
-    const newHash = generateContentHash(newContent)
-    
-    // If no previous version or content hasn't changed, return empty
-    if (!latestVersion || latestVersion.contentHash === newHash) {
-      return []
-    }
-
-    // Get the previous content
-    const previousVersion = await prisma.documentVersion.findFirst({
-      where: { 
-        documentId,
-        id: { not: latestVersion.id }
-      },
-      orderBy: { createdAt: 'desc' }
-    })
-
-    if (!previousVersion) {
-      // First time vectorizing - everything is new
+    if (!currentDocument) {
+      // Document not found - treat as new content
       return [{
         type: 'added',
         startIndex: 0,
@@ -66,18 +50,38 @@ export async function trackDocumentChanges(
       }]
     }
 
-    // Get previous content from chunks
-    const previousChunks = await prisma.documentChunk.findMany({
-      where: { documentId },
-      orderBy: { chunkIndex: 'asc' }
-    })
+    // Extract current content
+    const currentContent = currentDocument.plainText || 
+      (typeof currentDocument.content === 'string' 
+        ? currentDocument.content 
+        : currentDocument.content?.plainText || '')
 
-    const previousContent = previousChunks
-      .map(chunk => chunk.content)
-      .join('')
+    // If no current content, everything is new
+    if (!currentContent || currentContent.trim().length === 0) {
+      return [{
+        type: 'added',
+        startIndex: 0,
+        endIndex: newContent.length,
+        newContent
+      }]
+    }
+
+    // Compare content hashes
+    const currentHash = generateContentHash(currentContent)
+    const newHash = generateContentHash(newContent)
+    
+    // If content hasn't changed, return empty
+    if (currentHash === newHash) {
+      console.log(`No content changes detected for document ${documentId}`)
+      return []
+    }
+
+    console.log(`Content changes detected for document ${documentId}`)
+    console.log(`Current content length: ${currentContent.length}`)
+    console.log(`New content length: ${newContent.length}`)
 
     // Use diff algorithm to find changes
-    const changes = computeContentDiff(previousContent, newContent)
+    const changes = computeContentDiff(currentContent, newContent)
     
     return changes
   } catch (error) {
@@ -208,17 +212,40 @@ export async function getDocumentVersions(documentId: string): Promise<DocumentV
  */
 export async function needsRevectorization(documentId: string, content: string): Promise<boolean> {
   try {
-    const latestVersion = await prisma.documentVersion.findFirst({
-      where: { documentId },
-      orderBy: { createdAt: 'desc' }
+    // Get the current document content
+    const currentDocument = await prisma.document.findFirst({
+      where: { id: documentId },
+      select: { plainText: true, content: true, isVectorized: true }
     })
 
-    if (!latestVersion) {
+    if (!currentDocument) {
+      return true // Document not found
+    }
+
+    if (!currentDocument.isVectorized) {
       return true // Never vectorized
     }
 
-    const currentHash = generateContentHash(content)
-    return latestVersion.contentHash !== currentHash
+    // Extract current content
+    const currentContent = currentDocument.plainText || 
+      (typeof currentDocument.content === 'string' 
+        ? currentDocument.content 
+        : currentDocument.content?.plainText || '')
+
+    if (!currentContent || currentContent.trim().length === 0) {
+      return true // No content to compare
+    }
+
+    // Compare content hashes
+    const currentHash = generateContentHash(currentContent)
+    const newHash = generateContentHash(content)
+    
+    const needsUpdate = currentHash !== newHash
+    console.log(`Re-vectorization check for document ${documentId}: ${needsUpdate ? 'NEEDED' : 'NOT NEEDED'}`)
+    console.log(`Current hash: ${currentHash.substring(0, 8)}...`)
+    console.log(`New hash: ${newHash.substring(0, 8)}...`)
+    
+    return needsUpdate
   } catch (error) {
     console.error('Error checking re-vectorization need:', error)
     return true // Default to re-vectorize on error
