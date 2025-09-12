@@ -261,7 +261,7 @@ export function chunkText(text: string, chunkSize: number = 1000, overlap: numbe
  */
 export async function createEmbedding(text: string): Promise<EmbeddingResult> {
   try {
-    const embedding = await generateEmbedding(text, { model: 'text-embedding-ada-002' })
+    const embedding = await generateEmbedding(text, { model: process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-large' })
     
     // Rough token count estimation (1 token ≈ 4 characters)
     const tokenCount = Math.ceil(text.length / 4)
@@ -306,11 +306,11 @@ export async function createEmbeddings(texts: string[]): Promise<EmbeddingResult
       throw new Error('No valid texts to process')
     }
     
-    const embeddings = await generateEmbeddings(validTexts, { model: 'text-embedding-ada-002' })
+    const embeddings = await generateEmbeddings(validTexts, { model: process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-large' })
     console.log('Generated embeddings:', embeddings.length, 'embeddings')
     
     // Validate embeddings
-    const expectedDimension = 1536 // Updated for text-embedding-ada-002
+    const expectedDimension = 3072 // Updated for text-embedding-3-large
     for (let i = 0; i < embeddings.length; i++) {
       const embedding = embeddings[i]
       if (!Array.isArray(embedding)) {
@@ -832,21 +832,19 @@ Rules:
 - suggestedLimit: 3-15
 - needsContext: true or false`
 
-    // Add timeout to prevent hanging
-    const response = await Promise.race([
-      generateChatCompletion([
-        { role: 'user', content: classificationPrompt }
-      ], {
-        model: 'gpt-5-nano',
-        temperature: 0.1,
-        max_tokens: 200
-      }),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Query classification timeout')), 5000)
-      )
-    ]) as any
+    // Use faster model to avoid timeouts
+    const response = await generateChatCompletion([
+      { role: 'user', content: classificationPrompt }
+    ], {
+      model: 'gpt-4o-mini', // Use faster model to avoid timeouts
+      temperature: 0.1,
+      max_tokens: 200
+    }).catch(error => {
+      console.warn('Query classification failed, using fallback:', error.message)
+      return null
+    })
 
-    const result = response.choices[0]?.message?.content?.trim()
+    const result = response?.choices[0]?.message?.content?.trim()
     if (result) {
       try {
         // Try to extract JSON from the response if it's not pure JSON
@@ -933,7 +931,7 @@ export async function adaptiveRetrieval(
       useHybridSearch: intent.suggestedStrategy === 'hybrid',
       useQueryExpansion: intent.type === 'analytical' || intent.type === 'comparative',
       useQueryRewriting: intent.type === 'factual' || intent.type === 'procedural',
-      threshold: intent.type === 'factual' ? 0.2 : 0.1 // Higher threshold for factual queries
+      threshold: intent.type === 'factual' ? 0.1 : 0.05 // Lowered threshold for better recall
     }
 
     // Perform search with adaptive parameters - ensure no recursion

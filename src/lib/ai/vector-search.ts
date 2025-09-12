@@ -48,7 +48,7 @@ export async function searchSimilarDocuments(
   try {
     const {
       limit = 10,
-      threshold = 0.3, // Increased from 0.1 for better accuracy
+      threshold = 0.1, // Lowered for better recall while maintaining quality
       includeContent = true,
       useHybridSearch = true,
       useQueryExpansion = true,
@@ -72,36 +72,46 @@ export async function searchSimilarDocuments(
       return await adaptiveRetrieval(query, userId, adaptiveOptions)
     }
     
-    // Step 1: Query preprocessing
+    // Step 1: Query preprocessing (skip for simple queries)
     let processedQuery = query
     let queryVariations: string[] = [query]
     
-    try {
-      if (useQueryRewriting) {
-        // Check for cancellation before query rewriting
-        if (abortSignal?.aborted) return []
-        
-        processedQuery = await rewriteQuery(query)
-        console.log('Rewritten query:', processedQuery)
-      }
-    } catch (rewriteError) {
-      if (abortSignal?.aborted) return []
-      console.warn('Query rewriting failed, using original query:', rewriteError)
-      processedQuery = query
-    }
+    // Skip query rewriting and expansion for simple follow-up queries
+    const isSimpleQuery = query.length < 30 || 
+      query.toLowerCase().includes('tell me more') ||
+      query.toLowerCase().includes('what about') ||
+      query.toLowerCase().includes('more info')
     
-    try {
-      if (useQueryExpansion) {
-        // Check for cancellation before query expansion
+    if (!isSimpleQuery) {
+      try {
+        if (useQueryRewriting) {
+          // Check for cancellation before query rewriting
+          if (abortSignal?.aborted) return []
+          
+          processedQuery = await rewriteQuery(query)
+          console.log('Rewritten query:', processedQuery)
+        }
+      } catch (rewriteError) {
         if (abortSignal?.aborted) return []
-        
-        queryVariations = await expandQuery(processedQuery)
-        console.log('Query variations:', queryVariations)
+        console.warn('Query rewriting failed, using original query:', rewriteError)
+        processedQuery = query
       }
-    } catch (expansionError) {
-      if (abortSignal?.aborted) return []
-      console.warn('Query expansion failed, using single query:', expansionError)
-      queryVariations = [processedQuery]
+      
+      try {
+        if (useQueryExpansion) {
+          // Check for cancellation before query expansion
+          if (abortSignal?.aborted) return []
+          
+          queryVariations = await expandQuery(processedQuery)
+          console.log('Query variations:', queryVariations)
+        }
+      } catch (expansionError) {
+        if (abortSignal?.aborted) return []
+        console.warn('Query expansion failed, using single query:', expansionError)
+        queryVariations = [processedQuery]
+      }
+    } else {
+      console.log('Skipping query preprocessing for simple query')
     }
 
     // Check for cancellation before vector search
@@ -116,7 +126,7 @@ export async function searchSimilarDocuments(
       const { vectorDB } = await import('./vector-db')
       vectorResults = await vectorDB.searchDocuments(processedQuery, userId, {
         topK: limit * 3, // Get more results for better re-ranking
-        threshold: Math.max(threshold, 0.2), // Higher minimum threshold for accuracy
+        threshold: Math.max(threshold, 0.1), // Lowered threshold for better recall
         includeMetadata: true,
         searchStrategy: searchStrategy === 'hybrid' ? 'semantic' : searchStrategy,
         useHybridSearch: useHybridSearch
@@ -339,39 +349,47 @@ async function selectBestContext(
 
     console.log(`Starting context selection with ${results.length} results, limit: ${limit}`)
 
-    // 1. Remove duplicates and very similar content
+    // Fast path for small result sets
+    if (results.length <= limit * 2) {
+      console.log('Using fast path for small result set')
+      const uniqueResults = removeDuplicateContent(results)
+      return uniqueResults.slice(0, limit)
+    }
+
+    // 1. Remove duplicates and very similar content (fast)
     const uniqueResults = removeDuplicateContent(results)
     console.log(`After deduplication: ${uniqueResults.length} results`)
     
-    // 2. Apply enhanced content quality scoring
+    // 2. Pre-filter by similarity threshold (fast) - lowered threshold
+    const highSimilarityResults = uniqueResults.filter(r => r.similarity >= 0.15)
+    if (highSimilarityResults.length >= limit) {
+      console.log('Using high-similarity results only')
+      return highSimilarityResults
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, limit)
+    }
+
+    // 3. Apply fast quality scoring (no AI calls)
     const qualityScored = uniqueResults.map(result => ({
       ...result,
-      qualityScore: calculateEnhancedContentQuality(result, query)
+      qualityScore: calculateFastQualityScore(result, query)
     }))
     console.log(`Quality scores: ${qualityScored.map(r => r.qualityScore.toFixed(3)).join(', ')}`)
 
-    // 3. Apply semantic relevance scoring
-    const relevanceScored = await calculateSemanticRelevance(qualityScored, query)
-    console.log(`Semantic scores: ${relevanceScored.map(r => r.semanticScore.toFixed(3)).join(', ')}`)
-
-    // 4. Apply diversity scoring (prefer different documents)
-    const diversityScored = applyDiversityScoring(relevanceScored)
+    // 4. Apply diversity scoring (fast)
+    const diversityScored = applyDiversityScoring(qualityScored)
     console.log(`Diversity scores: ${diversityScored.map(r => r.diversityScore.toFixed(3)).join(', ')}`)
 
-    // 5. Apply query-specific scoring
-    const queryScored = applyQuerySpecificScoring(diversityScored, query)
-    console.log(`Query scores: ${queryScored.map(r => r.queryScore.toFixed(3)).join(', ')}`)
-
-    // 6. Sort by enhanced combined score
-    const finalResults = queryScored
+    // 5. Sort by fast combined score (no AI calls)
+    const finalResults = diversityScored
       .sort((a, b) => {
-        const scoreA = calculateFinalScore(a, query)
-        const scoreB = calculateFinalScore(b, query)
+        const scoreA = calculateFastScore(a, query)
+        const scoreB = calculateFastScore(b, query)
         return scoreB - scoreA
       })
       .slice(0, limit)
 
-    console.log(`Final scores: ${finalResults.map(r => calculateFinalScore(r, query).toFixed(3)).join(', ')}`)
+    console.log(`Final scores: ${finalResults.map(r => calculateFastScore(r, query).toFixed(3)).join(', ')}`)
     console.log(`Selected ${finalResults.length} high-quality results from ${results.length} candidates`)
     return finalResults
   } catch (error) {
@@ -568,6 +586,55 @@ function applyQuerySpecificScoring(
       queryScore
     }
   })
+}
+
+/**
+ * Calculate fast quality score without AI calls
+ */
+function calculateFastQualityScore(result: SearchResult, query: string): number {
+  const content = result.content.toLowerCase()
+  const queryLower = query.toLowerCase()
+  
+  // Simple heuristics for quality
+  let score = 0.5 // Base score
+  
+  // Length bonus (prefer substantial content)
+  if (content.length > 200) score += 0.1
+  if (content.length > 500) score += 0.1
+  
+  // Query term matches
+  const queryTerms = queryLower.split(' ').filter(term => term.length > 2)
+  const termMatches = queryTerms.filter(term => content.includes(term)).length
+  score += (termMatches / queryTerms.length) * 0.3
+  
+  // Sentence structure bonus
+  if (content.includes('.') && content.includes(' ')) score += 0.1
+  
+  return Math.min(1.0, Math.max(0.0, score))
+}
+
+/**
+ * Calculate fast combined score without AI calls
+ */
+function calculateFastScore(
+  result: SearchResult & { 
+    qualityScore: number; 
+    diversityScore: number; 
+  },
+  query: string
+): number {
+  // Simplified scoring focused on similarity + quality + diversity
+  const weights = {
+    similarity: 0.5,       // Primary: vector similarity
+    quality: 0.3,          // Secondary: content quality
+    diversity: 0.2         // Tertiary: diversity
+  }
+  
+  return (
+    result.similarity * weights.similarity +
+    result.qualityScore * weights.quality +
+    result.diversityScore * weights.diversity
+  )
 }
 
 /**

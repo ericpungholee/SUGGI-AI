@@ -2,19 +2,23 @@
 
 import React, { useState } from 'react'
 import { useAIChat } from '@/hooks/useAIChat'
+import { Globe } from 'lucide-react'
 
 interface AIChatWithCancelProps {
   documentId?: string
   conversationId?: string
   includeContext?: boolean
+  useWebSearch?: boolean
 }
 
 export default function AIChatWithCancel({ 
   documentId, 
   conversationId, 
-  includeContext = true 
+  includeContext = true,
+  useWebSearch: initialUseWebSearch = false
 }: AIChatWithCancelProps) {
   const [inputMessage, setInputMessage] = useState('')
+  const [useWebSearch, setUseWebSearch] = useState(initialUseWebSearch)
   const {
     messages,
     isLoading,
@@ -28,7 +32,8 @@ export default function AIChatWithCancel({
   } = useAIChat({
     documentId,
     conversationId,
-    includeContext
+    includeContext,
+    useWebSearch
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,6 +55,17 @@ export default function AIChatWithCancel({
       <div className="flex items-center justify-between p-4 border-b">
         <h2 className="text-lg font-semibold">AI Chat</h2>
         <div className="flex gap-2">
+          <button
+            onClick={() => setUseWebSearch(!useWebSearch)}
+            className={`p-2 rounded transition-colors ${
+              useWebSearch 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+            title={useWebSearch ? 'Web search enabled' : 'Enable web search'}
+          >
+            <Globe className="w-4 h-4" />
+          </button>
           <button
             onClick={clearMessages}
             className="px-3 py-1 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
@@ -178,7 +194,13 @@ export default function AIChatWithCancel({
         </div>
       </form>
 
-      {/* Status indicator */}
+      {/* Status indicators */}
+      {useWebSearch && (
+        <div className="px-4 py-2 bg-green-50 text-green-800 text-sm flex items-center gap-2">
+          <Globe className="w-4 h-4" />
+          Web search enabled - AI will search the web for current information
+        </div>
+      )}
       {currentOperationId && (
         <div className="px-4 py-2 bg-blue-50 text-blue-800 text-sm">
           Operation ID: {currentOperationId}

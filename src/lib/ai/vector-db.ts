@@ -45,12 +45,12 @@ class VectorDatabase {
   private currentIndexName: string | null = null
 
   async initialize() {
-    const expectedIndexName = process.env.PINECONE_INDEX_NAME || 'ssugi-docs'
+    const expectedIndexName = process.env.PINECONE_INDEX_NAME || 'ssugi-documents'
     if (this.isInitialized && this.currentIndexName === expectedIndexName) return
 
     try {
       const apiKey = process.env.PINECONE_API_KEY
-      const indexName = process.env.PINECONE_INDEX_NAME || 'ssugi-docs'
+      const indexName = process.env.PINECONE_INDEX_NAME || 'ssugi-documents'
 
       console.log('Initializing Pinecone with API key:', apiKey ? 'Present' : 'Missing')
       console.log('Index name:', indexName)
@@ -73,7 +73,7 @@ class VectorDatabase {
         console.log(`Creating Pinecone index: ${indexName}`)
         await this.pinecone.createIndex({
           name: indexName,
-          dimension: 1536, // OpenAI text-embedding-ada-002 dimension
+          dimension: 3072, // OpenAI text-embedding-3-large dimension
           metric: 'cosine',
           spec: {
             serverless: {
@@ -82,13 +82,41 @@ class VectorDatabase {
             }
           }
         })
-        console.log(`Pinecone index ${indexName} created, waiting for it to be ready...`)
-        
-        // Wait for index to be ready
-        await this.waitForIndexReady(indexName)
       } else {
-        console.log(`Using existing Pinecone index: ${indexName}`)
+        // Check if existing index has correct dimensions
+        const indexStats = await this.pinecone.describeIndex(indexName)
+        const currentDimensions = indexStats.dimension
+        console.log(`Existing index dimensions: ${currentDimensions}`)
+        
+        if (currentDimensions !== 3072) {
+          console.log(`Index has wrong dimensions (${currentDimensions}), need to recreate with 3072`)
+          console.log(`Deleting old index: ${indexName}`)
+          await this.pinecone.deleteIndex(indexName)
+          
+          // Wait for deletion to complete
+          console.log('Waiting for index deletion to complete...')
+          await new Promise(resolve => setTimeout(resolve, 5000))
+          
+          console.log(`Creating new Pinecone index: ${indexName}`)
+          await this.pinecone.createIndex({
+            name: indexName,
+            dimension: 3072, // OpenAI text-embedding-3-large dimension
+            metric: 'cosine',
+            spec: {
+              serverless: {
+                cloud: 'aws',
+                region: 'us-east-1'
+              }
+            }
+          })
+        }
       }
+      
+      console.log(`Pinecone index ${indexName} ready, waiting for it to be available...`)
+      
+      // Wait for index to be ready
+      await this.waitForIndexReady(indexName)
+      console.log(`Using existing Pinecone index: ${indexName}`)
 
       this.index = this.pinecone.index(indexName)
       this.isInitialized = true
@@ -135,7 +163,7 @@ class VectorDatabase {
       const embeddings = await createEmbeddings(documents.map(doc => doc.content))
 
       // Validate embeddings
-      const expectedDimension = 1536 // Updated for text-embedding-ada-002
+      const expectedDimension = 3072 // Updated for text-embedding-3-large
       for (let i = 0; i < embeddings.length; i++) {
         const embedding = embeddings[i].embedding
         if (!Array.isArray(embedding)) {
@@ -212,7 +240,7 @@ class VectorDatabase {
       const queryEmbedding = await createEmbedding(query)
 
       // Validate query embedding
-      const expectedDimension = 1536 // Updated for text-embedding-ada-002
+      const expectedDimension = 3072 // Updated for text-embedding-3-large
       if (!Array.isArray(queryEmbedding.embedding)) {
         throw new Error('Query embedding is not an array')
       }

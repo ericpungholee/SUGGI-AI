@@ -9,6 +9,11 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'Suggi - AI Writing App',
   description: 'Write with intention, create with purpose',
+  icons: {
+    icon: '/feather-icon.svg',
+    shortcut: '/feather-icon.svg',
+    apple: '/feather-icon.svg',
+  },
 }
 
 export default function RootLayout({

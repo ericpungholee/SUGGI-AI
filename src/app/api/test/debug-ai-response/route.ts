@@ -5,66 +5,19 @@ import { searchWeb, formatSearchResultsForAI } from "@/lib/ai"
 export async function POST(request: Request) {
     try {
         const body = await request.json()
-        const { message = 'who is chamath' } = body
+        const { message = 'Who is paul graham?', testType = 'web' } = body
 
-        console.log('Testing AI chat without database with message:', message)
+        console.log('Debugging AI response with message:', message, 'testType:', testType)
 
-        // Check if this is a general knowledge query
-        const isGeneralKnowledgeQuery = (msg: string): boolean => {
-            const generalKnowledgePatterns = [
-                /^who is/i,
-                /^what is/i,
-                /^when did/i,
-                /^where is/i,
-                /^how does/i,
-                /^why did/i,
-                /^tell me about/i,
-                /^explain/i,
-                /^define/i,
-                /^describe/i,
-                /^what are/i,
-                /^who are/i,
-                /^when was/i,
-                /^where are/i,
-                /^how are/i,
-                /^why are/i,
-                /^can you tell me/i,
-                /^do you know/i,
-                /^what do you know about/i,
-                /^who was/i,
-                /^what was/i,
-                /^when was/i,
-                /^where was/i,
-                /^how was/i,
-                /^why was/i
-            ]
-
-            const messageLower = msg.toLowerCase().trim()
-            
-            for (const pattern of generalKnowledgePatterns) {
-                if (pattern.test(messageLower)) {
-                    return true
-                }
-            }
-
-            return false
-        }
-
-        // Get context - either document context or web search
+        // Get context based on test type
         let context = ''
         let contextSource = 'none'
         
-        if (isGeneralKnowledgeQuery(message)) {
-            try {
-                console.log('Detected general knowledge query, attempting web search...')
-                const webResults = await searchWeb(message, { limit: 5 })
-                if (webResults && webResults.length > 0) {
-                    context = formatSearchResultsForAI(webResults)
-                    contextSource = 'web'
-                    console.log('Web search successful, found', webResults.length, 'results')
-                }
-            } catch (webSearchError) {
-                console.warn('Web search failed:', webSearchError)
+        if (testType === 'web') {
+            const webResults = await searchWeb(message, { limit: 3 })
+            if (webResults && webResults.length > 0) {
+                context = formatSearchResultsForAI(webResults)
+                contextSource = 'web'
             }
         }
 
@@ -134,19 +87,61 @@ Response format:
         let aiMessage = 'I apologize, but I was unable to generate a response.'
 
         try {
+            console.log('Attempting to generate AI response...')
+            console.log('OpenAI API Key present:', !!process.env.OPENAI_API_KEY)
+            console.log('Model:', process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo')
+            
             response = await generateChatCompletion(messages, {
                 model: process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo',
                 temperature: 0.7,
                 max_tokens: 1000
             })
 
+            console.log('AI response received:', response)
             aiMessage = response.choices[0]?.message?.content || 'I apologize, but I was unable to generate a response.'
         } catch (generationError) {
             console.error('AI generation failed:', generationError)
-            throw generationError
+            console.error('Error details:', {
+                name: generationError instanceof Error ? generationError.name : 'Unknown',
+                message: generationError instanceof Error ? generationError.message : 'Unknown error',
+                stack: generationError instanceof Error ? generationError.stack : undefined
+            })
+            aiMessage = `Error: ${generationError instanceof Error ? generationError.message : 'Unknown error'}`
         }
 
         const responseTime = Date.now() - startTime
+
+        // Test context utilization manually
+        function testContextUtilization(context: string, response: string): any {
+            if (!context || !response) return { score: 0.5, reason: 'No context or response' }
+
+            const contextWords = new Set(context.toLowerCase().split(/\s+/).filter(w => w.length > 3))
+            const responseWords = new Set(response.toLowerCase().split(/\s+/).filter(w => w.length > 3))
+            
+            const intersection = new Set([...contextWords].filter(x => responseWords.has(x)))
+            const union = new Set([...contextWords, ...responseWords])
+            
+            const jaccardSimilarity = intersection.size / union.size
+            
+            const hasDocumentReferences = /document|source|reference|according to|from.*document/i.test(response)
+            const referenceBonus = hasDocumentReferences ? 0.2 : 0
+            
+            return {
+                score: Math.min(1, jaccardSimilarity + referenceBonus),
+                jaccardSimilarity,
+                referenceBonus,
+                hasDocumentReferences,
+                contextWordCount: contextWords.size,
+                responseWordCount: responseWords.size,
+                intersectionSize: intersection.size,
+                unionSize: union.size,
+                contextWords: Array.from(contextWords).slice(0, 10),
+                responseWords: Array.from(responseWords).slice(0, 10),
+                commonWords: Array.from(intersection).slice(0, 10)
+            }
+        }
+
+        const contextUtilization = testContextUtilization(context, aiMessage)
 
         return NextResponse.json({
             success: true,
@@ -154,18 +149,21 @@ Response format:
             contextSource,
             hasContext: !!context,
             responseTime,
-            tokenUsage: response.usage ? {
+            contextUtilization,
+            contextPreview: context.substring(0, 200) + '...',
+            responsePreview: aiMessage.substring(0, 200) + '...',
+            tokenUsage: response?.usage ? {
                 prompt: response.usage.prompt_tokens,
                 completion: response.usage.completion_tokens,
                 total: response.usage.total_tokens
             } : undefined
         })
     } catch (error) {
-        console.error('Simple AI chat test error:', error)
+        console.error('Debug AI response test error:', error)
         return NextResponse.json(
             { 
                 success: false, 
-                error: 'Simple AI chat test failed',
+                error: 'Debug AI response test failed',
                 details: error instanceof Error ? error.message : 'Unknown error',
                 stack: error instanceof Error ? error.stack : undefined
             },

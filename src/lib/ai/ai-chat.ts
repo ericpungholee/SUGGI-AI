@@ -1,7 +1,7 @@
 import { generateChatCompletion, ChatMessage } from './openai'
 import { getDocumentContext } from './vector-search'
+import { searchWeb, formatSearchResultsForAI } from './web-search'
 import { prisma } from '@/lib/prisma'
-import { evaluateRAGResponse, storeEvaluationMetrics, ragMonitor } from './rag-evaluation'
 
 export interface AIChatRequest {
   message: string
@@ -9,6 +9,7 @@ export interface AIChatRequest {
   documentId?: string
   conversationId?: string
   includeContext?: boolean
+  useWebSearch?: boolean
   abortSignal?: AbortSignal
 }
 
@@ -47,6 +48,7 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
       documentId,
       conversationId,
       includeContext = true,
+      useWebSearch = false,
       abortSignal
     } = request
 
@@ -67,8 +69,24 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
     // Get document context if requested using advanced RAG
     let context = ''
     let contextUsed: string[] = []
+    let contextSource = 'document'
     
-    if (includeContext) {
+    // Check if this is a general knowledge query first
+    const isGeneralQuery = isGeneralKnowledgeQuery(message)
+    const isFollowUp = isFollowUpQuery(message)
+    
+    // If user explicitly wants web search, use GPT-5's native web search
+    if (useWebSearch) {
+      console.log('User requested web search for:', message)
+      // Don't provide any context - let GPT-5 use its native web search
+      context = ''
+      contextUsed = []
+      contextSource = 'web'
+      console.log('Using GPT-5 native web search capabilities')
+    }
+    // If user doesn't want web search, use document context for document queries
+    else if (includeContext && !isGeneralQuery && !isFollowUp) {
+      // Only search documents for non-general knowledge queries
       // Check for cancellation before context retrieval
       if (abortSignal?.aborted) {
         return {
@@ -104,12 +122,24 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
         // Continue without context if retrieval fails
       }
     }
+    // For general knowledge queries without web search, use model's general knowledge
+    else if (isGeneralQuery) {
+      console.log('General knowledge query detected, using model knowledge for:', message)
+      // No context will be provided, AI will use its general knowledge
+    }
+    // For follow-up queries, use conversation history instead of document search
+    else if (isFollowUp) {
+      console.log('Follow-up query detected, using conversation history for:', message)
+      context = ''
+      contextUsed = []
+      contextSource = 'conversation'
+    }
 
     // Build messages for AI
     const messages: ChatMessage[] = [
       {
         role: 'system',
-        content: buildSystemPrompt(context, documentId)
+        content: buildSystemPrompt(context, documentId, contextSource, isGeneralQuery)
       },
       ...conversation.messages.slice(-10), // Last 10 messages for context
       {
@@ -135,11 +165,14 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
 
     try {
       response = await generateChatCompletion(messages, {
-        model: process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini',
+        model: process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo',
         temperature: 0.7,
-        max_tokens: 1000,
-        abortSignal // Pass abort signal to OpenAI
+        max_tokens: 2000, // Increased for GPT-5 compatibility
+        abortSignal, // Pass abort signal to OpenAI
+        useWebSearch // Pass web search flag
       })
+
+      // Debug logging removed for production
 
       aiMessage = response.choices[0]?.message?.content || 'I apologize, but I was unable to generate a response.'
       responseTime = Date.now() - startTime
@@ -155,37 +188,15 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
       throw generationError
     }
 
-    // Evaluate RAG performance
-    if (context) {
-      try {
-        const metrics = await evaluateRAGResponse(
-          message,
-          context,
-          aiMessage,
-          responseTime,
-          contextUsed.length
-        )
-
-        // Store evaluation metrics
-        const evaluation = {
-          query: message,
-          timestamp: new Date(),
-          metrics,
-          contextChunks: contextUsed.length,
-          responseLength: aiMessage.length
-        }
-
-        await storeEvaluationMetrics(userId, evaluation)
-        ragMonitor.addEvaluation(evaluation)
-
-        console.log('RAG Evaluation:', {
-          query: message,
-          overallScore: metrics.overallScore,
-          responseTime: metrics.responseTime
-        })
-      } catch (error) {
-        console.error('Error evaluating RAG response:', error)
-      }
+    // Skip RAG evaluation for better performance - only log basic info
+    if (contextSource === 'web') {
+      console.log('Web search completed using GPT native capabilities')
+    } else {
+      console.log('Response generated:', {
+        contextSource,
+        responseTime: `${responseTime}ms`,
+        contextChunks: contextUsed.length
+      })
     }
 
     // Save messages to conversation
@@ -291,9 +302,85 @@ async function saveMessages(conversationId: string, messages: ConversationMessag
 }
 
 /**
+ * Check if a query appears to be a general knowledge question
+ */
+function isGeneralKnowledgeQuery(message: string): boolean {
+  const generalKnowledgePatterns = [
+    /^who is/i,
+    /^what is/i,
+    /^when did/i,
+    /^where is/i,
+    /^how does/i,
+    /^why did/i,
+    /^tell me about/i,
+    /^explain/i,
+    /^define/i,
+    /^describe/i,
+    /^what are/i,
+    /^who are/i,
+    /^when was/i,
+    /^where are/i,
+    /^how are/i,
+    /^why are/i,
+    /^can you tell me/i,
+    /^do you know/i,
+    /^what do you know about/i,
+    /^who was/i,
+    /^what was/i,
+    /^when was/i,
+    /^where was/i,
+    /^how was/i,
+    /^why was/i
+  ]
+
+  const messageLower = message.toLowerCase().trim()
+  
+  // Check for general knowledge patterns
+  for (const pattern of generalKnowledgePatterns) {
+    if (pattern.test(messageLower)) {
+      return true
+    }
+  }
+
+  // Check for specific entity types that are likely general knowledge
+  const entityPatterns = [
+    /\b(celebrity|person|politician|actor|musician|scientist|inventor|author|artist)\b/i,
+    /\b(company|corporation|organization|brand|product)\b/i,
+    /\b(place|city|country|state|continent|landmark)\b/i,
+    /\b(event|war|battle|discovery|invention|movement)\b/i,
+    /\b(concept|theory|principle|law|rule|method)\b/i,
+    /\b(technology|software|platform|service|tool)\b/i
+  ]
+
+  for (const pattern of entityPatterns) {
+    if (pattern.test(messageLower)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+/**
+ * Check if a query is a simple follow-up (like "tell me more", "what about them")
+ */
+function isFollowUpQuery(message: string): boolean {
+  const followUpKeywords = [
+    'tell me more', 'more info', 'more information', 'more details',
+    'what about', 'what else', 'anything else', 'can you provide more',
+    'give me more', 'show me more', 'elaborate', 'expand on',
+    'them', 'it', 'this', 'that', 'these', 'those'
+  ]
+  
+  const lowerQuery = message.toLowerCase().trim()
+  return followUpKeywords.some(keyword => lowerQuery.includes(keyword)) || 
+         lowerQuery.length < 20 // Very short queries are likely follow-ups
+}
+
+/**
  * Build system prompt with context
  */
-function buildSystemPrompt(context: string, documentId?: string): string {
+function buildSystemPrompt(context: string, documentId?: string, contextSource: string = 'document', isGeneralQuery: boolean = false): string {
   let prompt = `You are an advanced AI writing assistant specialized in Retrieval-Augmented Generation (RAG). You excel at understanding document context, providing accurate information, and helping with complex writing tasks.
 
 Your capabilities:
@@ -304,12 +391,14 @@ Your capabilities:
 - Provide research assistance with proper source attribution
 - Suggest improvements and alternatives with clear reasoning
 - Synthesize information from multiple document sources when available
+- Answer general knowledge questions using web search results when document context is not available
 
 Guidelines for accuracy and context usage:
-- ALWAYS prioritize information from the provided document context over general knowledge
+- ALWAYS prioritize information from the provided context over general knowledge
 - When document context is provided, base your responses primarily on it and cite specific sources
+- When web search context is provided, use the search results to answer general knowledge questions
 - Use direct quotes from the context when appropriate, with proper attribution
-- If the context contains multiple documents, clearly distinguish between them in your responses
+- If the context contains multiple documents or sources, clearly distinguish between them in your responses
 - When no context is available, clearly state this limitation and provide general assistance based on your training knowledge
 - Be specific and actionable in your suggestions, always explaining your reasoning
 - Maintain a professional but approachable tone
@@ -317,21 +406,39 @@ Guidelines for accuracy and context usage:
 - When suggesting changes, explain your reasoning and reference specific parts of the context
 
 IMPORTANT - Source Citation Rules:
-- When citing sources, ALWAYS refer to documents by their TITLE/NAME, never by ID
-- Use phrases like "According to [Document Title]" or "As mentioned in [Document Title]"
-- If you need to reference specific sections, say "In [Document Title], section X" or "From [Document Title]"
+- When citing document sources, ALWAYS refer to documents by their TITLE/NAME, never by ID
+- When citing web sources, use phrases like "According to [Source Title]" or "As mentioned in [Source Title]"
+- Use phrases like "According to [Document Title]" or "As mentioned in [Document Title]" for documents
+- If you need to reference specific sections, say "In [Source Title], section X" or "From [Source Title]"
 - Never mention document IDs, internal references, or technical identifiers to the user
 
 Response format:
 - Start with a direct answer to the user's question
-- Support your answer with specific references to the document context using document TITLES
+- Support your answer with specific references to the context using source TITLES
 - Provide additional insights or suggestions when relevant
 - End with actionable next steps if appropriate`
 
   if (context) {
-    prompt += `\n\n=== RELEVANT DOCUMENT CONTEXT ===\n${context}\n\nIMPORTANT: Use this context as your primary source of information. When citing sources, ALWAYS use the document TITLES (the text in bold **Title**) that appear in the context above, never use document IDs or internal references. If you need to make inferences, clearly state that you're drawing conclusions based on the available context.`
+    if (contextSource === 'web') {
+      prompt += `\n\n=== WEB SEARCH RESULTS ===\n${context}\n\nCRITICAL INSTRUCTIONS FOR WEB SEARCH RESULTS:
+- You MUST use the information from these web search results to answer the user's question
+- Base your response primarily on the content provided in the search results above
+- When citing information, use the exact titles from the search results (e.g., "According to [Title]")
+- Include specific details, facts, and data from the search results
+- If the search results contain multiple sources, reference them appropriately
+- Do NOT provide generic responses - use the specific information provided
+- If you need to make inferences, clearly state that you're drawing conclusions based on the available search results`
+    } else {
+      prompt += `\n\n=== RELEVANT DOCUMENT CONTEXT ===\n${context}\n\nIMPORTANT: Use this context as your primary source of information. When citing sources, ALWAYS use the document TITLES (the text in bold **Title**) that appear in the context above, never use document IDs or internal references. If you need to make inferences, clearly state that you're drawing conclusions based on the available context.`
+    }
   } else {
-    prompt += `\n\nWARNING: No specific document context was retrieved for this query. You can still provide helpful assistance based on your general knowledge, but you MUST clearly state that you don't have access to specific document content and that your response is based on general knowledge only.`
+    if (contextSource === 'web') {
+      prompt += `\n\nIMPORTANT: The user has requested web search for current information. You have access to the web_search_preview tool with high search context. Use this tool to search the web for the most current and accurate information to answer the user's question. Provide recent information with proper citations from your web search results.`
+    } else if (isGeneralQuery) {
+      prompt += `\n\nYou are answering a general knowledge question. Use your training knowledge to provide a comprehensive and accurate response. You do not have access to specific document context or web search results, so base your answer on your general knowledge.`
+    } else {
+      prompt += `\n\nWARNING: No specific context was retrieved for this query. You can still provide helpful assistance based on your general knowledge, but you MUST clearly state that you don't have access to specific context and that your response is based on general knowledge only.`
+    }
   }
 
   if (documentId) {

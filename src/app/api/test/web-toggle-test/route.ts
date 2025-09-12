@@ -5,12 +5,12 @@ import { searchWeb, formatSearchResultsForAI } from "@/lib/ai"
 export async function POST(request: Request) {
     try {
         const body = await request.json()
-        const { message = 'who is chamath' } = body
+        const { message = 'what is Y Combinator', useWebSearch = false } = body
 
-        console.log('Testing AI chat without database with message:', message)
+        console.log('Testing web toggle with message:', message, 'useWebSearch:', useWebSearch)
 
         // Check if this is a general knowledge query
-        const isGeneralKnowledgeQuery = (msg: string): boolean => {
+        function isGeneralKnowledgeQuery(message: string): boolean {
             const generalKnowledgePatterns = [
                 /^who is/i,
                 /^what is/i,
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
                 /^why was/i
             ]
 
-            const messageLower = msg.toLowerCase().trim()
+            const messageLower = message.toLowerCase().trim()
             
             for (const pattern of generalKnowledgePatterns) {
                 if (pattern.test(messageLower)) {
@@ -50,22 +50,33 @@ export async function POST(request: Request) {
             return false
         }
 
-        // Get context - either document context or web search
+        // Get context based on user preference
         let context = ''
         let contextSource = 'none'
+        let contextUsed: string[] = []
         
-        if (isGeneralKnowledgeQuery(message)) {
+        const isGeneralQuery = isGeneralKnowledgeQuery(message)
+        console.log('Is general query:', isGeneralQuery)
+
+        // If user explicitly wants web search, use it
+        if (useWebSearch) {
             try {
-                console.log('Detected general knowledge query, attempting web search...')
+                console.log('User requested web search for:', message)
                 const webResults = await searchWeb(message, { limit: 5 })
                 if (webResults && webResults.length > 0) {
                     context = formatSearchResultsForAI(webResults)
+                    contextUsed = [context]
                     contextSource = 'web'
                     console.log('Web search successful, found', webResults.length, 'results')
                 }
             } catch (webSearchError) {
                 console.warn('Web search failed:', webSearchError)
             }
+        }
+        // For general knowledge queries without web search, use model's general knowledge
+        else if (isGeneralQuery) {
+            console.log('General knowledge query detected, using model knowledge for:', message)
+            // No context will be provided, AI will use its general knowledge
         }
 
         // Build system prompt
@@ -108,12 +119,23 @@ Response format:
 
         if (context) {
             if (contextSource === 'web') {
-                systemPrompt += `\n\n=== WEB SEARCH RESULTS ===\n${context}\n\nIMPORTANT: Use these web search results as your primary source of information. When citing sources, use the titles and URLs provided in the search results. If you need to make inferences, clearly state that you're drawing conclusions based on the available search results.`
+                systemPrompt += `\n\n=== WEB SEARCH RESULTS ===\n${context}\n\nCRITICAL INSTRUCTIONS FOR WEB SEARCH RESULTS:
+- You MUST use the information from these web search results to answer the user's question
+- Base your response primarily on the content provided in the search results above
+- When citing information, use the exact titles from the search results (e.g., "According to [Title]")
+- Include specific details, facts, and data from the search results
+- If the search results contain multiple sources, reference them appropriately
+- Do NOT provide generic responses - use the specific information provided
+- If you need to make inferences, clearly state that you're drawing conclusions based on the available search results`
             } else {
                 systemPrompt += `\n\n=== RELEVANT DOCUMENT CONTEXT ===\n${context}\n\nIMPORTANT: Use this context as your primary source of information. When citing sources, ALWAYS use the document TITLES (the text in bold **Title**) that appear in the context above, never use document IDs or internal references. If you need to make inferences, clearly state that you're drawing conclusions based on the available context.`
             }
         } else {
-            systemPrompt += `\n\nWARNING: No specific context was retrieved for this query. You can still provide helpful assistance based on your general knowledge, but you MUST clearly state that you don't have access to specific context and that your response is based on general knowledge only.`
+            if (isGeneralQuery) {
+                systemPrompt += `\n\nYou are answering a general knowledge question. Use your training knowledge to provide a comprehensive and accurate response. You do not have access to specific document context or web search results, so base your answer on your general knowledge.`
+            } else {
+                systemPrompt += `\n\nWARNING: No specific context was retrieved for this query. You can still provide helpful assistance based on your general knowledge, but you MUST clearly state that you don't have access to specific context and that your response is based on general knowledge only.`
+            }
         }
 
         // Build messages for AI
@@ -135,7 +157,7 @@ Response format:
 
         try {
             response = await generateChatCompletion(messages, {
-                model: process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo',
+                model: 'gpt-3.5-turbo',
                 temperature: 0.7,
                 max_tokens: 1000
             })
@@ -143,7 +165,7 @@ Response format:
             aiMessage = response.choices[0]?.message?.content || 'I apologize, but I was unable to generate a response.'
         } catch (generationError) {
             console.error('AI generation failed:', generationError)
-            throw generationError
+            aiMessage = `Error: ${generationError instanceof Error ? generationError.message : 'Unknown error'}`
         }
 
         const responseTime = Date.now() - startTime
@@ -153,19 +175,22 @@ Response format:
             message: aiMessage,
             contextSource,
             hasContext: !!context,
+            isGeneralQuery,
+            useWebSearch,
             responseTime,
-            tokenUsage: response.usage ? {
+            contextUsed: contextUsed.length,
+            tokenUsage: response?.usage ? {
                 prompt: response.usage.prompt_tokens,
                 completion: response.usage.completion_tokens,
                 total: response.usage.total_tokens
             } : undefined
         })
     } catch (error) {
-        console.error('Simple AI chat test error:', error)
+        console.error('Web toggle test error:', error)
         return NextResponse.json(
             { 
                 success: false, 
-                error: 'Simple AI chat test failed',
+                error: 'Web toggle test failed',
                 details: error instanceof Error ? error.message : 'Unknown error',
                 stack: error instanceof Error ? error.stack : undefined
             },

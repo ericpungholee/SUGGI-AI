@@ -12,6 +12,7 @@ export interface AIChatOptions {
   documentId?: string
   conversationId?: string
   includeContext?: boolean
+  useWebSearch?: boolean
 }
 
 export interface AIChatState {
@@ -70,6 +71,7 @@ export function useAIChat(options: AIChatOptions = {}) {
           documentId: options.documentId,
           conversationId: options.conversationId,
           includeContext: options.includeContext,
+          useWebSearch: options.useWebSearch,
           operationId
         })
       })
@@ -115,7 +117,7 @@ export function useAIChat(options: AIChatOptions = {}) {
         error: error instanceof Error ? error.message : 'An error occurred'
       }))
     }
-  }, [state.isLoading, options.documentId, options.conversationId, options.includeContext, generateOperationId])
+  }, [state.isLoading, options.documentId, options.conversationId, options.includeContext, options.useWebSearch, generateOperationId])
 
   const cancelOperation = useCallback(async () => {
     if (!state.currentOperationId || state.isCancelling) {

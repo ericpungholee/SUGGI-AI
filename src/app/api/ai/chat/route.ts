@@ -16,7 +16,7 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json()
-        const { message, documentId, conversationId, includeContext = true, operationId } = body
+        const { message, documentId, conversationId, includeContext = true, useWebSearch = false, operationId } = body
 
         if (!message || typeof message !== 'string' || message.trim().length === 0) {
             return NextResponse.json(
@@ -39,6 +39,7 @@ export async function POST(request: Request) {
             documentId,
             conversationId,
             includeContext,
+            useWebSearch,
             abortSignal: abortController.signal
         }
 

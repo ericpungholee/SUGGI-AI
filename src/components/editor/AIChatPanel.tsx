@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
-import { X, Send, Bot, User, GripVertical, Feather, Paperclip, Search, FileText, Loader2 } from 'lucide-react'
+import { X, Send, Bot, User, GripVertical, Feather, Paperclip, Search, FileText, Loader2, Globe } from 'lucide-react'
 import { AIMessage, AIConversation } from '@/types'
 
 interface AIChatPanelProps {
@@ -33,6 +33,7 @@ export default function AIChatPanel({
   const [currentOperationId, setCurrentOperationId] = useState<string | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [showQuickActions, setShowQuickActions] = useState(false)
+  const [useWebSearch, setUseWebSearch] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const resizeRef = useRef<HTMLDivElement>(null)
@@ -94,6 +95,7 @@ export default function AIChatPanel({
           documentId,
           conversationId,
           includeContext: true,
+          useWebSearch,
           operationId
         })
       })
@@ -210,11 +212,23 @@ export default function AIChatPanel({
             <h3 className="font-semibold text-ink">Suggi AI</h3>
             <p className="text-xs text-ink/70">
               {documentId ? 'Document context enabled' : 'Writing helper'}
+              {useWebSearch && ' • Web search enabled'}
             </p>
           </div>
         </div>
         
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setUseWebSearch(!useWebSearch)}
+            className={`p-1.5 rounded transition-colors ${
+              useWebSearch 
+                ? 'bg-ink text-paper' 
+                : 'hover:bg-gray-100 text-ink'
+            }`}
+            title={useWebSearch ? 'Web search enabled' : 'Enable web search'}
+          >
+            <Globe className="w-4 h-4" />
+          </button>
           <button
             onClick={() => setShowQuickActions(!showQuickActions)}
             className="p-1.5 hover:bg-gray-100 rounded transition-colors"
