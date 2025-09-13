@@ -58,6 +58,16 @@ export default function Editor({
     const [isAIChatOpen, setIsAIChatOpen] = useState(false)
     const [aiChatWidth, setAiChatWidth] = useState(400)
     
+    // AI Editing state
+    const [aiEditData, setAiEditData] = useState<{
+        originalContent: string
+        editedContent: string
+        patches: any[]
+        blocks: any[]
+        isVisible: boolean
+    } | null>(null)
+    const [isAIEditing, setIsAIEditing] = useState(false)
+    
     const router = useRouter()
     
     // Image editing state
@@ -1137,6 +1147,218 @@ export default function Editor({
         }
     }
 
+    // AI Editing functions (defined before handleKeyDown to avoid hoisting issues)
+    const handleProposeEdit = useCallback(async (intent: string = 'improve writing') => {
+        if (!editorRef.current || isAIEditing) return
+
+        const selection = window.getSelection()
+        const selectedText = selection?.toString() || ''
+        
+        // Use selection if available, otherwise use whole document
+        const contentToEdit = selectedText || editorRef.current.innerHTML
+        
+        console.log('Content to edit:', contentToEdit)
+        console.log('Intent:', intent)
+        
+        if (!contentToEdit.trim()) {
+            alert('Please select some text or ensure the document has content to edit.')
+            return
+        }
+
+        setIsAIEditing(true)
+
+        try {
+            const response = await fetch('/api/ai/edit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    content: contentToEdit,
+                    selection: selectedText || null,
+                    intent,
+                    documentId: documentId === 'new' ? null : documentId
+                })
+            })
+
+            if (!response.ok) {
+                throw new Error('Failed to get AI edit proposal')
+            }
+
+            const data = await response.json()
+            console.log('AI Edit Response:', data)
+            
+            if (data.noChanges) {
+                alert('No changes suggested.')
+                return
+            }
+
+            if (data.success) {
+                // For automatic edits (from chat), apply changes directly
+                if (intent !== 'manual') {
+                    // Save current content to undo stack
+                    saveToUndoStack(content)
+                    
+                    // Apply the edited content directly
+                    setContent(data.editedContent)
+                    if (editorRef.current) {
+                        editorRef.current.innerHTML = data.editedContent
+                    }
+                    
+                    // Show success message briefly
+                    console.log('Edit applied successfully')
+                } else {
+                    // For manual edits, show suggestions for approval
+                    const { createEditBlocks } = await import('@/lib/ai/ai-edit')
+                    const blocks = createEditBlocks(data.patches)
+                    
+                    setAiEditData({
+                        originalContent: data.originalContent,
+                        editedContent: data.editedContent,
+                        patches: data.patches,
+                        blocks,
+                        isVisible: true
+                    })
+                }
+            } else {
+                alert(data.error || 'Failed to generate edit proposal')
+            }
+        } catch (error) {
+            console.error('Error proposing AI edit:', error)
+            alert('Failed to generate edit proposal. Please try again.')
+        } finally {
+            setIsAIEditing(false)
+        }
+    }, [documentId, isAIEditing])
+
+    const handleAcceptAll = useCallback(() => {
+        if (!aiEditData) return
+        
+        // Mark all blocks as accepted
+        const updatedBlocks = aiEditData.blocks.map(block => ({
+            ...block,
+            accepted: true,
+            rejected: false
+        }))
+        
+        setAiEditData({
+            ...aiEditData,
+            blocks: updatedBlocks
+        })
+    }, [aiEditData])
+
+    const handleRejectAll = useCallback(() => {
+        if (!aiEditData) return
+        
+        // Mark all blocks as rejected
+        const updatedBlocks = aiEditData.blocks.map(block => ({
+            ...block,
+            accepted: false,
+            rejected: true
+        }))
+        
+        setAiEditData({
+            ...aiEditData,
+            blocks: updatedBlocks
+        })
+    }, [aiEditData])
+
+    const handleAcceptBlock = useCallback((blockId: string) => {
+        if (!aiEditData) return
+        
+        const updatedBlocks = aiEditData.blocks.map(block => 
+            block.id === blockId 
+                ? { ...block, accepted: true, rejected: false }
+                : block
+        )
+        
+        setAiEditData({
+            ...aiEditData,
+            blocks: updatedBlocks
+        })
+    }, [aiEditData])
+
+    const handleRejectBlock = useCallback((blockId: string) => {
+        if (!aiEditData) return
+        
+        const updatedBlocks = aiEditData.blocks.map(block => 
+            block.id === blockId 
+                ? { ...block, accepted: false, rejected: true }
+                : block
+        )
+        
+        setAiEditData({
+            ...aiEditData,
+            blocks: updatedBlocks
+        })
+    }, [aiEditData])
+
+    const handleApplyChanges = useCallback(() => {
+        if (!aiEditData || !editorRef.current) return
+        
+        // Get accepted blocks
+        const acceptedBlocks = aiEditData.blocks.filter(block => block.accepted)
+        
+        if (acceptedBlocks.length === 0) {
+            alert('No changes to apply.')
+            return
+        }
+
+        // Save current content to undo stack
+        saveToUndoStack(editorRef.current.innerHTML)
+        
+        // Apply the edited content
+        setContent(aiEditData.editedContent)
+        if (editorRef.current) {
+            editorRef.current.innerHTML = aiEditData.editedContent
+        }
+        
+        // Clear AI edit data
+        setAiEditData(null)
+        
+        // Show success message
+        setJustSaved(true)
+        setTimeout(() => setJustSaved(false), 2000)
+    }, [aiEditData, saveToUndoStack])
+
+    const handleToggleDiffVisibility = useCallback(() => {
+        if (!aiEditData) return
+        
+        setAiEditData({
+            ...aiEditData,
+            isVisible: !aiEditData.isVisible
+        })
+    }, [aiEditData])
+
+    const handleClearAIEdit = useCallback(() => {
+        setAiEditData(null)
+    }, [])
+
+    // Handle cursor remapping during AI edit preview
+    const handleCursorRemapping = useCallback(() => {
+        if (!aiEditData || !editorRef.current) return
+
+        // Store current cursor position
+        const selection = window.getSelection()
+        if (selection && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0)
+            const cursorPosition = range.startOffset
+            
+            // If user is typing during preview, we should gracefully handle it
+            // For now, we'll just maintain the current selection
+            // In a more sophisticated implementation, you'd remap based on applied changes
+            
+            // Check if cursor is in a modified region
+            const cursorNode = range.startContainer
+            if (cursorNode && editorRef.current.contains(cursorNode)) {
+                // Cursor is still in the editor, maintain position
+                return true
+            }
+        }
+        
+        return false
+    }, [aiEditData])
+
     // Handle keyboard shortcuts
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
         const isCtrl = e.ctrlKey || e.metaKey
@@ -1201,8 +1423,17 @@ export default function Editor({
                     }
                     break
                 case 'e':
-                    e.preventDefault()
-                    handleFormat('justifyCenter')
+                    if (isShift) {
+                        e.preventDefault()
+                        // Open AI chat panel and trigger edit mode
+                        if (!isAIChatOpen) {
+                            setIsAIChatOpen(true)
+                        }
+                        // The AI edit will be triggered from within the chat panel
+                    } else {
+                        e.preventDefault()
+                        handleFormat('justifyCenter')
+                    }
                     break
                 case 'r':
                     e.preventDefault()
@@ -1226,17 +1457,32 @@ export default function Editor({
                     break
             }
         }
-     }, [handleFormat, undo, redo, handleManualSave, isAIChatOpen])
+     }, [handleFormat, undo, redo, handleManualSave, isAIChatOpen, handleProposeEdit])
 
     // Handle content changes from the editor
     const handleContentChange = useCallback(() => {
         if (editorRef.current && !isUndoRedo) {
+            // Check if we're in AI edit preview mode
+            if (aiEditData && aiEditData.isVisible) {
+                // Warn user about typing during preview
+                const selection = window.getSelection()
+                if (selection && selection.toString().length === 0) {
+                    // User is typing, warn them
+                    const shouldContinue = confirm('You are typing while AI edits are being previewed. This may affect the edit suggestions. Do you want to continue?')
+                    if (!shouldContinue) {
+                        // Restore previous content
+                        editorRef.current.innerHTML = content
+                        return
+                    }
+                }
+            }
+            
             const newContent = editorRef.current.innerHTML
             setContent(newContent)
             // Save to undo stack when content changes (but not during undo/redo)
             saveToUndoStack(newContent)
         }
-    }, [saveToUndoStack, isUndoRedo])
+    }, [saveToUndoStack, isUndoRedo, aiEditData, content])
 
     // Handle paste events to capture images
     const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -1641,6 +1887,7 @@ export default function Editor({
 
 
 
+
     // Add selection change listener
     useEffect(() => {
         if (!mounted) return
@@ -1719,45 +1966,45 @@ export default function Editor({
                 {/* Back Button */}
                 <button 
                     onClick={() => handleNavigation("/home")}
-                    className="p-2 hover:bg-gray-100 rounded transition-colors mr-2"
+                    className="p-1.5 hover:bg-gray-100 rounded transition-colors mr-1"
                     title="Back to Home"
                     suppressHydrationWarning
                 >
-                    <ArrowLeft className="w-4 h-4 text-gray-600" />
+                    <ArrowLeft className="w-3.5 h-3.5 text-gray-600" />
                 </button>
                 
                 <div className="w-px h-6 bg-gray-300"></div>
                 
                 {/* Undo/Redo */}
-                <div className="flex items-center gap-1 mr-2">
+                <div className="flex items-center gap-1 mr-1">
                     <button
                         onClick={undo}
                         disabled={undoStack.length <= 1}
-                        className="p-2 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="p-1.5 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Undo (Ctrl+Z)"
                         suppressHydrationWarning
                     >
-                        <Undo2 className="w-4 h-4 text-gray-600" />
+                        <Undo2 className="w-3.5 h-3.5 text-gray-600" />
                     </button>
                     <button
                         onClick={redo}
                         disabled={redoStack.length === 0}
-                        className="p-2 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="p-1.5 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Redo (Ctrl+Shift+Z)"
                         suppressHydrationWarning
                     >
-                        <Redo2 className="w-4 h-4 text-gray-600" />
+                        <Redo2 className="w-3.5 h-3.5 text-gray-600" />
                     </button>
                 </div>
                 
                 <div className="w-px h-6 bg-gray-300"></div>
 
                                  {/* Document Title */}
-                 <div className="flex-1 min-w-0 mx-4">
-                     <div className="relative">
+                 <div className="flex-1 min-w-0 mx-6">
+                     <div className="relative z-10">
 
                          {isLoading ? (
-                             <div className="w-full px-3 py-2 text-lg font-medium text-gray-400 bg-gray-50 rounded animate-pulse">
+                             <div className="w-full px-4 py-2.5 text-lg font-medium text-gray-400 bg-gray-50 rounded animate-pulse">
                                  Loading...
                              </div>
                          ) : (
@@ -1800,7 +2047,7 @@ export default function Editor({
                                          e.currentTarget.blur()
                                      }
                                  }}
-                                 className={`w-full px-3 py-2 text-lg font-medium text-gray-900 bg-white border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors min-w-0 ${
+                                 className={`w-full px-4 py-2.5 text-lg font-medium text-black bg-white border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors min-w-0 ${
                                      isSavingTitle ? 'ring-2 ring-blue-300 bg-blue-50 border-blue-300' : ''
                                  }`}
                                  placeholder="Untitled Document"
@@ -1824,11 +2071,11 @@ export default function Editor({
                 <div className="w-px h-6 bg-gray-300"></div>
 
                                  {/* Save Button and Status */}
-                 <div className="flex items-center gap-2 mr-4">
+                 <div className="flex items-center gap-1 mr-2">
                      <button
                          onClick={handleManualSave}
                          disabled={isSaving || documentId === 'new'}
-                         className={`p-2 rounded-lg transition-all ${
+                         className={`p-1.5 rounded-lg transition-all ${
                              justSaved
                                  ? 'bg-white text-green-600 border-2 border-green-500'
                                  : isSaving
@@ -1838,7 +2085,7 @@ export default function Editor({
                          title={documentId === 'new' ? 'Save document first' : hasUnsavedChanges ? 'Save document (Ctrl+S)' : 'All changes saved'}
                          suppressHydrationWarning
                      >
-                         <Check className="w-4 h-4" />
+                         <Check className="w-3.5 h-3.5" />
                      </button>
                     
                     {/* Save Status Indicator */}
@@ -1861,11 +2108,11 @@ export default function Editor({
                      <button
                          onClick={() => setShowDeleteConfirm(true)}
                          disabled={isDeleting}
-                         className="p-2 rounded-lg transition-all bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 hover:border-red-300"
+                         className="p-1.5 rounded-lg transition-all bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 hover:border-red-300"
                          title="Delete document"
                          suppressHydrationWarning
                      >
-                         <Trash2 className="w-4 h-4" />
+                         <Trash2 className="w-3.5 h-3.5" />
                      </button>
                  )}
 
@@ -2070,6 +2317,7 @@ export default function Editor({
 
                 <div className="w-px h-6 bg-gray-300"></div>
 
+
                 {/* AI Chat Toggle */}
                 <button
                     onClick={() => setIsAIChatOpen(!isAIChatOpen)}
@@ -2259,7 +2507,17 @@ export default function Editor({
                 width={aiChatWidth}
                 onWidthChange={setAiChatWidth}
                 documentId={documentId}
+                onProposeEdit={handleProposeEdit}
+                onAcceptAll={handleAcceptAll}
+                onRejectAll={handleRejectAll}
+                onAcceptBlock={handleAcceptBlock}
+                onRejectBlock={handleRejectBlock}
+                onApplyChanges={handleApplyChanges}
+                aiEditData={aiEditData}
+                isAIEditing={isAIEditing}
+                editorRef={editorRef}
             />
+
         </div>
     )
 }

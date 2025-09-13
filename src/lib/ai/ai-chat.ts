@@ -23,6 +23,18 @@ export interface AIChatResponse {
     total: number
   }
   cancelled?: boolean
+  editSuggestion?: {
+    intent: string
+    shouldProposeEdit: boolean
+  }
+  toolCalls?: Array<{
+    id: string
+    type: 'function'
+    function: {
+      name: string
+      arguments: any
+    }
+  }>
 }
 
 export interface ConversationMessage {
@@ -61,6 +73,24 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
       }
     }
 
+    // Detect if this is an edit request
+    const editDetection = detectEditRequest(message)
+    console.log('Edit detection result:', editDetection)
+    console.log('Message being analyzed:', message)
+
+    // If this is an edit request, return immediately with edit suggestion
+    if (editDetection.shouldProposeEdit) {
+      return {
+        message: '',
+        conversationId: conversationId || '',
+        editSuggestion: {
+          intent: editDetection.intent,
+          shouldProposeEdit: true,
+          originalMessage: message // Pass the original message for context
+        }
+      }
+    }
+
     // Get or create conversation
     let conversation = conversationId 
       ? await getConversation(conversationId, userId)
@@ -77,12 +107,10 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
     
     // If user explicitly wants web search, use GPT-5's native web search
     if (useWebSearch) {
-      console.log('User requested web search for:', message)
       // Don't provide any context - let GPT-5 use its native web search
       context = ''
       contextUsed = []
       contextSource = 'web'
-      console.log('Using GPT-5 native web search capabilities')
     }
     // If user doesn't want web search, use document context for document queries
     else if (includeContext && !isGeneralQuery && !isFollowUp) {
@@ -124,12 +152,10 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
     }
     // For general knowledge queries without web search, use model's general knowledge
     else if (isGeneralQuery) {
-      console.log('General knowledge query detected, using model knowledge for:', message)
       // No context will be provided, AI will use its general knowledge
     }
     // For follow-up queries, use conversation history instead of document search
     else if (isFollowUp) {
-      console.log('Follow-up query detected, using conversation history for:', message)
       context = ''
       contextUsed = []
       contextSource = 'conversation'
@@ -139,7 +165,7 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
     const messages: ChatMessage[] = [
       {
         role: 'system',
-        content: buildSystemPrompt(context, documentId, contextSource, isGeneralQuery)
+        content: buildSystemPrompt(context, documentId, contextSource, isGeneralQuery, editDetection.shouldProposeEdit)
       },
       ...conversation.messages.slice(-10), // Last 10 messages for context
       {
@@ -162,20 +188,54 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
     let response: any
     let aiMessage = 'I apologize, but I was unable to generate a response.'
     let responseTime = 0
+    let toolCalls: any = undefined
 
     try {
+      // Define tools available to the AI
+      const tools = documentId ? [
+        {
+          type: 'function' as const,
+          function: {
+            name: 'propose_edit',
+            description: 'Propose a non-committal edit for the document or selection; returns a patch for preview.',
+            parameters: {
+              type: 'object',
+              properties: {
+                docId: { type: 'string', description: 'Current document id' },
+                scope: { type: 'string', enum: ['selection', 'document'], description: 'Whether to edit selection or entire document' },
+                selection: {
+                  type: 'object',
+                  properties: { 
+                    from: { type: 'number' }, 
+                    to: { type: 'number' } 
+                  },
+                  required: ['from', 'to']
+                },
+                intent: { type: 'string', description: 'User intent, e.g., "tighten intro, professional tone"' }
+              },
+              required: ['docId', 'scope', 'intent']
+            }
+          }
+        }
+      ] : undefined;
+
       response = await generateChatCompletion(messages, {
         model: process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo',
         temperature: 0.7,
-        max_tokens: 2000, // Increased for GPT-5 compatibility
+        max_tokens: process.env.OPENAI_CHAT_MODEL?.includes('gpt-5') ? 12000 : 2000, // GPT-5 nano: 400k context, 128k max output
         abortSignal, // Pass abort signal to OpenAI
-        useWebSearch // Pass web search flag
+        useWebSearch, // Pass web search flag
+        tools // Pass tools for function calling
       })
 
       // Debug logging removed for production
 
-      aiMessage = response.choices[0]?.message?.content || 'I apologize, but I was unable to generate a response.'
+      const choice = response.choices[0]
+      aiMessage = choice?.message?.content || 'I apologize, but I was unable to generate a response.'
       responseTime = Date.now() - startTime
+
+      // Extract tool calls if present
+      toolCalls = choice?.message?.tool_calls || undefined
     } catch (generationError) {
       if (abortSignal?.aborted) {
         return {
@@ -188,16 +248,7 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
       throw generationError
     }
 
-    // Skip RAG evaluation for better performance - only log basic info
-    if (contextSource === 'web') {
-      console.log('Web search completed using GPT native capabilities')
-    } else {
-      console.log('Response generated:', {
-        contextSource,
-        responseTime: `${responseTime}ms`,
-        contextChunks: contextUsed.length
-      })
-    }
+    // Response generated successfully
 
     // Save messages to conversation
     const userMessage: ConversationMessage = {
@@ -230,7 +281,12 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
         prompt: response.usage.prompt_tokens,
         completion: response.usage.completion_tokens,
         total: response.usage.total_tokens
-      } : undefined
+      } : undefined,
+      editSuggestion: editDetection.shouldProposeEdit ? {
+        intent: editDetection.intent,
+        shouldProposeEdit: true
+      } : undefined,
+      toolCalls
     }
   } catch (error) {
     console.error('Error processing AI chat:', error)
@@ -305,6 +361,48 @@ async function saveMessages(conversationId: string, messages: ConversationMessag
  * Check if a query appears to be a general knowledge question
  */
 function isGeneralKnowledgeQuery(message: string): boolean {
+  const messageLower = message.toLowerCase().trim()
+  
+  // First check for document-specific indicators that should NOT be treated as general knowledge
+  const documentSpecificPatterns = [
+    /from this document/i,
+    /in this document/i,
+    /in the document/i,
+    /from the document/i,
+    /in this file/i,
+    /from this file/i,
+    /in this text/i,
+    /from this text/i,
+    /what was that/i,
+    /what did it say/i,
+    /what does it say/i,
+    /what does the document say/i,
+    /what does this say/i,
+    /what does that say/i,
+    /according to this/i,
+    /based on this/i,
+    /from the text/i,
+    /in the text/i,
+    // Financial data queries that are likely document-specific
+    /what was.*yoy/i,
+    /what was.*revenue/i,
+    /what was.*income/i,
+    /what was.*profit/i,
+    /what was.*growth/i,
+    /what was.*quarter/i,
+    /what was.*q[1-4]/i,
+    /what was.*date/i,
+    /what was.*year/i,
+    /what was.*period/i
+  ]
+  
+  // If it contains document-specific indicators, it's NOT a general knowledge query
+  for (const pattern of documentSpecificPatterns) {
+    if (pattern.test(messageLower)) {
+      return false
+    }
+  }
+  
   const generalKnowledgePatterns = [
     /^who is/i,
     /^what is/i,
@@ -332,8 +430,6 @@ function isGeneralKnowledgeQuery(message: string): boolean {
     /^how was/i,
     /^why was/i
   ]
-
-  const messageLower = message.toLowerCase().trim()
   
   // Check for general knowledge patterns
   for (const pattern of generalKnowledgePatterns) {
@@ -380,7 +476,7 @@ function isFollowUpQuery(message: string): boolean {
 /**
  * Build system prompt with context
  */
-function buildSystemPrompt(context: string, documentId?: string, contextSource: string = 'document', isGeneralQuery: boolean = false): string {
+function buildSystemPrompt(context: string, documentId?: string, contextSource: string = 'document', isGeneralQuery: boolean = false, isEditRequest: boolean = false): string {
   let prompt = `You are an advanced AI writing assistant specialized in Retrieval-Augmented Generation (RAG). You excel at understanding document context, providing accurate information, and helping with complex writing tasks.
 
 Your capabilities:
@@ -392,6 +488,8 @@ Your capabilities:
 - Suggest improvements and alternatives with clear reasoning
 - Synthesize information from multiple document sources when available
 - Answer general knowledge questions using web search results when document context is not available
+- Provide intelligent document editing suggestions and improvements
+- Detect when users want to edit their documents and offer editing assistance
 
 Guidelines for accuracy and context usage:
 - ALWAYS prioritize information from the provided context over general knowledge
@@ -416,7 +514,17 @@ Response format:
 - Start with a direct answer to the user's question
 - Support your answer with specific references to the context using source TITLES
 - Provide additional insights or suggestions when relevant
-- End with actionable next steps if appropriate`
+- End with actionable next steps if appropriate
+
+IMPORTANT - Document Editing Integration:
+- When users ask for document editing, writing, or content creation, IMMEDIATELY call the propose_edit tool
+- This includes: "write an essay", "improve this", "add content", "fix grammar", "rewrite", etc.
+- DO NOT write any content in your response - ONLY call the propose_edit tool
+- DO NOT say "I'll write" or "I'll create" - just call the tool directly
+- Keep your response to 1 sentence maximum, then call propose_edit
+- Example: "Creating essay about Y Combinator." then call propose_edit tool
+- The system will handle showing the preview and applying changes
+- CRITICAL: Never provide content in chat - always use propose_edit tool`
 
   if (context) {
     if (contextSource === 'web') {
@@ -538,6 +646,66 @@ export async function deleteConversation(
     console.error('Error deleting conversation:', error)
     throw new Error('Failed to delete conversation')
   }
+}
+
+/**
+ * Detect if a message is requesting document editing
+ */
+function detectEditRequest(message: string): { intent: string; shouldProposeEdit: boolean } {
+  const messageLower = message.toLowerCase().trim()
+  console.log('Analyzing message for edit detection:', messageLower)
+  
+  // Writing and editing request patterns
+  const editPatterns = [
+    // Writing requests
+    { pattern: /write\s+(a|an|the)?\s*(essay|article|story|report|summary|content|text|document)/i, intent: 'write content' },
+    { pattern: /create\s+(a|an|the)?\s*(essay|article|story|report|summary|content|text|document)/i, intent: 'write content' },
+    { pattern: /add\s+(a|an|the)?\s*(essay|article|story|report|summary|content|text|section)/i, intent: 'write content' },
+    { pattern: /generate\s+(a|an|the)?\s*(essay|article|story|report|summary|content|text)/i, intent: 'write content' },
+    
+    // Editing requests
+    { pattern: /(improve|enhance|better|polish|refine)\s+(writing|text|content|document|this)/i, intent: 'improve writing' },
+    { pattern: /(fix|correct|check)\s+(grammar|spelling|errors?|typos?)/i, intent: 'fix grammar' },
+    { pattern: /(make|make it)\s+(more\s+)?(concise|shorter|brief)/i, intent: 'make concise' },
+    { pattern: /(simplify|make\s+simpler|easier\s+to\s+read)/i, intent: 'simplify' },
+    { pattern: /(improve|enhance|better)\s+(tone|voice|style)/i, intent: 'enhance tone' },
+    { pattern: /(restructure|reorganize|improve\s+structure|better\s+structure)/i, intent: 'improve structure' },
+    { pattern: /(rewrite|rewrite\s+this|rephrase)/i, intent: 'rewrite' },
+    { pattern: /(edit|edit\s+this|modify|change)/i, intent: 'edit' },
+    { pattern: /(can you\s+)?(improve|fix|enhance|better)\s+(this|it|the\s+text|the\s+content)/i, intent: 'improve writing' }
+  ]
+
+  console.log('Testing patterns...')
+  for (const { pattern, intent } of editPatterns) {
+    console.log('Testing pattern:', pattern, 'against:', messageLower)
+    if (pattern.test(messageLower)) {
+      console.log('Pattern matched! Intent:', intent)
+      return { intent, shouldProposeEdit: true }
+    }
+  }
+
+  // General writing and editing keywords
+  const editKeywords = [
+    'write', 'create', 'add', 'generate', 'compose', 'draft',
+    'improve', 'fix', 'enhance', 'better', 'polish', 'refine', 'rewrite',
+    'edit', 'modify', 'change', 'correct', 'check', 'grammar', 'spelling',
+    'concise', 'simpler', 'structure', 'tone', 'style', 'voice'
+  ]
+
+  console.log('Testing keywords...')
+  const hasEditKeywords = editKeywords.some(keyword => {
+    const hasKeyword = messageLower.includes(keyword)
+    console.log('Keyword:', keyword, 'Found:', hasKeyword)
+    return hasKeyword
+  })
+  
+  if (hasEditKeywords) {
+    console.log('Keyword match found!')
+    return { intent: 'improve writing', shouldProposeEdit: true }
+  }
+
+  console.log('No edit request detected')
+  return { intent: '', shouldProposeEdit: false }
 }
 
 /**

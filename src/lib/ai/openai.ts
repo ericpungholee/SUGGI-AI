@@ -76,8 +76,9 @@ export async function generateChatCompletion(
           .map(m => `${m.role.toUpperCase()}: ${m.content}`)
           .join('\n\n')
 
-        // Increase max tokens for GPT-5 to avoid incomplete responses
-        const gpt5MaxTokens = Math.max(max_tokens, 2000)
+        // GPT-5 nano has 400k context window and up to 128k output tokens
+        // Reserve headroom for web search results (~6-8k tokens)
+        const gpt5MaxTokens = Math.max(max_tokens, 12000)
 
         const responsesPayload: any = {
           model,
@@ -104,7 +105,6 @@ export async function generateChatCompletion(
         let attempts = 0
         const maxAttempts = 2 // Even fewer attempts
         while (resp.status === 'incomplete' && attempts < maxAttempts) {
-          console.log(`Polling for completion, attempt ${attempts + 1}/${maxAttempts}`)
           await new Promise(resolve => setTimeout(resolve, 100)) // Much faster polling
           
           try {
@@ -117,7 +117,6 @@ export async function generateChatCompletion(
         }
         
         if (resp.status === 'incomplete') {
-          console.warn('Response still incomplete after polling, falling back to Chat Completions API')
           throw new Error('GPT-5 response incomplete, falling back')
         }
 
@@ -128,11 +127,9 @@ export async function generateChatCompletion(
       
       // Check if response is incomplete
       if (r.status === 'incomplete') {
-        console.log('GPT-5 response is incomplete, reason:', r.incomplete_details?.reason)
-        
         // If incomplete due to max tokens, try to get partial content
         if (r.incomplete_details?.reason === 'max_output_tokens') {
-          console.log('Response truncated due to max_output_tokens, using available content')
+          // Response truncated due to max_output_tokens, using available content
         }
       }
       
@@ -143,7 +140,6 @@ export async function generateChatCompletion(
       
         // If no content and response is incomplete, fall back to Chat Completions API
         if (!contentText && r.status === 'incomplete') {
-          console.log('GPT-5 response incomplete, falling back to Chat Completions API')
           throw new Error('GPT-5 response incomplete, falling back')
         }
 
@@ -166,7 +162,7 @@ export async function generateChatCompletion(
 
         return normalized as any
       } catch (gpt5Error) {
-        console.log('GPT-5 failed, falling back to Chat Completions API:', gpt5Error.message)
+        // GPT-5 failed, falling back to Chat Completions API
         
         // Fall back to regular Chat Completions API with web search tools if needed
         const fallbackParams: any = {

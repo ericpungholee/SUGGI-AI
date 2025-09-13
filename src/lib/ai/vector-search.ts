@@ -63,7 +63,7 @@ export async function searchSimilarDocuments(
       return []
     }
 
-    console.log('Using advanced RAG search with strategy:', searchStrategy)
+    // Using advanced RAG search with strategy
     
     // Use adaptive retrieval if enabled and strategy is adaptive
     // But prevent infinite recursion by disabling adaptive retrieval in the call
@@ -89,7 +89,6 @@ export async function searchSimilarDocuments(
           if (abortSignal?.aborted) return []
           
           processedQuery = await rewriteQuery(query)
-          console.log('Rewritten query:', processedQuery)
         }
       } catch (rewriteError) {
         if (abortSignal?.aborted) return []
@@ -103,15 +102,12 @@ export async function searchSimilarDocuments(
           if (abortSignal?.aborted) return []
           
           queryVariations = await expandQuery(processedQuery)
-          console.log('Query variations:', queryVariations)
         }
       } catch (expansionError) {
         if (abortSignal?.aborted) return []
         console.warn('Query expansion failed, using single query:', expansionError)
         queryVariations = [processedQuery]
       }
-    } else {
-      console.log('Skipping query preprocessing for simple query')
     }
 
     // Check for cancellation before vector search
@@ -133,11 +129,8 @@ export async function searchSimilarDocuments(
       })
 
       if (vectorResults.length === 0) {
-        console.log('No vector results found from Pinecone')
         return []
       }
-
-      console.log(`Found ${vectorResults.length} vector results from Pinecone`)
     } catch (pineconeError) {
       console.error('Pinecone search failed, falling back to PostgreSQL search:', {
         error: pineconeError instanceof Error ? pineconeError.message : 'Unknown error',
@@ -167,7 +160,6 @@ export async function searchSimilarDocuments(
         })
 
         if (documents.length === 0) {
-          console.log('No vectorized documents found for fallback search')
           return []
         }
 
@@ -193,7 +185,6 @@ export async function searchSimilarDocuments(
           }))
 
         vectorResults = fallbackResults
-        console.log(`Fallback search found ${vectorResults.length} results`)
       } catch (fallbackError) {
         console.error('Fallback search also failed:', fallbackError)
         // Return empty results if both Pinecone and fallback fail
@@ -245,11 +236,7 @@ export async function searchSimilarDocuments(
     })
 
     // Step 5: Apply advanced filtering and selection
-    console.log(`Before context selection: ${results.length} results`)
     const filteredResults = await selectBestContext(results, query, limit)
-    console.log(`After context selection: ${filteredResults.length} results`)
-
-    console.log(`Found ${filteredResults.length} similar documents with Pinecone RAG`)
     return filteredResults
   } catch (error) {
     console.error('Error searching similar documents:', {
@@ -343,27 +330,21 @@ async function selectBestContext(
 ): Promise<SearchResult[]> {
   try {
     if (results.length === 0) {
-      console.log('No results to select from')
       return []
     }
 
-    console.log(`Starting context selection with ${results.length} results, limit: ${limit}`)
-
     // Fast path for small result sets
     if (results.length <= limit * 2) {
-      console.log('Using fast path for small result set')
       const uniqueResults = removeDuplicateContent(results)
       return uniqueResults.slice(0, limit)
     }
 
     // 1. Remove duplicates and very similar content (fast)
     const uniqueResults = removeDuplicateContent(results)
-    console.log(`After deduplication: ${uniqueResults.length} results`)
     
     // 2. Pre-filter by similarity threshold (fast) - lowered threshold
     const highSimilarityResults = uniqueResults.filter(r => r.similarity >= 0.15)
     if (highSimilarityResults.length >= limit) {
-      console.log('Using high-similarity results only')
       return highSimilarityResults
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, limit)
@@ -374,11 +355,9 @@ async function selectBestContext(
       ...result,
       qualityScore: calculateFastQualityScore(result, query)
     }))
-    console.log(`Quality scores: ${qualityScored.map(r => r.qualityScore.toFixed(3)).join(', ')}`)
 
     // 4. Apply diversity scoring (fast)
     const diversityScored = applyDiversityScoring(qualityScored)
-    console.log(`Diversity scores: ${diversityScored.map(r => r.diversityScore.toFixed(3)).join(', ')}`)
 
     // 5. Sort by fast combined score (no AI calls)
     const finalResults = diversityScored
@@ -388,9 +367,6 @@ async function selectBestContext(
         return scoreB - scoreA
       })
       .slice(0, limit)
-
-    console.log(`Final scores: ${finalResults.map(r => calculateFastScore(r, query).toFixed(3)).join(', ')}`)
-    console.log(`Selected ${finalResults.length} high-quality results from ${results.length} candidates`)
     return finalResults
   } catch (error) {
     console.error('Error in context selection:', error)
@@ -697,8 +673,6 @@ export async function getDocumentContext(
   limit: number = 5
 ): Promise<string> {
   try {
-    console.log(`Getting document context for query: "${query}" (user: ${userId}, doc: ${documentId})`)
-    
     const searchResults = await searchSimilarDocuments(query, userId, {
       limit: limit * 4, // Get more results for better context selection
       threshold: 0.15, // Lowered threshold to ensure we get some results
@@ -710,17 +684,12 @@ export async function getDocumentContext(
       useAdaptiveRetrieval: true
     })
 
-    console.log(`Found ${searchResults.length} search results`)
-
     // Filter by specific document if provided
     const relevantResults = documentId 
       ? searchResults.filter(result => result.documentId === documentId)
       : searchResults
 
-    console.log(`Filtered to ${relevantResults.length} relevant results`)
-
     if (relevantResults.length === 0) {
-      console.log('No relevant results found for context')
       return ''
     }
 
@@ -763,7 +732,6 @@ export async function getDocumentContext(
     // Compress context if it's too long
     if (context.length > 12000) { // Increased token limit for better context
       try {
-        console.log('Compressing context due to length')
         context = await compressContext(context, 8000)
       } catch (error) {
         console.error('Error compressing context:', error)
@@ -771,8 +739,6 @@ export async function getDocumentContext(
         context = context.substring(0, 12000) + '...'
       }
     }
-
-    console.log(`Generated context with ${context.length} characters`)
     return context
   } catch (error) {
     console.error('Error getting document context:', {
@@ -810,7 +776,6 @@ export async function vectorizeDocument(
     }
 
     if (!content || content.trim().length === 0) {
-      console.log(`Document ${documentId} has no content to vectorize`)
       return
     }
 
@@ -836,7 +801,6 @@ export async function vectorizeDocument(
     }
 
     await vectorDB.upsertDocuments([vectorDocument])
-    console.log(`Stored single vector for document ${documentId} in Pinecone`)
 
     // Update document as vectorized with the embedding
     await prisma.document.update({
@@ -853,7 +817,7 @@ export async function vectorizeDocument(
       where: { documentId }
     })
 
-    console.log(`Document ${documentId} vectorized with single vector`)
+    // Document vectorized successfully
   } catch (error) {
     console.error('Error vectorizing document:', {
       documentId,

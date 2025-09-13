@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import { useAIChat } from '@/hooks/useAIChat'
 import { Globe } from 'lucide-react'
+import MessageFormatter from '@/components/ai/MessageFormatter'
 
 interface AIChatWithCancelProps {
   documentId?: string
@@ -88,7 +89,7 @@ export default function AIChatWithCancel({
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                className={`max-w-xs lg:max-w-lg px-5 py-4 rounded-xl ${
                   message.role === 'user'
                     ? 'bg-blue-500 text-white'
                     : message.cancelled
@@ -96,8 +97,12 @@ export default function AIChatWithCancel({
                     : 'bg-gray-100 text-gray-800'
                 }`}
               >
-                <div className="text-sm">{message.content}</div>
-                <div className="text-xs opacity-70 mt-1">
+                {message.role === 'assistant' ? (
+                  <MessageFormatter content={message.content} />
+                ) : (
+                  <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+                )}
+                <div className="text-xs opacity-70 mt-2 pt-2 border-t border-gray-200">
                   {message.timestamp.toLocaleTimeString()}
                   {message.cancelled && ' (Cancelled)'}
                 </div>
