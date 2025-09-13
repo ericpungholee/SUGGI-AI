@@ -673,6 +673,43 @@ export async function getDocumentContext(
   limit: number = 5
 ): Promise<string> {
   try {
+    // If a specific document is requested, get its content directly first
+    if (documentId) {
+      try {
+        const document = await prisma.document.findFirst({
+          where: {
+            id: documentId,
+            userId: userId,
+            isDeleted: false
+          },
+          select: {
+            id: true,
+            title: true,
+            content: true,
+            plainText: true
+          }
+        })
+
+        if (document) {
+          // Extract text content from the document
+          const content = document.plainText || extractTextFromContent(document.content)
+          
+          if (content && content.trim().length > 0) {
+            // For summarization requests, return the full document content
+            if (query.toLowerCase().includes('summar') || query.toLowerCase().includes('summary') || query.toLowerCase().includes('about')) {
+              return `Document: "${document.title}"\n\nContent:\n${content}`
+            }
+            
+            // For other queries, use the full content as context
+            return `Document: "${document.title}"\n\nContent:\n${content}`
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to get document content directly:', error)
+        // Fall back to vector search
+      }
+    }
+
     const searchResults = await searchSimilarDocuments(query, userId, {
       limit: limit * 4, // Get more results for better context selection
       threshold: 0.15, // Lowered threshold to ensure we get some results
@@ -864,4 +901,38 @@ export async function getDocumentStats(userId: string): Promise<{
     console.error('Error getting document stats:', error)
     throw new Error('Failed to get document statistics')
   }
+}
+
+/**
+ * Extract text content from document JSON content
+ */
+function extractTextFromContent(content: any): string {
+  if (typeof content === 'string') {
+    return content
+  }
+
+  if (Array.isArray(content)) {
+    return content.map(item => extractTextFromContent(item)).join(' ')
+  }
+
+  if (content && typeof content === 'object') {
+    if (content.type === 'doc' && content.content) {
+      return extractTextFromContent(content.content)
+    }
+    
+    if (content.text) {
+      return content.text
+    }
+    
+    if (content.content) {
+      return extractTextFromContent(content.content)
+    }
+    
+    // Handle ProseMirror document structure
+    if (content.type && content.content) {
+      return extractTextFromContent(content.content)
+    }
+  }
+
+  return ''
 }

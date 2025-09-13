@@ -267,57 +267,5 @@ export interface WebSearchResult {
     source?: string;
 }
 
-// AI Editing Types
-export interface AiEditRequest {
-  docId: string;
-  scope: "selection" | "document";
-  selection?: { from: number; to: number };
-  intent?: string;             // free-text user instruction
-  originalMessage?: string;    // original user message for context
-  // Provide both for robustness—server can choose best:
-  docJson?: any;               // ProseMirror JSON
-  docHtml?: string;            // serialized HTML
-}
-
-export interface ProseMirrorPatch {
-    kind: "pm-steps";
-    steps: any[];                // ProseMirror step JSON
-    summary?: {
-        blocksTouched: number;
-        wordsAdded: number;
-        wordsRemoved: number;
-        notes?: string[];
-    };
-}
-
-export interface TextDiffPatch {
-    kind: "text-diff";
-    hunks: Array<{
-        from: number;              // absolute text pos
-        to: number;
-        replacement: string;
-        previewBefore?: string;
-        previewAfter?: string;
-        blockKey?: string;         // for per-block actions
-    }>;
-    summary?: ProseMirrorPatch["summary"];
-}
-
-export type EditProposal = ProseMirrorPatch | TextDiffPatch;
-
-export interface ProposeResponse {
-    proposalId: string;          // client uses to track this preview
-    proposal: EditProposal;
-}
-
-export interface EditToolCall {
-    name: "propose_edit";
-    arguments: {
-        docId: string;
-        scope: "selection" | "document";
-        selection?: { from: number; to: number };
-        intent: string;
-    };
-}
 
 

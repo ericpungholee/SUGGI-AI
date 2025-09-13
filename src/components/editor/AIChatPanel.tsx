@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import { X, Send, Bot, User, GripVertical, Feather, Paperclip, Search, FileText, Loader2, Globe, Sparkles, Check } from 'lucide-react'
 import { AIMessage, AIConversation } from '@/types'
 import MessageFormatter from '@/components/ai/MessageFormatter'
+import ChatCards from '@/components/ai/ChatCards'
 
 interface AIChatPanelProps {
   isOpen: boolean
@@ -10,23 +11,6 @@ interface AIChatPanelProps {
   width: number
   onWidthChange: (width: number) => void
   documentId?: string
-  // AI Edit props
-  onProposeEdit?: (intent: string) => Promise<void>
-  onAcceptAll?: () => void
-  onRejectAll?: () => void
-  onAcceptBlock?: (blockId: string) => void
-  onRejectBlock?: (blockId: string) => void
-  onApplyChanges?: () => void
-  aiEditData?: {
-    originalContent: string
-    editedContent: string
-    patches: any[]
-    blocks: any[]
-    isVisible: boolean
-  } | null
-  isAIEditing?: boolean
-  // Editor ref for accessing document content
-  editorRef?: React.RefObject<HTMLDivElement>
 }
 
 export default function AIChatPanel({ 
@@ -34,16 +18,7 @@ export default function AIChatPanel({
   onClose, 
   width, 
   onWidthChange,
-  documentId,
-  onProposeEdit,
-  onAcceptAll,
-  onRejectAll,
-  onAcceptBlock,
-  onRejectBlock,
-  onApplyChanges,
-  aiEditData,
-  isAIEditing = false,
-  editorRef
+  documentId
 }: AIChatPanelProps) {
   const [messages, setMessages] = useState<AIMessage[]>([
     {
@@ -65,11 +40,11 @@ export default function AIChatPanel({
   const panelRef = useRef<HTMLDivElement>(null)
   const resizeRef = useRef<HTMLDivElement>(null)
 
+
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
-
 
   // Handle resizing
   useEffect(() => {
@@ -96,14 +71,73 @@ export default function AIChatPanel({
     }
   }, [isResizing, onWidthChange])
 
+  // Helper function to detect editing requests
+  const isEditingRequest = (message: string): boolean => {
+    const editingKeywords = [
+      'edit', 'improve', 'fix', 'change', 'revise', 'rewrite', 'enhance',
+      'grammar', 'clarity', 'tone', 'structure', 'concise', 'expand',
+      'tighten', 'professional', 'better', 'polish'
+    ]
+    
+    const lowerMessage = message.toLowerCase()
+    return editingKeywords.some(keyword => lowerMessage.includes(keyword))
+  }
+
+  // Helper function to extract editing intent
+  const extractEditingIntent = (message: string): string => {
+    const lowerMessage = message.toLowerCase()
+    
+    if (lowerMessage.includes('grammar')) return 'fix grammar'
+    if (lowerMessage.includes('clarity')) return 'improve clarity'
+    if (lowerMessage.includes('tone')) return 'enhance tone'
+    if (lowerMessage.includes('structure')) return 'improve structure'
+    if (lowerMessage.includes('concise') || lowerMessage.includes('tighten')) return 'make more concise'
+    if (lowerMessage.includes('expand')) return 'expand content'
+    if (lowerMessage.includes('professional')) return 'make tone professional'
+    if (lowerMessage.includes('polish')) return 'polish writing'
+    
+    return 'improve writing'
+  }
+
+  // Handle slash commands
+  const handleSlashInput = (value: string) => {
+    if (value.startsWith('/')) {
+      const [command, ...args] = value.slice(1).split(' ')
+      if (command) {
+        handleSlashCommand(command, args)
+        setInputValue('')
+      }
+    }
+  }
+
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return
 
+    const message = inputValue.trim()
+    
+    // Check if it's an editing request
+    if (isEditingRequest(message)) {
+      // Extract intent from message
+      const intent = extractEditingIntent(message)
+      const scope = 'document' // For now, default to document scope
+      
+      createPlan(scope, intent)
+      setInputValue('')
+      return
+    }
+
+    // Handle slash commands
+    if (message.startsWith('/')) {
+      handleSlashInput(message)
+      return
+    }
+
+    // Regular chat message
     const operationId = `ai-chat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     const userMessage: AIMessage = {
       id: Date.now().toString(),
       type: 'user',
-      content: inputValue.trim(),
+      content: message,
       timestamp: new Date()
     }
 
@@ -152,112 +186,7 @@ export default function AIChatPanel({
       setMessages(prev => [...prev, aiMessage])
       setConversationId(data.conversationId)
 
-      // If there's an edit suggestion, automatically trigger the tool call immediately
-      if (data.editSuggestion?.shouldProposeEdit && documentId) {
-        console.log('Auto-triggering edit with intent:', data.editSuggestion.intent)
-        console.log('Document ID:', documentId)
-        console.log('Editor content:', editorRef.current?.innerHTML)
-        try {
-          const proposeResponse = await fetch('/api/ai/propose', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              docId: documentId,
-              scope: 'document',
-              intent: data.editSuggestion.intent,
-              originalMessage: data.editSuggestion.originalMessage,
-              docHtml: editorRef.current?.innerHTML || ''
-            })
-          })
-
-         if (proposeResponse.ok) {
-           const proposalData = await proposeResponse.json()
-           console.log('Edit proposal received:', proposalData)
-           
-           // Apply the edit proposal directly to the document
-           if (proposalData.proposal && proposalData.proposal.kind === 'text-diff') {
-             const hunks = proposalData.proposal.hunks
-             let newContent = editorRef.current?.innerHTML || ''
-             
-             // Apply hunks in reverse order to maintain positions
-             hunks.sort((a: any, b: any) => b.oldStart - a.oldStart)
-             
-             for (const hunk of hunks) {
-               const lines = hunk.lines
-               let replacement = ''
-               
-               for (const line of lines) {
-                 if (line.type === 'insert') {
-                   replacement += line.text
-                 }
-               }
-               
-               // For now, just replace the entire content with the new content
-               // This is a simplified approach - in a real implementation, you'd want proper diff application
-               if (replacement.trim()) {
-                 newContent = replacement
-               }
-             }
-             
-             // Apply the new content to the editor
-             if (editorRef.current) {
-               editorRef.current.innerHTML = newContent
-               // Trigger content change event
-               const event = new Event('input', { bubbles: true })
-               editorRef.current.dispatchEvent(event)
-             }
-             
-             console.log('Edit applied to document:', newContent)
-           }
-           
-           alert(`Edit applied successfully!`)
-         }
-        } catch (error) {
-          console.error('Error processing auto-edit proposal:', error)
-        }
-      }
-
-      // Handle tool calls
-      if (data.toolCalls && data.toolCalls.length > 0) {
-        for (const toolCall of data.toolCalls) {
-          if (toolCall.function.name === 'propose_edit' && documentId) {
-            try {
-              const args = JSON.parse(toolCall.function.arguments)
-              console.log('Processing propose_edit tool call:', args)
-              
-              // Call the propose API
-              const proposeResponse = await fetch('/api/ai/propose', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  docId: documentId,
-                  scope: args.scope,
-                  selection: args.selection,
-                  intent: args.intent,
-                  docHtml: editorRef.current?.innerHTML || ''
-                })
-              })
-
-              if (proposeResponse.ok) {
-                const proposalData = await proposeResponse.json()
-                console.log('Edit proposal received:', proposalData)
-                
-                // Handle the proposal (this will be implemented in the next step)
-                // For now, just log it
-                alert(`Edit proposal generated: ${proposalData.proposalId}`)
-              }
-            } catch (error) {
-              console.error('Error processing propose_edit tool call:', error)
-            }
-          }
-        }
-      }
-
-      // If there's an edit suggestion, automatically trigger the edit (fallback for non-tool approach)
-      if (data.editSuggestion?.shouldProposeEdit && onProposeEdit) {
-        console.log('Auto-triggering edit with intent:', data.editSuggestion.intent)
-        await onProposeEdit(data.editSuggestion.intent)
-      }
+      // If there's an edit suggestion, automatically trigger the edit
     } catch (error) {
       console.error('Error sending message:', error)
       const errorMessage: AIMessage = {
@@ -319,7 +248,6 @@ export default function AIChatPanel({
     setShowQuickActions(false)
   }
 
-
   const quickActions = [
     { label: 'Improve writing', action: 'Please improve the writing quality and style of this text.' },
     { label: 'Summarize', action: 'Please provide a concise summary of this content.' },
@@ -328,7 +256,6 @@ export default function AIChatPanel({
     { label: 'Research topic', action: 'Please help me research this topic and provide relevant information.' },
     { label: 'Generate outline', action: 'Please create a structured outline for this content.' }
   ]
-
 
   if (!isOpen) return null
 
@@ -415,179 +342,79 @@ export default function AIChatPanel({
         </div>
       )}
 
-
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/30">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex gap-3 animate-in slide-in-from-bottom-2 duration-300 ${
-                  message.type === 'user' ? 'justify-end' : 'justify-start'
-                }`}
-              >
-                {message.type === 'assistant' && (
-                  <div className="w-8 h-8 bg-ink rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
-                    <Feather className="w-4 h-4 text-paper" />
-                  </div>
-                )}
-                
-                <div
-                  className={`max-w-[85%] rounded-xl px-5 py-4 shadow-sm ${
-                    message.type === 'user'
-                      ? 'bg-ink text-paper'
-                      : message.metadata?.cancelled
-                      ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
-                      : 'bg-white text-ink border border-gray-200'
-                  }`}
-                >
-                  {message.type === 'assistant' ? (
-                    <MessageFormatter content={message.content} />
-                  ) : (
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                  )}
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-                    <p className={`text-xs ${
-                      message.type === 'user' 
-                        ? 'text-paper/70' 
-                        : message.metadata?.cancelled
-                        ? 'text-yellow-700'
-                        : 'text-ink/70'
-                    }`}>
-                      {formatTime(message.timestamp)}
-                      {message.metadata?.cancelled && ' (Cancelled)'}
-                    </p>
-                    {message.type === 'assistant' && message.metadata?.editSuggestion?.shouldProposeEdit && onProposeEdit && (
-                      <button
-                        onClick={() => onProposeEdit(message.metadata!.editSuggestion!.intent)}
-                        className="flex items-center gap-1 text-xs bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 py-1 rounded transition-colors"
-                        title={`Propose ${message.metadata.editSuggestion.intent} edits`}
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        Edit
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {message.type === 'user' && (
-                  <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
-                    <User className="w-4 h-4 text-ink" />
-                  </div>
-                )}
-              </div>
-            ))}
-            
-            {/* Loading indicator */}
-            {isLoading && (
-              <div className="flex gap-3 justify-start">
-                <div className="w-8 h-8 bg-ink rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
-                  <Feather className="w-4 h-4 text-paper" />
-                </div>
-                <div className="bg-white text-ink border border-gray-200 rounded-lg px-4 py-2 shadow-sm">
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-ink" />
-                    <span className="text-sm">Thinking...</span>
-                  </div>
-                </div>
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className={`flex gap-3 animate-in slide-in-from-bottom-2 duration-300 ${
+              message.type === 'user' ? 'justify-end' : 'justify-start'
+            }`}
+          >
+            {message.type === 'assistant' && (
+              <div className="w-8 h-8 bg-ink rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
+                <Feather className="w-4 h-4 text-paper" />
               </div>
             )}
             
+            <div
+              className={`max-w-[85%] rounded-xl px-5 py-4 shadow-sm ${
+                message.type === 'user'
+                  ? 'bg-ink text-paper'
+                  : message.metadata?.cancelled
+                  ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+                  : 'bg-white text-ink border border-gray-200'
+              }`}
+            >
+              {message.type === 'assistant' ? (
+                <MessageFormatter content={message.content} />
+              ) : (
+                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              )}
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                <p className={`text-xs ${
+                  message.type === 'user' 
+                    ? 'text-paper/70' 
+                    : message.metadata?.cancelled
+                    ? 'text-yellow-700'
+                    : 'text-ink/70'
+                }`}>
+                  {formatTime(message.timestamp)}
+                  {message.metadata?.cancelled && ' (Cancelled)'}
+                </p>
+              </div>
+            </div>
+
+            {message.type === 'user' && (
+              <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
+                <User className="w-4 h-4 text-ink" />
+              </div>
+            )}
+          </div>
+        ))}
+
+        
+        {/* Loading indicator */}
+        {isLoading && (
+          <div className="flex gap-3 justify-start">
+            <div className="w-8 h-8 bg-ink rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
+              <Feather className="w-4 h-4 text-paper" />
+            </div>
+            <div className="bg-white text-ink border border-gray-200 rounded-lg px-4 py-2 shadow-sm">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-ink" />
+                <span className="text-sm">
+                  Thinking...
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        
         <div ref={messagesEndRef} />
       </div>
 
-      {/* AI Edit Data Display */}
-      {aiEditData && (
-        <div className="border-t border-gray-200 p-4 bg-white">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-medium text-ink">AI Edit Suggestions</h4>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500">
-                {aiEditData.blocks.filter(b => b.accepted).length}/{aiEditData.blocks.filter(b => b.hasChanges).length} accepted
-              </span>
-              <button
-                onClick={onAcceptAll}
-                className="text-xs text-green-600 hover:text-green-700"
-                title="Accept all changes"
-              >
-                Accept All
-              </button>
-              <button
-                onClick={onRejectAll}
-                className="text-xs text-red-600 hover:text-red-700"
-                title="Reject all changes"
-              >
-                Reject All
-              </button>
-              {aiEditData.blocks.filter(b => b.accepted).length > 0 && (
-                <button
-                  onClick={onApplyChanges}
-                  className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
-                  title="Apply accepted changes"
-                >
-                  Apply
-                </button>
-              )}
-            </div>
-          </div>
-          
-          {isAIEditing ? (
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Generating AI edits...
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-32 overflow-y-auto">
-              {aiEditData.blocks.filter(block => block.hasChanges).map((block) => (
-                <div key={block.id} className="border border-gray-200 rounded-lg p-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-gray-700 capitalize">
-                        {block.type}
-                      </span>
-                      {block.patches.length > 1 && (
-                        <span className="text-xs text-gray-500">
-                          ({block.patches.length} changes)
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex gap-1">
-                      {!block.accepted && !block.rejected && (
-                        <>
-                          <button
-                            onClick={() => onAcceptBlock?.(block.id)}
-                            className="text-green-600 hover:text-green-700 text-xs"
-                            title="Accept block"
-                          >
-                            <Check className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() => onRejectBlock?.(block.id)}
-                            className="text-red-600 hover:text-red-700 text-xs"
-                            title="Reject block"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </>
-                      )}
-                      {block.accepted && (
-                        <span className="text-green-600 text-xs">Accepted</span>
-                      )}
-                      {block.rejected && (
-                        <span className="text-red-600 text-xs">Rejected</span>
-                      )}
-                    </div>
-                  </div>
-                  {block.patches.length > 0 && (
-                    <div className="mt-1 text-xs text-gray-600">
-                      {block.patches[0].reason}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Input Area */}
       <div className="border-t border-gray-200 p-4 bg-white">
@@ -602,7 +429,7 @@ export default function AIChatPanel({
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Ask me anything about your document..."
+            placeholder="Ask me anything about your document or request edits..."
             className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink focus:border-transparent transition-all text-ink"
             rows={2}
           />
@@ -625,8 +452,17 @@ export default function AIChatPanel({
           )}
         </div>
         <p className="text-xs text-ink/70 mt-2">
-          Press Enter to send, Shift+Enter for new line
+          Press Enter to send, Shift+Enter for new line. Use /edit to start editing workflow.
         </p>
+        
+        {/* Status indicators */}
+        {useWebSearch && (
+          <div className="mt-3 px-3 py-2 bg-green-50 text-green-800 text-sm flex items-center gap-2 rounded-lg">
+            <Globe className="w-4 h-4" />
+            Web search enabled
+          </div>
+        )}
+        
       </div>
     </div>
   )

@@ -6,6 +6,13 @@ export interface AIChatMessage {
   content: string
   timestamp: Date
   cancelled?: boolean
+  metadata?: {
+    editSuggestion?: {
+      intent: string
+      shouldProposeEdit: boolean
+      originalMessage: string
+    }
+  }
 }
 
 export interface AIChatOptions {
@@ -87,7 +94,10 @@ export function useAIChat(options: AIChatOptions = {}) {
         role: 'assistant',
         content: data.message,
         timestamp: new Date(),
-        cancelled: data.cancelled
+        cancelled: data.cancelled,
+        metadata: data.editSuggestion ? {
+          editSuggestion: data.editSuggestion
+        } : undefined
       }
 
       setState(prev => ({

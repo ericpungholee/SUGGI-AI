@@ -58,15 +58,6 @@ export default function Editor({
     const [isAIChatOpen, setIsAIChatOpen] = useState(false)
     const [aiChatWidth, setAiChatWidth] = useState(400)
     
-    // AI Editing state
-    const [aiEditData, setAiEditData] = useState<{
-        originalContent: string
-        editedContent: string
-        patches: any[]
-        blocks: any[]
-        isVisible: boolean
-    } | null>(null)
-    const [isAIEditing, setIsAIEditing] = useState(false)
     
     const router = useRouter()
     
@@ -1147,217 +1138,8 @@ export default function Editor({
         }
     }
 
-    // AI Editing functions (defined before handleKeyDown to avoid hoisting issues)
-    const handleProposeEdit = useCallback(async (intent: string = 'improve writing') => {
-        if (!editorRef.current || isAIEditing) return
 
-        const selection = window.getSelection()
-        const selectedText = selection?.toString() || ''
-        
-        // Use selection if available, otherwise use whole document
-        const contentToEdit = selectedText || editorRef.current.innerHTML
-        
-        console.log('Content to edit:', contentToEdit)
-        console.log('Intent:', intent)
-        
-        if (!contentToEdit.trim()) {
-            alert('Please select some text or ensure the document has content to edit.')
-            return
-        }
 
-        setIsAIEditing(true)
-
-        try {
-            const response = await fetch('/api/ai/edit', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    content: contentToEdit,
-                    selection: selectedText || null,
-                    intent,
-                    documentId: documentId === 'new' ? null : documentId
-                })
-            })
-
-            if (!response.ok) {
-                throw new Error('Failed to get AI edit proposal')
-            }
-
-            const data = await response.json()
-            console.log('AI Edit Response:', data)
-            
-            if (data.noChanges) {
-                alert('No changes suggested.')
-                return
-            }
-
-            if (data.success) {
-                // For automatic edits (from chat), apply changes directly
-                if (intent !== 'manual') {
-                    // Save current content to undo stack
-                    saveToUndoStack(content)
-                    
-                    // Apply the edited content directly
-                    setContent(data.editedContent)
-                    if (editorRef.current) {
-                        editorRef.current.innerHTML = data.editedContent
-                    }
-                    
-                    // Show success message briefly
-                    console.log('Edit applied successfully')
-                } else {
-                    // For manual edits, show suggestions for approval
-                    const { createEditBlocks } = await import('@/lib/ai/ai-edit')
-                    const blocks = createEditBlocks(data.patches)
-                    
-                    setAiEditData({
-                        originalContent: data.originalContent,
-                        editedContent: data.editedContent,
-                        patches: data.patches,
-                        blocks,
-                        isVisible: true
-                    })
-                }
-            } else {
-                alert(data.error || 'Failed to generate edit proposal')
-            }
-        } catch (error) {
-            console.error('Error proposing AI edit:', error)
-            alert('Failed to generate edit proposal. Please try again.')
-        } finally {
-            setIsAIEditing(false)
-        }
-    }, [documentId, isAIEditing])
-
-    const handleAcceptAll = useCallback(() => {
-        if (!aiEditData) return
-        
-        // Mark all blocks as accepted
-        const updatedBlocks = aiEditData.blocks.map(block => ({
-            ...block,
-            accepted: true,
-            rejected: false
-        }))
-        
-        setAiEditData({
-            ...aiEditData,
-            blocks: updatedBlocks
-        })
-    }, [aiEditData])
-
-    const handleRejectAll = useCallback(() => {
-        if (!aiEditData) return
-        
-        // Mark all blocks as rejected
-        const updatedBlocks = aiEditData.blocks.map(block => ({
-            ...block,
-            accepted: false,
-            rejected: true
-        }))
-        
-        setAiEditData({
-            ...aiEditData,
-            blocks: updatedBlocks
-        })
-    }, [aiEditData])
-
-    const handleAcceptBlock = useCallback((blockId: string) => {
-        if (!aiEditData) return
-        
-        const updatedBlocks = aiEditData.blocks.map(block => 
-            block.id === blockId 
-                ? { ...block, accepted: true, rejected: false }
-                : block
-        )
-        
-        setAiEditData({
-            ...aiEditData,
-            blocks: updatedBlocks
-        })
-    }, [aiEditData])
-
-    const handleRejectBlock = useCallback((blockId: string) => {
-        if (!aiEditData) return
-        
-        const updatedBlocks = aiEditData.blocks.map(block => 
-            block.id === blockId 
-                ? { ...block, accepted: false, rejected: true }
-                : block
-        )
-        
-        setAiEditData({
-            ...aiEditData,
-            blocks: updatedBlocks
-        })
-    }, [aiEditData])
-
-    const handleApplyChanges = useCallback(() => {
-        if (!aiEditData || !editorRef.current) return
-        
-        // Get accepted blocks
-        const acceptedBlocks = aiEditData.blocks.filter(block => block.accepted)
-        
-        if (acceptedBlocks.length === 0) {
-            alert('No changes to apply.')
-            return
-        }
-
-        // Save current content to undo stack
-        saveToUndoStack(editorRef.current.innerHTML)
-        
-        // Apply the edited content
-        setContent(aiEditData.editedContent)
-        if (editorRef.current) {
-            editorRef.current.innerHTML = aiEditData.editedContent
-        }
-        
-        // Clear AI edit data
-        setAiEditData(null)
-        
-        // Show success message
-        setJustSaved(true)
-        setTimeout(() => setJustSaved(false), 2000)
-    }, [aiEditData, saveToUndoStack])
-
-    const handleToggleDiffVisibility = useCallback(() => {
-        if (!aiEditData) return
-        
-        setAiEditData({
-            ...aiEditData,
-            isVisible: !aiEditData.isVisible
-        })
-    }, [aiEditData])
-
-    const handleClearAIEdit = useCallback(() => {
-        setAiEditData(null)
-    }, [])
-
-    // Handle cursor remapping during AI edit preview
-    const handleCursorRemapping = useCallback(() => {
-        if (!aiEditData || !editorRef.current) return
-
-        // Store current cursor position
-        const selection = window.getSelection()
-        if (selection && selection.rangeCount > 0) {
-            const range = selection.getRangeAt(0)
-            const cursorPosition = range.startOffset
-            
-            // If user is typing during preview, we should gracefully handle it
-            // For now, we'll just maintain the current selection
-            // In a more sophisticated implementation, you'd remap based on applied changes
-            
-            // Check if cursor is in a modified region
-            const cursorNode = range.startContainer
-            if (cursorNode && editorRef.current.contains(cursorNode)) {
-                // Cursor is still in the editor, maintain position
-                return true
-            }
-        }
-        
-        return false
-    }, [aiEditData])
 
     // Handle keyboard shortcuts
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -1423,17 +1205,8 @@ export default function Editor({
                     }
                     break
                 case 'e':
-                    if (isShift) {
-                        e.preventDefault()
-                        // Open AI chat panel and trigger edit mode
-                        if (!isAIChatOpen) {
-                            setIsAIChatOpen(true)
-                        }
-                        // The AI edit will be triggered from within the chat panel
-                    } else {
-                        e.preventDefault()
-                        handleFormat('justifyCenter')
-                    }
+                    e.preventDefault()
+                    handleFormat('justifyCenter')
                     break
                 case 'r':
                     e.preventDefault()
@@ -1457,32 +1230,17 @@ export default function Editor({
                     break
             }
         }
-     }, [handleFormat, undo, redo, handleManualSave, isAIChatOpen, handleProposeEdit])
+     }, [handleFormat, undo, redo, handleManualSave, isAIChatOpen])
 
     // Handle content changes from the editor
     const handleContentChange = useCallback(() => {
         if (editorRef.current && !isUndoRedo) {
-            // Check if we're in AI edit preview mode
-            if (aiEditData && aiEditData.isVisible) {
-                // Warn user about typing during preview
-                const selection = window.getSelection()
-                if (selection && selection.toString().length === 0) {
-                    // User is typing, warn them
-                    const shouldContinue = confirm('You are typing while AI edits are being previewed. This may affect the edit suggestions. Do you want to continue?')
-                    if (!shouldContinue) {
-                        // Restore previous content
-                        editorRef.current.innerHTML = content
-                        return
-                    }
-                }
-            }
-            
             const newContent = editorRef.current.innerHTML
             setContent(newContent)
             // Save to undo stack when content changes (but not during undo/redo)
             saveToUndoStack(newContent)
         }
-    }, [saveToUndoStack, isUndoRedo, aiEditData, content])
+    }, [saveToUndoStack, isUndoRedo])
 
     // Handle paste events to capture images
     const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -1960,7 +1718,7 @@ export default function Editor({
     }
 
     return (
-        <div className="flex-1 flex flex-col relative">
+            <div className="flex-1 flex flex-col relative">
             {/* Fixed Toolbar - Google Docs Style */}
             <div className="h-14 editor-toolbar flex items-center px-4 gap-2">
                 {/* Back Button */}
@@ -2501,24 +2259,23 @@ export default function Editor({
             )}
 
             {/* AI Chat Panel */}
-            <AIChatPanel
-                isOpen={isAIChatOpen}
-                onClose={() => setIsAIChatOpen(false)}
-                width={aiChatWidth}
-                onWidthChange={setAiChatWidth}
-                documentId={documentId}
-                onProposeEdit={handleProposeEdit}
-                onAcceptAll={handleAcceptAll}
-                onRejectAll={handleRejectAll}
-                onAcceptBlock={handleAcceptBlock}
-                onRejectBlock={handleRejectBlock}
-                onApplyChanges={handleApplyChanges}
-                aiEditData={aiEditData}
-                isAIEditing={isAIEditing}
-                editorRef={editorRef}
-            />
+            {isAIChatOpen && (
+                <div 
+                    className="fixed right-0 top-0 h-full bg-white border-l border-gray-200 shadow-2xl flex flex-col transition-all duration-300 ease-in-out z-40"
+                    style={{ width: `${aiChatWidth}px` }}
+                >
+                    <AIChatPanel
+                        isOpen={isAIChatOpen}
+                        onClose={() => setIsAIChatOpen(false)}
+                        width={aiChatWidth}
+                        onWidthChange={setAiChatWidth}
+                        documentId={documentId}
+                    />
+                </div>
+            )}
 
-        </div>
+
+            </div>
     )
 }
 

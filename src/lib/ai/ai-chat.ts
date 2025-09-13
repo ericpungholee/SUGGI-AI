@@ -73,23 +73,6 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
       }
     }
 
-    // Detect if this is an edit request
-    const editDetection = detectEditRequest(message)
-    console.log('Edit detection result:', editDetection)
-    console.log('Message being analyzed:', message)
-
-    // If this is an edit request, return immediately with edit suggestion
-    if (editDetection.shouldProposeEdit) {
-      return {
-        message: '',
-        conversationId: conversationId || '',
-        editSuggestion: {
-          intent: editDetection.intent,
-          shouldProposeEdit: true,
-          originalMessage: message // Pass the original message for context
-        }
-      }
-    }
 
     // Get or create conversation
     let conversation = conversationId 
@@ -161,11 +144,12 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
       contextSource = 'conversation'
     }
 
+
     // Build messages for AI
     const messages: ChatMessage[] = [
       {
         role: 'system',
-        content: buildSystemPrompt(context, documentId, contextSource, isGeneralQuery, editDetection.shouldProposeEdit)
+        content: buildSystemPrompt(context, documentId, contextSource, isGeneralQuery, false)
       },
       ...conversation.messages.slice(-10), // Last 10 messages for context
       {
@@ -191,33 +175,8 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
     let toolCalls: any = undefined
 
     try {
-      // Define tools available to the AI
-      const tools = documentId ? [
-        {
-          type: 'function' as const,
-          function: {
-            name: 'propose_edit',
-            description: 'Propose a non-committal edit for the document or selection; returns a patch for preview.',
-            parameters: {
-              type: 'object',
-              properties: {
-                docId: { type: 'string', description: 'Current document id' },
-                scope: { type: 'string', enum: ['selection', 'document'], description: 'Whether to edit selection or entire document' },
-                selection: {
-                  type: 'object',
-                  properties: { 
-                    from: { type: 'number' }, 
-                    to: { type: 'number' } 
-                  },
-                  required: ['from', 'to']
-                },
-                intent: { type: 'string', description: 'User intent, e.g., "tighten intro, professional tone"' }
-              },
-              required: ['docId', 'scope', 'intent']
-            }
-          }
-        }
-      ] : undefined;
+      // No tools available for AI editing
+      const tools: any[] = [];
 
       response = await generateChatCompletion(messages, {
         model: process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo',
@@ -281,10 +240,6 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
         prompt: response.usage.prompt_tokens,
         completion: response.usage.completion_tokens,
         total: response.usage.total_tokens
-      } : undefined,
-      editSuggestion: editDetection.shouldProposeEdit ? {
-        intent: editDetection.intent,
-        shouldProposeEdit: true
       } : undefined,
       toolCalls
     }
@@ -369,6 +324,9 @@ function isGeneralKnowledgeQuery(message: string): boolean {
     /in this document/i,
     /in the document/i,
     /from the document/i,
+    /current document/i,
+    /this document/i,
+    /the document/i,
     /in this file/i,
     /from this file/i,
     /in this text/i,
@@ -516,15 +474,7 @@ Response format:
 - Provide additional insights or suggestions when relevant
 - End with actionable next steps if appropriate
 
-IMPORTANT - Document Editing Integration:
-- When users ask for document editing, writing, or content creation, IMMEDIATELY call the propose_edit tool
-- This includes: "write an essay", "improve this", "add content", "fix grammar", "rewrite", etc.
-- DO NOT write any content in your response - ONLY call the propose_edit tool
-- DO NOT say "I'll write" or "I'll create" - just call the tool directly
-- Keep your response to 1 sentence maximum, then call propose_edit
-- Example: "Creating essay about Y Combinator." then call propose_edit tool
-- The system will handle showing the preview and applying changes
-- CRITICAL: Never provide content in chat - always use propose_edit tool`
+`
 
   if (context) {
     if (contextSource === 'web') {
@@ -648,65 +598,7 @@ export async function deleteConversation(
   }
 }
 
-/**
- * Detect if a message is requesting document editing
- */
-function detectEditRequest(message: string): { intent: string; shouldProposeEdit: boolean } {
-  const messageLower = message.toLowerCase().trim()
-  console.log('Analyzing message for edit detection:', messageLower)
-  
-  // Writing and editing request patterns
-  const editPatterns = [
-    // Writing requests
-    { pattern: /write\s+(a|an|the)?\s*(essay|article|story|report|summary|content|text|document)/i, intent: 'write content' },
-    { pattern: /create\s+(a|an|the)?\s*(essay|article|story|report|summary|content|text|document)/i, intent: 'write content' },
-    { pattern: /add\s+(a|an|the)?\s*(essay|article|story|report|summary|content|text|section)/i, intent: 'write content' },
-    { pattern: /generate\s+(a|an|the)?\s*(essay|article|story|report|summary|content|text)/i, intent: 'write content' },
-    
-    // Editing requests
-    { pattern: /(improve|enhance|better|polish|refine)\s+(writing|text|content|document|this)/i, intent: 'improve writing' },
-    { pattern: /(fix|correct|check)\s+(grammar|spelling|errors?|typos?)/i, intent: 'fix grammar' },
-    { pattern: /(make|make it)\s+(more\s+)?(concise|shorter|brief)/i, intent: 'make concise' },
-    { pattern: /(simplify|make\s+simpler|easier\s+to\s+read)/i, intent: 'simplify' },
-    { pattern: /(improve|enhance|better)\s+(tone|voice|style)/i, intent: 'enhance tone' },
-    { pattern: /(restructure|reorganize|improve\s+structure|better\s+structure)/i, intent: 'improve structure' },
-    { pattern: /(rewrite|rewrite\s+this|rephrase)/i, intent: 'rewrite' },
-    { pattern: /(edit|edit\s+this|modify|change)/i, intent: 'edit' },
-    { pattern: /(can you\s+)?(improve|fix|enhance|better)\s+(this|it|the\s+text|the\s+content)/i, intent: 'improve writing' }
-  ]
 
-  console.log('Testing patterns...')
-  for (const { pattern, intent } of editPatterns) {
-    console.log('Testing pattern:', pattern, 'against:', messageLower)
-    if (pattern.test(messageLower)) {
-      console.log('Pattern matched! Intent:', intent)
-      return { intent, shouldProposeEdit: true }
-    }
-  }
-
-  // General writing and editing keywords
-  const editKeywords = [
-    'write', 'create', 'add', 'generate', 'compose', 'draft',
-    'improve', 'fix', 'enhance', 'better', 'polish', 'refine', 'rewrite',
-    'edit', 'modify', 'change', 'correct', 'check', 'grammar', 'spelling',
-    'concise', 'simpler', 'structure', 'tone', 'style', 'voice'
-  ]
-
-  console.log('Testing keywords...')
-  const hasEditKeywords = editKeywords.some(keyword => {
-    const hasKeyword = messageLower.includes(keyword)
-    console.log('Keyword:', keyword, 'Found:', hasKeyword)
-    return hasKeyword
-  })
-  
-  if (hasEditKeywords) {
-    console.log('Keyword match found!')
-    return { intent: 'improve writing', shouldProposeEdit: true }
-  }
-
-  console.log('No edit request detected')
-  return { intent: '', shouldProposeEdit: false }
-}
 
 /**
  * Generate unique ID
