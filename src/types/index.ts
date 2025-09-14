@@ -267,5 +267,97 @@ export interface WebSearchResult {
     source?: string;
 }
 
+// Edit Workflow Types
+export interface EditRequest {
+    documentId: string;
+    scope: 'selection' | 'document';
+    selectionPositions?: {
+        start: number;
+        end: number;
+    };
+    userIntent: string;
+    guardrails: {
+        allowCodeEdits: boolean;
+        allowMathEdits: boolean;
+        preserveVoice: boolean;
+    };
+}
+
+export interface TextDiffHunk {
+    from: number;
+    to: number;
+    replacement: string;
+    blockId: string;
+    label: string;
+    changeType: 'grammar' | 'clarity' | 'tone' | 'structure' | 'content';
+    sizeDelta: number;
+}
+
+export interface EditPatch {
+    proposalId: string;
+    hunks: TextDiffHunk[];
+    summary: {
+        blocksChanged: number;
+        wordsAdded: number;
+        wordsRemoved: number;
+        totalChanges: number;
+    };
+    conflicts?: string[]; // Block IDs with conflicts
+}
+
+export interface EditProposal {
+    id: string;
+    documentId: string;
+    originalContent: string;
+    patch: EditPatch;
+    status: 'streaming' | 'ready' | 'applied' | 'discarded';
+    createdAt: Date;
+    appliedAt?: Date;
+}
+
+export interface ApplyEditRequest {
+    proposalId: string;
+    blockIds?: string[]; // Empty = apply all
+}
+
+export interface ApplyEditResult {
+    proposalId: string;
+    blocksApplied: string[];
+    wordsAdded: number;
+    wordsRemoved: number;
+    summary: string[];
+    newContent: string;
+}
+
+export interface EditState {
+    currentProposal: EditProposal | null;
+    previewOverlay: {
+        visible: boolean;
+        hunks: TextDiffHunk[];
+    };
+    conflicts: {
+        [blockId: string]: {
+            hasConflict: boolean;
+            message: string;
+        };
+    };
+}
+
+export type EditWorkflowState = 
+    | 'idle'
+    | 'planning'
+    | 'preview_streaming'
+    | 'preview_ready'
+    | 'reviewing'
+    | 'applying'
+    | 'applied'
+    | 'discarded';
+
+export interface EditWorkflowEvent {
+    type: 'plan' | 'proposal' | 'preview_chunk' | 'preview_ready' | 'conflict' | 'applied' | 'discarded';
+    data: any;
+    timestamp: Date;
+}
+
 
 

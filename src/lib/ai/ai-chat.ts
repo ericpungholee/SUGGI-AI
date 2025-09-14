@@ -27,6 +27,15 @@ export interface AIChatResponse {
     intent: string
     shouldProposeEdit: boolean
   }
+  editRequest?: {
+    intent: string
+    scope: 'selection' | 'document'
+    guardrails: {
+      allowCodeEdits: boolean
+      allowMathEdits: boolean
+      preserveVoice: boolean
+    }
+  }
   toolCalls?: Array<{
     id: string
     type: 'function'
@@ -70,6 +79,18 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
         message: 'Operation was cancelled',
         conversationId: conversationId || '',
         cancelled: true
+      }
+    }
+
+    // Check if this is an editing request
+    const editRequest = detectEditRequest(message)
+    console.log('Edit detection in chat:', { message, editRequest, documentId })
+    if (editRequest && documentId) {
+      console.log('Edit request detected, returning early with editRequest')
+      return {
+        message: 'I\'ll help you edit your document. Let me analyze the content and propose improvements.',
+        conversationId: conversationId || '',
+        editRequest
       }
     }
 
@@ -448,6 +469,8 @@ Your capabilities:
 - Answer general knowledge questions using web search results when document context is not available
 - Provide intelligent document editing suggestions and improvements
 - Detect when users want to edit their documents and offer editing assistance
+- Directly edit and modify document content when requested
+- Make precise text changes, improvements, and corrections
 
 Guidelines for accuracy and context usage:
 - ALWAYS prioritize information from the provided context over general knowledge
@@ -473,6 +496,12 @@ Response format:
 - Support your answer with specific references to the context using source TITLES
 - Provide additional insights or suggestions when relevant
 - End with actionable next steps if appropriate
+
+IMPORTANT - Editing Requests:
+- When users ask to edit, improve, fix, or modify their document, you CAN and SHOULD help them
+- You have full editing capabilities and can make direct changes to document content
+- Always offer to help with editing requests rather than saying you cannot modify content
+- Be proactive in suggesting improvements and offering to implement them
 
 `
 
@@ -599,6 +628,64 @@ export async function deleteConversation(
 }
 
 
+
+/**
+ * Detect if a message is an editing request
+ */
+function detectEditRequest(message: string): {
+  intent: string
+  scope: 'selection' | 'document'
+  guardrails: {
+    allowCodeEdits: boolean
+    allowMathEdits: boolean
+    preserveVoice: boolean
+  }
+} | null {
+  const lowerMessage = message.toLowerCase()
+  
+  const editingKeywords = [
+    'edit', 'improve', 'fix', 'change', 'revise', 'rewrite', 'enhance',
+    'grammar', 'clarity', 'tone', 'structure', 'concise', 'expand',
+    'tighten', 'professional', 'better', 'polish', 'refine', 'modify',
+    'erase', 'clear', 'remove', 'delete', 'correct', 'adjust', 'update',
+    'clean up', 'make better', 'improve the', 'fix the', 'change the',
+    'write', 'add', 'insert', 'create', 'compose', 'draft', 'generate',
+    'into this document', 'to this document', 'in this document',
+    'to the document', 'in the document', 'into the document'
+  ]
+  
+  const isEditRequest = editingKeywords.some(keyword => lowerMessage.includes(keyword))
+  
+  if (!isEditRequest) return null
+  
+  // Extract intent
+  let intent = 'improve writing'
+  if (lowerMessage.includes('grammar')) intent = 'fix grammar and spelling'
+  else if (lowerMessage.includes('clarity')) intent = 'improve clarity'
+  else if (lowerMessage.includes('tone')) intent = 'enhance tone'
+  else if (lowerMessage.includes('structure')) intent = 'improve structure'
+  else if (lowerMessage.includes('concise') || lowerMessage.includes('tighten')) intent = 'make more concise'
+  else if (lowerMessage.includes('expand')) intent = 'expand content'
+  else if (lowerMessage.includes('professional')) intent = 'make tone professional'
+  else if (lowerMessage.includes('polish')) intent = 'polish writing'
+  else if (lowerMessage.includes('write') || lowerMessage.includes('compose') || lowerMessage.includes('draft')) intent = 'write new content'
+  else if (lowerMessage.includes('add') || lowerMessage.includes('insert')) intent = 'add content'
+  else if (lowerMessage.includes('create') || lowerMessage.includes('generate')) intent = 'create content'
+  
+  // Determine scope
+  const scope = lowerMessage.includes('selection') || lowerMessage.includes('selected') 
+    ? 'selection' as const 
+    : 'document' as const
+  
+  // Extract guardrails
+  const guardrails = {
+    allowCodeEdits: !lowerMessage.includes('no code') && !lowerMessage.includes('skip code'),
+    allowMathEdits: !lowerMessage.includes('no math') && !lowerMessage.includes('skip math'),
+    preserveVoice: !lowerMessage.includes('change voice') && !lowerMessage.includes('different tone')
+  }
+  
+  return { intent, scope, guardrails }
+}
 
 /**
  * Generate unique ID

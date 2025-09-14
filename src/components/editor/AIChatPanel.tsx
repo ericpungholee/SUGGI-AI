@@ -1,9 +1,11 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { X, Send, Bot, User, GripVertical, Feather, Paperclip, Search, FileText, Loader2, Globe, Sparkles, Check } from 'lucide-react'
-import { AIMessage, AIConversation } from '@/types'
+import { AIMessage, AIConversation, EditRequest } from '@/types'
 import MessageFormatter from '@/components/ai/MessageFormatter'
 import ChatCards from '@/components/ai/ChatCards'
+import EditWorkflowCards from '@/components/ai/EditWorkflowCards'
+import { useEditWorkflow } from '@/hooks/useEditWorkflow'
 
 interface AIChatPanelProps {
   isOpen: boolean
@@ -11,6 +13,7 @@ interface AIChatPanelProps {
   width: number
   onWidthChange: (width: number) => void
   documentId?: string
+  onContentChange?: (content: string) => void
 }
 
 export default function AIChatPanel({ 
@@ -18,7 +21,8 @@ export default function AIChatPanel({
   onClose, 
   width, 
   onWidthChange,
-  documentId
+  documentId,
+  onContentChange
 }: AIChatPanelProps) {
   const [messages, setMessages] = useState<AIMessage[]>([
     {
@@ -39,6 +43,12 @@ export default function AIChatPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const resizeRef = useRef<HTMLDivElement>(null)
+
+  // Edit workflow
+  const editWorkflow = useEditWorkflow({
+    documentId: documentId || '',
+    onContentChange
+  })
 
 
   // Auto-scroll to bottom when new messages are added
@@ -121,7 +131,18 @@ export default function AIChatPanel({
       const intent = extractEditingIntent(message)
       const scope = 'document' // For now, default to document scope
       
-      createPlan(scope, intent)
+      // Start the edit workflow
+      editWorkflow.startEditWorkflow({
+        documentId: documentId || '',
+        scope: scope as 'document' | 'selection',
+        userIntent: intent,
+        selection: null,
+        guardrails: {
+          allowCodeChanges: false,
+          allowMathChanges: false,
+          preserveVoice: true
+        }
+      })
       setInputValue('')
       return
     }
@@ -147,6 +168,15 @@ export default function AIChatPanel({
     setCurrentOperationId(operationId)
 
     try {
+      console.log('Sending chat request:', {
+        message: userMessage.content,
+        documentId,
+        conversationId,
+        includeContext: true,
+        useWebSearch,
+        operationId
+      })
+      
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: {
@@ -167,6 +197,8 @@ export default function AIChatPanel({
       }
 
       const data = await response.json()
+      console.log('AI response:', data)
+      console.log('Response has editRequest:', !!data.editRequest)
       
       const aiMessage: AIMessage = {
         id: (Date.now() + 1).toString(),
@@ -179,6 +211,7 @@ export default function AIChatPanel({
           tokenUsage: data.tokenUsage,
           cancelled: data.cancelled,
           editSuggestion: data.editSuggestion,
+          editRequest: data.editRequest,
           toolCalls: data.toolCalls
         }
       }
@@ -186,7 +219,20 @@ export default function AIChatPanel({
       setMessages(prev => [...prev, aiMessage])
       setConversationId(data.conversationId)
 
-      // If there's an edit suggestion, automatically trigger the edit
+      // If there's an edit request, start the edit workflow
+      if (data.editRequest && documentId) {
+        console.log('Edit request detected, starting workflow:', data.editRequest)
+        const editRequest: EditRequest = {
+          documentId,
+          scope: data.editRequest.scope,
+          userIntent: data.editRequest.intent,
+          guardrails: data.editRequest.guardrails
+        }
+        console.log('Calling startEditWorkflow with:', editRequest)
+        editWorkflow.startEditWorkflow(editRequest)
+      } else {
+        console.log('No edit request or documentId:', { editRequest: data.editRequest, documentId })
+      }
     } catch (error) {
       console.error('Error sending message:', error)
       const errorMessage: AIMessage = {
@@ -393,6 +439,27 @@ export default function AIChatPanel({
           </div>
         ))}
 
+        {/* Edit Workflow Cards */}
+        {console.log('Edit workflow state:', editWorkflow.state, 'proposal:', editWorkflow.proposal)}
+        {editWorkflow.state !== 'idle' && (
+          <div className="flex gap-3 justify-start">
+            <div className="w-8 h-8 bg-ink rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
+              <Feather className="w-4 h-4 text-paper" />
+            </div>
+            <div className="bg-white text-ink border border-gray-200 rounded-lg px-4 py-2 shadow-sm max-w-[85%]">
+              <EditWorkflowCards
+                state={editWorkflow.state}
+                proposal={editWorkflow.proposal}
+                onAcceptAll={editWorkflow.acceptAll}
+                onRejectAll={editWorkflow.rejectAll}
+                onApplySelected={editWorkflow.applySelected}
+                onDiscard={editWorkflow.discard}
+                onUndo={editWorkflow.undo}
+                conflicts={editWorkflow.conflicts}
+              />
+            </div>
+          </div>
+        )}
         
         {/* Loading indicator */}
         {isLoading && (

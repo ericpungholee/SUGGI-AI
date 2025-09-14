@@ -11,6 +11,7 @@ import {
     Palette, ArrowLeft, Save, Trash2, Feather, Check
 } from "lucide-react";
 import AIChatPanel from './AIChatPanel';
+import FloatingDiffToolbar from './FloatingDiffToolbar';
 
 export default function Editor({ 
   documentId, 
@@ -49,7 +50,189 @@ export default function Editor({
     const [isLoading, setIsLoading] = useState(false)
     const [isDeleting, setIsDeleting] = useState(false)
     const [documentTitle, setDocumentTitle] = useState('Untitled Document')
+    
+    // Edit preview state
+    const [previewHunks, setPreviewHunks] = useState<any[]>([])
+    const [isPreviewVisible, setIsPreviewVisible] = useState(false)
+    const [previewStats, setPreviewStats] = useState({ hunksCount: 0, wordsAdded: 0, wordsRemoved: 0 })
+    const [conflicts, setConflicts] = useState<string[]>([])
+    const [previewOriginalContent, setPreviewOriginalContent] = useState<string>('')
     const [originalTitle, setOriginalTitle] = useState('Untitled Document')
+    
+    // Edit preview handlers
+    const handlePreviewHunkClick = useCallback((hunk: any) => {
+        console.log('Hunk clicked:', hunk)
+    }, [])
+    
+    const handleAcceptHunk = useCallback((hunk: any) => {
+        console.log('Accept hunk:', hunk)
+        // TODO: Implement individual hunk acceptance
+    }, [])
+    
+    const handleRejectHunk = useCallback((hunk: any) => {
+        console.log('Reject hunk:', hunk)
+        // TODO: Implement individual hunk rejection
+    }, [])
+    
+    const handleAcceptAll = useCallback(async () => {
+        console.log('🎯 Accept all hunks called - applying changes atomically')
+        try {
+            // Get the current proposal from the edit workflow
+            if (typeof window !== 'undefined' && (window as any).getCurrentProposal) {
+                const proposal = (window as any).getCurrentProposal()
+                if (proposal) {
+                    console.log('🎯 Applying proposal atomically:', proposal.id)
+                    
+                    const response = await fetch('/api/ai/edit/apply', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            proposalId: proposal.id
+                        })
+                    })
+
+                    if (response.ok) {
+                        const result = await response.json()
+                        console.log('🎯 Atomic apply result:', result)
+                        
+                        // Update the document content atomically
+                        if (onContentChange && result.newContent) {
+                            onContentChange(result.newContent)
+                        }
+                        
+                        // Restore normal editor styling
+                        if (editorRef.current) {
+                            editorRef.current.style.opacity = '1';
+                            editorRef.current.style.background = '';
+                            editorRef.current.style.border = '';
+                            editorRef.current.style.borderRadius = '';
+                            editorRef.current.style.padding = '';
+                        }
+                        
+                        // Clear preview state
+                        setIsPreviewVisible(false)
+                        setPreviewHunks([])
+                        setPreviewOriginalContent('')
+                        
+                        console.log('🎯 Changes applied atomically - single undo step')
+                    } else {
+                        console.error('Failed to apply edits:', await response.text())
+                    }
+                }
+            } else {
+                console.log('No current proposal available')
+            }
+        } catch (error) {
+            console.error('Error applying edits:', error)
+        }
+    }, [onContentChange])
+    
+    const handleRejectAll = useCallback(() => {
+        console.log('🎯 Reject all hunks - restoring original content')
+        
+        // Restore original content and styling
+        if (editorRef.current && previewOriginalContent) {
+            editorRef.current.innerHTML = previewOriginalContent
+        }
+        
+        // Restore normal editor styling
+        if (editorRef.current) {
+            editorRef.current.style.opacity = '1';
+            editorRef.current.style.background = '';
+            editorRef.current.style.border = '';
+            editorRef.current.style.borderRadius = '';
+            editorRef.current.style.padding = '';
+        }
+        
+        // Clear preview state
+        setIsPreviewVisible(false)
+        setPreviewHunks([])
+        setPreviewOriginalContent('')
+        
+        console.log('🎯 Preview rejected - original content restored')
+    }, [previewOriginalContent])
+    
+    const handleReviewChanges = useCallback(() => {
+        console.log('Review changes')
+        // TODO: Open review modal or switch to chat
+    }, [])
+    
+    // Function to start preview (called from edit workflow)
+    const startPreview = useCallback((hunks: any[], stats: any) => {
+        console.log('🎯 Editor startPreview called with:', { hunks, stats });
+        
+        // Store the original content for restoration
+        if (editorRef.current && !isPreviewVisible) {
+            setPreviewOriginalContent(editorRef.current.innerHTML);
+        }
+        
+        // Apply hunks to create the "ghost document" - like Cursor
+        if (hunks && hunks.length > 0 && editorRef.current) {
+            let previewContent = editorRef.current.innerHTML;
+            
+            // Sort hunks by position (reverse order to avoid position shifts)
+            const sortedHunks = [...hunks].sort((a, b) => b.from - a.from);
+            
+            for (const hunk of sortedHunks) {
+                const beforeText = previewContent.substring(0, hunk.from);
+                const afterText = previewContent.substring(hunk.to);
+                previewContent = beforeText + hunk.replacement + afterText;
+            }
+            
+            // Update the editor with the "ghost document" - looks like it's already written
+            editorRef.current.innerHTML = previewContent;
+            
+            // Add ghost text styling to make it clear it's a preview
+            editorRef.current.style.opacity = '0.7';
+            editorRef.current.style.background = 'rgba(34, 197, 94, 0.05)';
+            editorRef.current.style.border = '2px dashed #22c55e';
+            editorRef.current.style.borderRadius = '8px';
+            editorRef.current.style.padding = '16px';
+        }
+        
+        setPreviewHunks(hunks);
+        setPreviewStats(stats);
+        setIsPreviewVisible(true);
+        
+        console.log('🎯 Cursor-style ghost document activated:', { 
+            hunksCount: hunks?.length || 0, 
+            isVisible: true,
+            stats 
+        });
+    }, [isPreviewVisible])
+    
+    // Helper function to format content for preview
+    const formatContentForPreview = (text: string) => {
+        // Convert plain text to properly formatted HTML
+        const paragraphs = text.split('\n\n').filter(p => p.trim().length > 0);
+        const formattedParagraphs = paragraphs.map(paragraph => {
+            const trimmed = paragraph.trim();
+            if (trimmed.length === 0) return '';
+            
+            // Check if it looks like a heading (short, no period, all caps or title case)
+            const isHeading = trimmed.length < 100 && 
+                             !trimmed.endsWith('.') && 
+                             (trimmed === trimmed.toUpperCase() || 
+                              trimmed.split(' ').every(word => word[0] === word[0].toUpperCase()));
+            
+            if (isHeading) {
+                return `<h2 style="margin: 1.5em 0 0.5em 0; font-size: 1.5em; font-weight: bold; color: #333;">${trimmed}</h2>`;
+            } else {
+                return `<p style="margin: 0 0 1em 0; line-height: 1.6;">${trimmed}</p>`;
+            }
+        });
+        
+        return formattedParagraphs.join('');
+    }
+    
+    // Expose startPreview to parent components
+    useEffect(() => {
+        if (typeof window !== 'undefined' && window) {
+            (window as any).startEditPreview = startPreview
+        }
+    }, [startPreview])
     const [isSavingTitle, setIsSavingTitle] = useState(false)
     const [mounted, setMounted] = useState(false)
     const [justSaved, setJustSaved] = useState(false)
@@ -2099,11 +2282,21 @@ export default function Editor({
                     marginRight: isAIChatOpen ? `${aiChatWidth}px` : '0px'
                 }}
             >
-                <div className="max-w-4xl mx-auto p-8">
+                <div className="max-w-4xl mx-auto p-8 relative">
+                    {/* Ghost Document Indicator */}
+                    {isPreviewVisible && (
+                        <div className="mb-4 p-3 bg-green-100 border border-green-300 rounded-lg flex items-center gap-2 text-sm text-green-800">
+                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                            <span className="font-medium">Ghost Document Active</span>
+                            <span className="text-green-600">•</span>
+                            <span>Content appears written but not saved until you accept</span>
+                        </div>
+                    )}
+                    
                     <div
                         ref={editorRef}
-                        contentEditable
-                        className="min-h-[600px] focus:outline-none max-w-none"
+                        contentEditable={!isPreviewVisible}
+                        className="min-h-[600px] focus:outline-none max-w-none relative"
                         style={{
                             color: '#000000',
                             lineHeight: '1.6',
@@ -2156,6 +2349,7 @@ export default function Editor({
                         aria-multiline="true"
                     />
                     
+                    
                                                                   <style jsx>{`
                           .editor-image {
                               cursor: pointer;
@@ -2191,6 +2385,17 @@ export default function Editor({
                           }
                       `}</style>
                 </div>
+                
+                {/* Floating Diff Toolbar */}
+                <FloatingDiffToolbar
+                    isVisible={isPreviewVisible && previewHunks.length > 0}
+                    onAcceptAll={handleAcceptAll}
+                    onRejectAll={handleRejectAll}
+                    onReviewChanges={handleReviewChanges}
+                    hunksCount={previewStats.hunksCount}
+                    wordsAdded={previewStats.wordsAdded}
+                    wordsRemoved={previewStats.wordsRemoved}
+                />
             </div>
 
             {/* Bottom Status Bar */}
@@ -2270,6 +2475,7 @@ export default function Editor({
                         width={aiChatWidth}
                         onWidthChange={setAiChatWidth}
                         documentId={documentId}
+                        onContentChange={onContentChange}
                     />
                 </div>
             )}

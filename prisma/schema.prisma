@@ -49,6 +49,7 @@ model Document {
   chunks        DocumentChunk[]
   conversations AIConversation[]
   versions      DocumentVersion[]
+  editProposals EditProposal[]
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -164,4 +165,20 @@ model DocumentVersion {
   @@index([documentId])
   @@index([contentHash])
   @@map("document_versions")
+}
+
+model EditProposal {
+  id              String   @id @default(cuid())
+  documentId      String
+  originalContent String   @db.Text
+  patch           String   @db.Text // JSON string of EditPatch
+  status          String   @default("ready") // ready, applied, discarded
+  appliedAt       DateTime?
+  createdAt       DateTime @default(now())
+  
+  document        Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  
+  @@index([documentId])
+  @@index([status])
+  @@map("edit_proposals")
 }
