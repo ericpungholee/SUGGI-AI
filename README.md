@@ -6,7 +6,7 @@ I built SSUGI because I was tired of the writing workflow that everyone else see
 
 SSUGI fixes this by putting everything in one place: your documents, AI chat, and context - all working together seamlessly.
 
-RAG:
+RAG: 
 <img src="https://github.com/user-attachments/assets/fbfccd86-a703-4675-b21d-18968591b423"
      width="1419" height="729" alt="image" />
 Automated Writing:
