@@ -329,35 +329,10 @@ export interface ApplyEditResult {
     newContent: string;
 }
 
-export interface EditState {
-    currentProposal: EditProposal | null;
-    previewOverlay: {
-        visible: boolean;
-        hunks: TextDiffHunk[];
-    };
-    conflicts: {
-        [blockId: string]: {
-            hasConflict: boolean;
-            message: string;
-        };
-    };
-}
 
-export type EditWorkflowState = 
-    | 'idle'
-    | 'planning'
-    | 'preview_streaming'
-    | 'preview_ready'
-    | 'reviewing'
-    | 'applying'
-    | 'applied'
-    | 'discarded';
 
-export interface EditWorkflowEvent {
-    type: 'plan' | 'proposal' | 'preview_chunk' | 'preview_ready' | 'conflict' | 'applied' | 'discarded';
-    data: any;
-    timestamp: Date;
-}
+// Export new agentic editing types
+export * from './agentic-editing'
 
 
 

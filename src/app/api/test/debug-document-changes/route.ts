@@ -72,7 +72,7 @@ export async function POST(request: Request) {
             console.log(`Version ${index + 1}:`, {
                 createdAt: version.createdAt,
                 contentHash: version.contentHash,
-                chunkCount: version.chunkCount
+                chunksCount: version.chunksCount
             })
         })
 

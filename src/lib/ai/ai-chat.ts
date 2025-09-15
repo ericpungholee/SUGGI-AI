@@ -1,6 +1,7 @@
 import { generateChatCompletion, ChatMessage } from './openai'
 import { getDocumentContext } from './vector-search'
 import { searchWeb, formatSearchResultsForAI } from './web-search'
+import { classifyQuery } from './query-classifier'
 import { prisma } from '@/lib/prisma'
 
 export interface AIChatRequest {
@@ -82,10 +83,32 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
       }
     }
 
-    // Check if this is an editing request
-    const editRequest = detectEditRequest(message)
-    console.log('Edit detection in chat:', { message, editRequest, documentId })
-    if (editRequest && documentId) {
+    // Get or create conversation
+    let conversation = conversationId 
+      ? await getConversation(conversationId, userId)
+      : await createConversation(userId, documentId)
+
+    // Use AI-powered query classification
+    const classification = await classifyQuery(message, documentId, conversation.messages)
+    const isGeneralQuery = classification.isGeneralKnowledge
+    const isFollowUp = classification.isFollowUp
+    
+    console.log('AI Query Classification:', {
+      message,
+      classification,
+      documentId
+    })
+
+    // Check if this is an editing request using AI classification
+    if (classification.isEditRequest && documentId) {
+      const editRequest = detectEditRequest(message)
+      console.log('AI Edit detection in chat:', { 
+        message, 
+        editRequest, 
+        documentId,
+        classification
+      })
+      
       console.log('Edit request detected, returning early with editRequest')
       return {
         message: 'I\'ll help you edit your document. Let me analyze the content and propose improvements.',
@@ -94,20 +117,10 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
       }
     }
 
-
-    // Get or create conversation
-    let conversation = conversationId 
-      ? await getConversation(conversationId, userId)
-      : await createConversation(userId, documentId)
-
     // Get document context if requested using advanced RAG
     let context = ''
     let contextUsed: string[] = []
     let contextSource = 'document'
-    
-    // Check if this is a general knowledge query first
-    const isGeneralQuery = isGeneralKnowledgeQuery(message)
-    const isFollowUp = isFollowUpQuery(message)
     
     // If user explicitly wants web search, use GPT-5's native web search
     if (useWebSearch) {
@@ -333,124 +346,8 @@ async function saveMessages(conversationId: string, messages: ConversationMessag
   })
 }
 
-/**
- * Check if a query appears to be a general knowledge question
- */
-function isGeneralKnowledgeQuery(message: string): boolean {
-  const messageLower = message.toLowerCase().trim()
-  
-  // First check for document-specific indicators that should NOT be treated as general knowledge
-  const documentSpecificPatterns = [
-    /from this document/i,
-    /in this document/i,
-    /in the document/i,
-    /from the document/i,
-    /current document/i,
-    /this document/i,
-    /the document/i,
-    /in this file/i,
-    /from this file/i,
-    /in this text/i,
-    /from this text/i,
-    /what was that/i,
-    /what did it say/i,
-    /what does it say/i,
-    /what does the document say/i,
-    /what does this say/i,
-    /what does that say/i,
-    /according to this/i,
-    /based on this/i,
-    /from the text/i,
-    /in the text/i,
-    // Financial data queries that are likely document-specific
-    /what was.*yoy/i,
-    /what was.*revenue/i,
-    /what was.*income/i,
-    /what was.*profit/i,
-    /what was.*growth/i,
-    /what was.*quarter/i,
-    /what was.*q[1-4]/i,
-    /what was.*date/i,
-    /what was.*year/i,
-    /what was.*period/i
-  ]
-  
-  // If it contains document-specific indicators, it's NOT a general knowledge query
-  for (const pattern of documentSpecificPatterns) {
-    if (pattern.test(messageLower)) {
-      return false
-    }
-  }
-  
-  const generalKnowledgePatterns = [
-    /^who is/i,
-    /^what is/i,
-    /^when did/i,
-    /^where is/i,
-    /^how does/i,
-    /^why did/i,
-    /^tell me about/i,
-    /^explain/i,
-    /^define/i,
-    /^describe/i,
-    /^what are/i,
-    /^who are/i,
-    /^when was/i,
-    /^where are/i,
-    /^how are/i,
-    /^why are/i,
-    /^can you tell me/i,
-    /^do you know/i,
-    /^what do you know about/i,
-    /^who was/i,
-    /^what was/i,
-    /^when was/i,
-    /^where was/i,
-    /^how was/i,
-    /^why was/i
-  ]
-  
-  // Check for general knowledge patterns
-  for (const pattern of generalKnowledgePatterns) {
-    if (pattern.test(messageLower)) {
-      return true
-    }
-  }
-
-  // Check for specific entity types that are likely general knowledge
-  const entityPatterns = [
-    /\b(celebrity|person|politician|actor|musician|scientist|inventor|author|artist)\b/i,
-    /\b(company|corporation|organization|brand|product)\b/i,
-    /\b(place|city|country|state|continent|landmark)\b/i,
-    /\b(event|war|battle|discovery|invention|movement)\b/i,
-    /\b(concept|theory|principle|law|rule|method)\b/i,
-    /\b(technology|software|platform|service|tool)\b/i
-  ]
-
-  for (const pattern of entityPatterns) {
-    if (pattern.test(messageLower)) {
-      return true
-    }
-  }
-
-  return false
-}
-
-/**
- * Check if a query is a simple follow-up (like "tell me more", "what about them")
- */
-function isFollowUpQuery(message: string): boolean {
-  const followUpKeywords = [
-    'tell me more', 'more info', 'more information', 'more details',
-    'what about', 'what else', 'anything else', 'can you provide more',
-    'give me more', 'show me more', 'elaborate', 'expand on',
-    'them', 'it', 'this', 'that', 'these', 'those'
-  ]
-  
-  const lowerQuery = message.toLowerCase().trim()
-  return followUpKeywords.some(keyword => lowerQuery.includes(keyword)) || 
-         lowerQuery.length < 20 // Very short queries are likely follow-ups
-}
+// Note: Query classification is now handled by AI-powered classifyQuery function
+// The old hardcoded regex patterns have been removed in favor of intelligent classification
 
 /**
  * Build system prompt with context
@@ -502,6 +399,12 @@ IMPORTANT - Editing Requests:
 - You have full editing capabilities and can make direct changes to document content
 - Always offer to help with editing requests rather than saying you cannot modify content
 - Be proactive in suggesting improvements and offering to implement them
+- When generating content for documents, generate ONLY substantive content - no meta-commentary
+- Do NOT include phrases like "Here's the content", "I've generated", "This document", etc.
+- Write as if you are the author of the document, not an AI assistant
+- Generate natural content that continues or builds upon existing content seamlessly
+- Avoid referencing the document title or structure in a meta way when generating content
+- If asked to delete content, generate empty content or a fresh start
 
 `
 
@@ -643,24 +546,100 @@ function detectEditRequest(message: string): {
 } | null {
   const lowerMessage = message.toLowerCase()
   
-  const editingKeywords = [
+  // Check for explicit chat mode requests first
+  const chatModeIndicators = [
+    'chat about', 'discuss', 'talk about', 'tell me about', 'explain',
+    'what is', 'how does', 'why', 'when', 'where', 'who is',
+    'can you help me understand', 'i want to learn about',
+    'i need information about', 'i have a question about',
+    'information about', 'learn about'
+  ]
+  
+  // Check for content generation requests (should trigger edit mode)
+  const contentGenerationIndicators = [
+    'write', 'create', 'generate', 'compose', 'draft',
+    'essay', 'article', 'report', 'document', 'content'
+  ]
+  
+  const isConversational = chatModeIndicators.some(indicator => lowerMessage.includes(indicator))
+  const isContentGeneration = contentGenerationIndicators.some(indicator => lowerMessage.includes(indicator))
+  
+  // Check for explicit edit mode requests
+  const explicitEditIndicators = [
+    '/edit', 'edit mode', 'start editing', 'begin editing',
+    'modify this', 'change this', 'update this', 'fix this'
+  ]
+  
+  const isExplicitEdit = explicitEditIndicators.some(indicator => lowerMessage.includes(indicator))
+  
+  // If it's explicitly conversational and not content generation, don't treat as edit request
+  if (isConversational && !isExplicitEdit && !isContentGeneration) {
+    return null
+  }
+  
+  // Define edit keywords
+  const strongEditKeywords = [
     'edit', 'improve', 'fix', 'change', 'revise', 'rewrite', 'enhance',
     'grammar', 'clarity', 'tone', 'structure', 'concise', 'expand',
     'tighten', 'professional', 'better', 'polish', 'refine', 'modify',
     'erase', 'clear', 'remove', 'delete', 'correct', 'adjust', 'update',
     'clean up', 'make better', 'improve the', 'fix the', 'change the',
-    'write', 'add', 'insert', 'create', 'compose', 'draft', 'generate',
+    'replace', 'substitute', 'swap', 'exchange', 'switch',
+    'entire content', 'whole content', 'all content', 'full content',
     'into this document', 'to this document', 'in this document',
     'to the document', 'in the document', 'into the document'
   ]
   
-  const isEditRequest = editingKeywords.some(keyword => lowerMessage.includes(keyword))
+  const weakEditKeywords = [
+    'write', 'add', 'insert', 'create', 'compose', 'draft', 'generate'
+  ]
+  
+  // Check for strong edit indicators
+  const hasStrongEditKeywords = strongEditKeywords.some(keyword => lowerMessage.includes(keyword))
+  
+  // Check for weak edit indicators with document context
+  const hasDocumentContext = lowerMessage.includes('document') || lowerMessage.includes('this')
+  const hasWeakEditKeywords = weakEditKeywords.some(keyword => lowerMessage.includes(keyword))
+  
+  // Determine if this should be treated as an edit request
+  let isEditRequest = false
+  
+  if (isExplicitEdit) {
+    // If explicitly requesting edit mode, always proceed
+    isEditRequest = true
+  } else if (hasStrongEditKeywords) {
+    // Strong edit keywords always trigger edit mode
+    isEditRequest = true
+  } else if (isContentGeneration && hasDocumentContext) {
+    // Content generation requests with document context should trigger edit mode
+    isEditRequest = true
+  } else if (hasWeakEditKeywords && hasDocumentContext && !isConversational) {
+    // Weak edit keywords only trigger edit mode if:
+    // - They have document context AND
+    // - No conversational indicators are present AND
+    // - The message contains explicit edit intent (not just content generation)
+    const hasExplicitEditIntent = lowerMessage.includes('edit this') || 
+                                 lowerMessage.includes('modify this') ||
+                                 lowerMessage.includes('change this') ||
+                                 lowerMessage.includes('update this') ||
+                                 lowerMessage.includes('replace this') ||
+                                 lowerMessage.includes('rewrite this') ||
+                                 lowerMessage.includes('improve this')
+    
+    if (hasExplicitEditIntent) {
+      isEditRequest = true
+    }
+  }
   
   if (!isEditRequest) return null
   
   // Extract intent
   let intent = 'improve writing'
-  if (lowerMessage.includes('grammar')) intent = 'fix grammar and spelling'
+  if (lowerMessage.includes('replace') && (lowerMessage.includes('entire') || lowerMessage.includes('whole') || lowerMessage.includes('all') || lowerMessage.includes('full'))) {
+    intent = 'replace entire content'
+  } else if (lowerMessage.includes('replace')) {
+    intent = 'replace content'
+  } else if (lowerMessage.includes('grammar')) intent = 'fix grammar and spelling'
   else if (lowerMessage.includes('clarity')) intent = 'improve clarity'
   else if (lowerMessage.includes('tone')) intent = 'enhance tone'
   else if (lowerMessage.includes('structure')) intent = 'improve structure'

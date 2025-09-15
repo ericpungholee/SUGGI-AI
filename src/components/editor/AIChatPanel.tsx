@@ -1,11 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
+import { useSession } from 'next-auth/react'
 import { X, Send, Bot, User, GripVertical, Feather, Paperclip, Search, FileText, Loader2, Globe, Sparkles, Check } from 'lucide-react'
-import { AIMessage, AIConversation, EditRequest } from '@/types'
-import MessageFormatter from '@/components/ai/MessageFormatter'
-import ChatCards from '@/components/ai/ChatCards'
-import EditWorkflowCards from '@/components/ai/EditWorkflowCards'
-import { useEditWorkflow } from '@/hooks/useEditWorkflow'
 
 interface AIChatPanelProps {
   isOpen: boolean
@@ -14,6 +10,8 @@ interface AIChatPanelProps {
   onWidthChange: (width: number) => void
   documentId?: string
   onContentChange?: (content: string) => void
+  onStartAgentTyping?: () => void
+  onStopAgentTyping?: () => void
 }
 
 export default function AIChatPanel({ 
@@ -22,9 +20,16 @@ export default function AIChatPanel({
   width, 
   onWidthChange,
   documentId,
-  onContentChange
+  onContentChange,
+  onStartAgentTyping,
+  onStopAgentTyping
 }: AIChatPanelProps) {
-  const [messages, setMessages] = useState<AIMessage[]>([
+  const { data: session, status } = useSession()
+  
+  console.log('🔐 AIChatPanel: Session status:', { status, hasSession: !!session, userId: session?.user?.id })
+  console.log('🎨 AIChatPanel: Component rendered with props:', { isOpen, documentId, width })
+  
+  const [messages, setMessages] = useState<Array<{id: string, type: 'user' | 'assistant', content: string, timestamp: Date, needsApproval?: boolean, pendingContent?: string}>>([
     {
       id: '1',
       type: 'assistant',
@@ -35,26 +40,16 @@ export default function AIChatPanel({
   const [inputValue, setInputValue] = useState('')
   const [isResizing, setIsResizing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [isCancelling, setIsCancelling] = useState(false)
-  const [currentOperationId, setCurrentOperationId] = useState<string | null>(null)
-  const [conversationId, setConversationId] = useState<string | null>(null)
   const [showQuickActions, setShowQuickActions] = useState(false)
   const [useWebSearch, setUseWebSearch] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const resizeRef = useRef<HTMLDivElement>(null)
 
-  // Edit workflow
-  const editWorkflow = useEditWorkflow({
-    documentId: documentId || '',
-    onContentChange
-  })
+
+  
+  
 
 
-  // Auto-scroll to bottom when new messages are added
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
 
   // Handle resizing
   useEffect(() => {
@@ -109,55 +104,271 @@ export default function AIChatPanel({
     return 'improve writing'
   }
 
+  // Generate content for edit requests
+  const generateEditContent = async (userMessage: string, editRequest: any) => {
+    try {
+      // Call the AI to generate actual content based on the edit request
+      const response = await fetch('/api/ai/generate-content', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userMessage,
+          documentId,
+          editRequest
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        let content = data.content || ''
+        
+        // Clean up any meta-commentary that might have slipped through
+        content = content
+          .replace(/^(Here's|I've|This document|I'll|Let me|I'm going to|I can|I will).*?[.!?]\s*/gmi, '')
+          .replace(/^(I apologize|Sorry|Unfortunately|I'm sorry).*?[.!?]\s*/gmi, '')
+          .replace(/^(I've generated|I've created|I've written|I've added).*?[.!?]\s*/gmi, '')
+          .replace(/^(The content|The document|This content).*?[.!?]\s*/gmi, '')
+          .replace(/^(Draft cleared|Content cleared|Document cleared).*?[.!?]\s*/gmi, '')
+          .replace(/^(What would you like|Here are|Please share|If you prefer).*?[.!?]\s*/gmi, '')
+          .replace(/^(I can|I will|I'll help|I'm here).*?[.!?]\s*/gmi, '')
+          .trim()
+        
+        // Special handling for delete/clear requests
+        if (userMessage.toLowerCase().includes('delete') || userMessage.toLowerCase().includes('clear')) {
+          return '' // Return empty content for delete/clear requests
+        }
+        
+        return content || ''
+      } else {
+        return 'Content generated successfully.'
+      }
+    } catch (error) {
+      console.error('Error generating edit content:', error)
+      return 'Content generated successfully.'
+    }
+  }
+
+  // Type content directly into the editor with live typing effect
+  const typeContentIntoEditor = async (content: string) => {
+    try {
+      // Get the editor element
+      const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement
+      if (!editorElement) {
+        console.error('Editor element not found')
+        return
+      }
+
+      // Start agent typing mode to prevent auto-save
+      onStartAgentTyping?.()
+      
+      // Disable auto-save during typing
+      const originalContent = editorElement.innerHTML
+      
+      // Focus the editor
+      editorElement.focus()
+
+      // Split content into words for typing effect
+      const words = content.split(' ')
+      let currentContent = ''
+
+      // Type each word with a delay
+      for (let i = 0; i < words.length; i++) {
+        const word = words[i]
+        currentContent += (i > 0 ? ' ' : '') + word
+        
+        // Update the editor content with gray styling for pending approval
+        // Use a temporary approach that doesn't trigger auto-save
+        const tempDiv = document.createElement('div')
+        tempDiv.innerHTML = `<span class="pending-ai-content">${currentContent}</span><span class="typing-cursor">|</span>`
+        
+        // Replace content without triggering input events
+        editorElement.innerHTML = tempDiv.innerHTML
+        
+        // Wait before typing the next word
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+
+      // Remove the typing cursor and keep content in pending state
+      editorElement.innerHTML = `<span class="pending-ai-content">${currentContent}</span>`
+      
+      // Store the pending content for later approval/rejection
+      ;(window as any).pendingAIContent = {
+        content: currentContent,
+        originalContent: originalContent
+      }
+      
+      // Show approval UI in chat
+      showApprovalUI(content)
+
+    } catch (error) {
+      console.error('Error typing content into editor:', error)
+      // Stop agent typing on error
+      onStopAgentTyping?.()
+    }
+  }
+
+  // Show approval UI in chat
+  const showApprovalUI = (content: string) => {
+    const approvalMessage = {
+      id: (Date.now() + 1).toString(),
+      type: 'assistant' as const,
+      content: 'I\'ve typed the content into your document. Please review and approve or reject it.',
+      timestamp: new Date(),
+      needsApproval: true,
+      pendingContent: content
+    }
+    setMessages(prev => [...prev, approvalMessage])
+  }
+
+  // Handle content approval
+  const handleApproveContent = async () => {
+    try {
+      // Get the editor element
+      const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement
+      if (!editorElement) {
+        console.error('Editor element not found')
+        return
+      }
+
+      // Get the pending content
+      const pendingData = (window as any).pendingAIContent
+      if (!pendingData) {
+        console.error('No pending content found')
+        return
+      }
+
+      // Remove pending styling and make content normal
+      const pendingContent = editorElement.querySelector('.pending-ai-content')
+      if (pendingContent) {
+        const content = pendingContent.textContent || ''
+        console.log('✅ Approving AI content:', content)
+        
+        // Convert plain text to HTML paragraphs
+        const htmlContent = content.split('\n\n').map(paragraph => 
+          paragraph.trim() ? `<p>${paragraph.trim()}</p>` : ''
+        ).join('')
+        
+        editorElement.innerHTML = htmlContent
+        
+        // Trigger the onContentChange callback to save the content
+        if (onContentChange) {
+          console.log('💾 Triggering onContentChange with HTML content:', htmlContent)
+          onContentChange(htmlContent)
+        }
+        
+        // Also trigger input event to notify the editor of changes
+        const inputEvent = new Event('input', { bubbles: true })
+        editorElement.dispatchEvent(inputEvent)
+      }
+
+      // Clear pending content
+      delete (window as any).pendingAIContent
+
+      // Stop agent typing mode and trigger save
+      onStopAgentTyping?.()
+
+      // Remove approval UI from messages
+      setMessages(prev => prev.filter(msg => !msg.needsApproval))
+
+      // Add approved message
+      const approvedMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant' as const,
+        content: 'Content approved and added to your document.',
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, approvedMessage])
+
+    } catch (error) {
+      console.error('Error approving content:', error)
+    }
+  }
+
+  // Handle content rejection
+  const handleRejectContent = async () => {
+    try {
+      // Get the editor element
+      const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement
+      if (!editorElement) {
+        console.error('Editor element not found')
+        return
+      }
+
+      // Get the pending content and restore original
+      const pendingData = (window as any).pendingAIContent
+      if (pendingData) {
+        // Restore original content
+        editorElement.innerHTML = pendingData.originalContent
+      } else {
+        // Fallback: remove the pending content
+        const pendingContent = editorElement.querySelector('.pending-ai-content')
+        if (pendingContent) {
+          pendingContent.remove()
+        }
+      }
+
+      // Clear pending content
+      delete (window as any).pendingAIContent
+
+      // Stop agent typing mode (no save triggered)
+      onStopAgentTyping?.()
+
+      // Remove approval UI from messages
+      setMessages(prev => prev.filter(msg => !msg.needsApproval))
+
+      // Add rejected message
+      const rejectedMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant' as const,
+        content: 'Content rejected and removed from your document.',
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, rejectedMessage])
+
+    } catch (error) {
+      console.error('Error rejecting content:', error)
+    }
+  }
+
   // Handle slash commands
   const handleSlashInput = (value: string) => {
     if (value.startsWith('/')) {
       const [command, ...args] = value.slice(1).split(' ')
       if (command) {
-        handleSlashCommand(command, args)
+        // Handle slash commands here if needed
+        console.log('Slash command:', command, args)
         setInputValue('')
       }
     }
   }
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || isLoading) return
-
-    const message = inputValue.trim()
+    console.log('🎯 AIChatPanel: handleSendMessage called', {
+      inputValue: inputValue.trim(),
+      isLoading,
+      documentId,
+      hasInputValue: !!inputValue.trim()
+    })
     
-    // Check if it's an editing request
-    if (isEditingRequest(message)) {
-      // Extract intent from message
-      const intent = extractEditingIntent(message)
-      const scope = 'document' // For now, default to document scope
-      
-      // Start the edit workflow
-      editWorkflow.startEditWorkflow({
-        documentId: documentId || '',
-        scope: scope as 'document' | 'selection',
-        userIntent: intent,
-        selection: null,
-        guardrails: {
-          allowCodeChanges: false,
-          allowMathChanges: false,
-          preserveVoice: true
-        }
-      })
-      setInputValue('')
+    if (!inputValue.trim() || isLoading) {
+      console.log('❌ AIChatPanel: Early return - no input or loading')
       return
     }
 
+    const message = inputValue.trim()
+    
     // Handle slash commands
     if (message.startsWith('/')) {
       handleSlashInput(message)
       return
     }
 
-    // Regular chat message
-    const operationId = `ai-chat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    const userMessage: AIMessage = {
+    // Add user message to chat
+    const userMessage = {
       id: Date.now().toString(),
-      type: 'user',
+      type: 'user' as const,
       content: message,
       timestamp: new Date()
     }
@@ -165,18 +376,9 @@ export default function AIChatPanel({
     setMessages(prev => [...prev, userMessage])
     setInputValue('')
     setIsLoading(true)
-    setCurrentOperationId(operationId)
 
     try {
-      console.log('Sending chat request:', {
-        message: userMessage.content,
-        documentId,
-        conversationId,
-        includeContext: true,
-        useWebSearch,
-        operationId
-      })
-      
+      // Send message to AI chat API
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: {
@@ -185,101 +387,64 @@ export default function AIChatPanel({
         body: JSON.stringify({
           message: userMessage.content,
           documentId,
-          conversationId,
           includeContext: true,
-          useWebSearch,
-          operationId
-        })
+          useWebSearch
+        }),
       })
 
       if (!response.ok) {
-        throw new Error('Failed to get AI response')
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
 
       const data = await response.json()
-      console.log('AI response:', data)
-      console.log('Response has editRequest:', !!data.editRequest)
-      
-      const aiMessage: AIMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: data.message,
-        timestamp: new Date(),
-        metadata: {
-          documentId,
-          contextUsed: data.contextUsed,
-          tokenUsage: data.tokenUsage,
-          cancelled: data.cancelled,
-          editSuggestion: data.editSuggestion,
-          editRequest: data.editRequest,
-          toolCalls: data.toolCalls
-        }
-      }
+      console.log('Chat response received:', data)
 
-      setMessages(prev => [...prev, aiMessage])
-      setConversationId(data.conversationId)
-
-      // If there's an edit request, start the edit workflow
-      if (data.editRequest && documentId) {
-        console.log('Edit request detected, starting workflow:', data.editRequest)
-        const editRequest: EditRequest = {
-          documentId,
-          scope: data.editRequest.scope,
-          userIntent: data.editRequest.intent,
-          guardrails: data.editRequest.guardrails
+      // Handle edit requests by typing content directly into the editor
+      if (data.editRequest) {
+        // Generate content and type it directly into the editor
+        const editContent = await generateEditContent(userMessage.content, data.editRequest)
+        
+        // Type the content directly into the editor
+        await typeContentIntoEditor(editContent)
+        
+        // Add a message indicating the content was added to the document
+        const aiMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant' as const,
+          content: 'I\'ve added the essay to your document. You can see it being typed in the editor.',
+          timestamp: new Date()
         }
-        console.log('Calling startEditWorkflow with:', editRequest)
-        editWorkflow.startEditWorkflow(editRequest)
+        setMessages(prev => [...prev, aiMessage])
       } else {
-        console.log('No edit request or documentId:', { editRequest: data.editRequest, documentId })
+        // Regular chat response
+        const aiMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant' as const,
+          content: data.message || 'No response received',
+          timestamp: new Date()
+        }
+        setMessages(prev => [...prev, aiMessage])
       }
+
     } catch (error) {
       console.error('Error sending message:', error)
-      const errorMessage: AIMessage = {
+      const errorMessage = {
         id: (Date.now() + 1).toString(),
-        type: 'assistant',
+        type: 'assistant' as const,
         content: 'Sorry, I encountered an error. Please try again.',
         timestamp: new Date()
       }
       setMessages(prev => [...prev, errorMessage])
     } finally {
       setIsLoading(false)
-      setIsCancelling(false)
-      setCurrentOperationId(null)
     }
   }
 
-  const handleCancelOperation = async () => {
-    if (!currentOperationId || isCancelling) return
-
-    setIsCancelling(true)
-
-    try {
-      const response = await fetch('/api/ai/chat/cancel', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          operationId: currentOperationId
-        })
-      })
-
-      if (response.ok) {
-        setIsLoading(false)
-        setCurrentOperationId(null)
-      } else {
-        console.error('Failed to cancel operation')
-      }
-    } catch (error) {
-      console.error('Error cancelling operation:', error)
-    } finally {
-      setIsCancelling(false)
-    }
-  }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
+    console.log('⌨️ AIChatPanel: Key pressed', { key: e.key, shiftKey: e.shiftKey })
     if (e.key === 'Enter' && !e.shiftKey) {
+      console.log('⌨️ AIChatPanel: Enter pressed, calling handleSendMessage')
       e.preventDefault()
       handleSendMessage()
     }
@@ -317,12 +482,12 @@ export default function AIChatPanel({
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-ink rounded-lg flex items-center justify-center shadow-sm">
-            <Feather className="w-4 h-4 text-paper" />
+          <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center shadow-sm">
+            <Feather className="w-4 h-4 text-white" />
           </div>
           <div>
-            <h3 className="font-semibold text-ink">Suggi AI</h3>
-            <p className="text-xs text-ink/70">
+            <h3 className="font-semibold text-gray-900">Suggi AI</h3>
+            <p className="text-xs text-gray-600">
               {documentId ? 'Document context enabled' : 'Writing helper'}
               {useWebSearch && ' • Web search enabled'}
             </p>
@@ -334,8 +499,8 @@ export default function AIChatPanel({
             onClick={() => setUseWebSearch(!useWebSearch)}
             className={`p-1.5 rounded transition-colors ${
               useWebSearch 
-                ? 'bg-ink text-paper' 
-                : 'hover:bg-gray-100 text-ink'
+                ? 'bg-gray-900 text-white' 
+                : 'hover:bg-gray-100 text-gray-900'
             }`}
             title={useWebSearch ? 'Web search enabled' : 'Enable web search'}
           >
@@ -346,14 +511,14 @@ export default function AIChatPanel({
             className="p-1.5 hover:bg-gray-100 rounded transition-colors"
             title="Quick Actions"
           >
-            <FileText className="w-4 h-4 text-ink" />
+            <FileText className="w-4 h-4 text-gray-900" />
           </button>
           <button
             onClick={onClose}
             className="p-1.5 hover:bg-gray-200 rounded transition-colors"
             title="Close"
           >
-            <X className="w-4 h-4 text-ink" />
+            <X className="w-4 h-4 text-gray-900" />
           </button>
         </div>
       </div>
@@ -361,25 +526,25 @@ export default function AIChatPanel({
       {/* Resize Handle */}
       <div
         ref={resizeRef}
-        className="absolute left-0 top-0 w-1 h-full cursor-col-resize hover:bg-ink transition-colors group"
+        className="absolute left-0 top-0 w-1 h-full cursor-col-resize hover:bg-gray-900 transition-colors group"
         onMouseDown={() => setIsResizing(true)}
       >
-        <div className="w-1 h-full bg-transparent group-hover:bg-ink transition-colors" />
+        <div className="w-1 h-full bg-transparent group-hover:bg-gray-900 transition-colors" />
         <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-3 h-8 bg-gray-300 rounded-r opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <GripVertical className="w-3 h-3 text-ink" />
+          <GripVertical className="w-3 h-3 text-gray-900" />
         </div>
       </div>
 
       {/* Quick Actions Panel */}
       {showQuickActions && (
         <div className="border-b border-gray-200 p-4 bg-white">
-          <h4 className="text-sm font-medium text-ink mb-3">Quick Actions</h4>
+          <h4 className="text-sm font-medium text-gray-900 mb-3">Quick Actions</h4>
           <div className="grid grid-cols-2 gap-2">
             {quickActions.map((action, index) => (
               <button
                 key={index}
                 onClick={() => handleQuickAction(action.action)}
-                className="text-left p-2 text-xs bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200 hover:border-gray-300 text-ink"
+                className="text-left p-2 text-xs bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200 hover:border-gray-300 text-gray-900"
               >
                 {action.label}
               </button>
@@ -388,88 +553,81 @@ export default function AIChatPanel({
         </div>
       )}
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/30">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex gap-3 animate-in slide-in-from-bottom-2 duration-300 ${
-              message.type === 'user' ? 'justify-end' : 'justify-start'
-            }`}
-          >
-            {message.type === 'assistant' && (
-              <div className="w-8 h-8 bg-ink rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
-                <Feather className="w-4 h-4 text-paper" />
-              </div>
-            )}
-            
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/30">
+          {messages.map((message) => (
             <div
-              className={`max-w-[85%] rounded-xl px-5 py-4 shadow-sm ${
-                message.type === 'user'
-                  ? 'bg-ink text-paper'
-                  : message.metadata?.cancelled
-                  ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
-                  : 'bg-white text-ink border border-gray-200'
+              key={message.id}
+              className={`flex gap-3 animate-in slide-in-from-bottom-2 duration-300 ${
+                message.type === 'user' ? 'justify-end' : 'justify-start'
               }`}
             >
-              {message.type === 'assistant' ? (
-                <MessageFormatter content={message.content} />
-              ) : (
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              {message.type === 'assistant' && (
+                <div className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
+                  <Feather className="w-4 h-4 text-white" />
+                </div>
               )}
-              <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-                <p className={`text-xs ${
-                  message.type === 'user' 
-                    ? 'text-paper/70' 
-                    : message.metadata?.cancelled
-                    ? 'text-yellow-700'
-                    : 'text-ink/70'
-                }`}>
-                  {formatTime(message.timestamp)}
-                  {message.metadata?.cancelled && ' (Cancelled)'}
-                </p>
+              
+              <div
+                className={`max-w-[85%] rounded-xl px-5 py-4 shadow-sm ${
+                  message.type === 'user'
+                    ? 'bg-gray-900 text-white'
+                    : 'bg-white text-gray-900 border border-gray-200'
+                }`}
+              >
+                <p className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere">{message.content}</p>
+                
+                {/* Approval UI for pending content */}
+                {message.needsApproval && (
+                  <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-xs text-blue-800 mb-3">Review the content in your document and decide:</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleApproveContent}
+                        className="px-3 py-1.5 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors flex items-center gap-1"
+                      >
+                        <Check className="w-3 h-3" />
+                        Approve
+                      </button>
+                      <button
+                        onClick={handleRejectContent}
+                        className="px-3 py-1.5 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors flex items-center gap-1"
+                      >
+                        <X className="w-3 h-3" />
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                  <p className={`text-xs ${
+                    message.type === 'user' 
+                      ? 'text-white/70' 
+                      : 'text-gray-600'
+                  }`}>
+                    {formatTime(message.timestamp)}
+                  </p>
+                </div>
               </div>
-            </div>
 
-            {message.type === 'user' && (
-              <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
-                <User className="w-4 h-4 text-ink" />
-              </div>
-            )}
-          </div>
-        ))}
+              {message.type === 'user' && (
+                <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
+                  <User className="w-4 h-4 text-gray-900" />
+                </div>
+              )}
+            </div>
+          ))}
 
-        {/* Edit Workflow Cards */}
-        {console.log('Edit workflow state:', editWorkflow.state, 'proposal:', editWorkflow.proposal)}
-        {editWorkflow.state !== 'idle' && (
-          <div className="flex gap-3 justify-start">
-            <div className="w-8 h-8 bg-ink rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
-              <Feather className="w-4 h-4 text-paper" />
-            </div>
-            <div className="bg-white text-ink border border-gray-200 rounded-lg px-4 py-2 shadow-sm max-w-[85%]">
-              <EditWorkflowCards
-                state={editWorkflow.state}
-                proposal={editWorkflow.proposal}
-                onAcceptAll={editWorkflow.acceptAll}
-                onRejectAll={editWorkflow.rejectAll}
-                onApplySelected={editWorkflow.applySelected}
-                onDiscard={editWorkflow.discard}
-                onUndo={editWorkflow.undo}
-                conflicts={editWorkflow.conflicts}
-              />
-            </div>
-          </div>
-        )}
-        
         {/* Loading indicator */}
         {isLoading && (
           <div className="flex gap-3 justify-start">
-            <div className="w-8 h-8 bg-ink rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
-              <Feather className="w-4 h-4 text-paper" />
+            <div className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
+              <Feather className="w-4 h-4 text-white" />
             </div>
-            <div className="bg-white text-ink border border-gray-200 rounded-lg px-4 py-2 shadow-sm">
+            <div className="bg-white text-gray-900 border border-gray-200 rounded-lg px-4 py-2 shadow-sm">
               <div className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-ink" />
+                <Loader2 className="w-4 h-4 animate-spin text-gray-900" />
                 <span className="text-sm">
                   Thinking...
                 </span>
@@ -477,9 +635,6 @@ export default function AIChatPanel({
             </div>
           </div>
         )}
-
-        
-        <div ref={messagesEndRef} />
       </div>
 
 
@@ -490,41 +645,35 @@ export default function AIChatPanel({
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex items-center justify-center"
             title="Attach file"
           >
-            <Paperclip className="w-4 h-4 text-ink" />
+            <Paperclip className="w-4 h-4 text-gray-900" />
           </button>
           <textarea
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Ask me anything about your document or request edits..."
-            className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink focus:border-transparent transition-all text-ink"
+            className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all text-gray-900"
             rows={2}
           />
-          {isLoading ? (
-            <button
-              onClick={handleCancelOperation}
-              disabled={isCancelling}
-              className="px-4 py-2 bg-ink text-paper rounded-lg hover:bg-ink/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center shadow-sm"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          ) : (
             <button
               onClick={handleSendMessage}
-              disabled={!inputValue.trim()}
-              className="px-4 py-2 bg-ink text-paper rounded-lg hover:bg-ink/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-sm"
+            disabled={!inputValue.trim() || isLoading}
+            className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-sm"
             >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
               <Send className="w-4 h-4" />
+            )}
             </button>
-          )}
         </div>
-        <p className="text-xs text-ink/70 mt-2">
-          Press Enter to send, Shift+Enter for new line. Use /edit to start editing workflow.
+        <p className="text-xs text-gray-600 mt-2">
+          Press Enter to send, Shift+Enter for new line.
         </p>
         
         {/* Status indicators */}
         {useWebSearch && (
-          <div className="mt-3 px-3 py-2 bg-green-50 text-green-800 text-sm flex items-center gap-2 rounded-lg">
+          <div className="mt-3 px-3 py-2 bg-blue-50 text-blue-800 text-sm flex items-center gap-2 rounded-lg">
             <Globe className="w-4 h-4" />
             Web search enabled
           </div>

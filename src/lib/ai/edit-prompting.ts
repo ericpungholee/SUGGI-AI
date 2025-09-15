@@ -12,29 +12,48 @@ export interface EditPromptingConfig {
 export function buildEditSystemPrompt(
   content: string,
   context: string,
-  config: EditPromptingConfig
+  config: EditPromptingConfig,
+  userIntent?: string
 ): string {
   // Check if this is placeholder content that should be replaced entirely
   const isPlaceholderContent = content.includes('Start writing your document here') || 
                                content.includes('placeholder') ||
-                               content.trim().length < 50
+                               content.trim().length < 50 ||
+                               // Check for broken/garbled content that should be replaced
+                               content.includes('companysolar') ||
+                               content.includes('thatres') ||
+                               content.includes('globally.ar') ||
+                               content.includes('productglobally') ||
+                               content.match(/[a-z][A-Z]/) || // Mixed case without spaces
+                               content.split(' ').length < 10 // Very short content
 
-  if (isPlaceholderContent) {
-    return `You are an expert content creator that generates complete, well-structured content. You must return your content as a JSON array of diff hunks that replace the placeholder text.
+  // Check if this is a "replace entire content" request
+  const isReplaceEntireContent = userIntent && userIntent.toLowerCase().includes('replace') && 
+    (userIntent.toLowerCase().includes('entire') || 
+     userIntent.toLowerCase().includes('whole') || 
+     userIntent.toLowerCase().includes('all') || 
+     userIntent.toLowerCase().includes('full'))
+
+  if (isPlaceholderContent || isReplaceEntireContent) {
+    return `You are an expert content creator that generates complete, well-structured content. You must return your content as a JSON array of diff hunks that replace the existing content.
 
 CRITICAL RULES:
 1. Return ONLY valid JSON array of diff hunks, no other text
-2. Replace the ENTIRE placeholder content with new, complete content
+2. Replace the ENTIRE existing content with new, complete content
 3. Create engaging, well-structured content that flows naturally
 4. Use proper paragraphs and formatting
 5. Make the content comprehensive and informative
+6. Write in a professional, engaging tone
+7. Include specific details and examples
+8. Structure content with clear sections if appropriate
+9. Focus ONLY on the user's current request - ignore any previous context or content
 
 DIFF HUNK FORMAT:
 {
-  "from": 0,                    // Start of placeholder content
-  "to": ${content.length},      // End of placeholder content
+  "from": 0,                    // Start of existing content
+  "to": ${content.length},      // End of existing content
   "replacement": "...",         // Complete new content
-  "label": "Write complete content", // Human-readable description
+  "label": "Replace entire content", // Human-readable description
   "changeType": "content"       // Always "content" for new content
 }
 
@@ -43,12 +62,14 @@ GUARDRAILS:
 - Allow math edits: ${config.allowMathEdits}
 - Preserve voice: ${config.preserveVoice}
 
-PLACEHOLDER CONTENT TO REPLACE:
+CURRENT CONTENT TO REPLACE:
 ${content}
 
-${context ? `\nCONTEXT:\n${context}` : ''}
+${userIntent ? `\nUSER REQUEST:\n${userIntent}` : ''}
 
-Generate complete, engaging content that replaces the placeholder entirely.`
+${context && !isReplaceEntireContent ? `\nCONTEXT:\n${context}` : ''}
+
+Generate complete, engaging content that replaces the existing content entirely based on the user's specific request. Make it substantial, well-written, and informative.`
   }
 
   return `You are an expert text editor that generates precise, surgical edits to improve writing quality. You must return your edits as a JSON array of diff hunks.

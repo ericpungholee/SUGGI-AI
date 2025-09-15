@@ -33,6 +33,41 @@ export async function POST(request: Request) {
             registerOperation(operationId, abortController)
         }
 
+        // Check if this is an edit request using LangGraph
+        if (documentId) {
+            try {
+                // Get document content for edit detection
+                const { prisma } = await import('@/lib/prisma')
+                const document = await prisma.document.findUnique({
+                    where: { id: documentId, userId: session.user.id },
+                    select: { plainText: true, content: true }
+                })
+
+                if (document) {
+                    let documentContent = document.plainText || ''
+                    if (!documentContent && document.content) {
+                        if (typeof document.content === 'string') {
+                            documentContent = document.content
+                        } else if (typeof document.content === 'object' && document.content !== null) {
+                            const contentObj = document.content as any
+                            if (contentObj.blocks && Array.isArray(contentObj.blocks)) {
+                                documentContent = contentObj.blocks
+                                    .map((block: any) => block.text || '')
+                                    .join('\n')
+                            } else if (contentObj.text) {
+                                documentContent = contentObj.text
+                            }
+                        }
+                    }
+
+                    // Note: Edit requests are now handled by the real-time agent typing system
+                    // This route focuses on general AI chat functionality
+                }
+            } catch (error) {
+                console.warn('Document context retrieval failed, continuing with regular chat:', error)
+            }
+        }
+
         const aiRequest: AIChatRequest = {
             message: message.trim(),
             userId: session.user.id,

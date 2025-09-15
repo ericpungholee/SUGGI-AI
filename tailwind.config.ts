@@ -26,12 +26,6 @@ const config: Config = {
         'pink': {
           500: '#ec4899',
         },
-        'green': {
-          500: '#22c55e',
-        },
-        'emerald': {
-          500: '#10b981',
-        },
         'indigo': {
           500: '#6366f1',
         },

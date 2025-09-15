@@ -51,7 +51,7 @@ export function DiffToolbar({
           <button
             onClick={onAcceptAll}
             disabled={isLoading}
-            className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded transition-colors disabled:opacity-50"
+            className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-50"
             title="Accept all changes"
           >
             <CheckCircle className="w-4 h-4" />

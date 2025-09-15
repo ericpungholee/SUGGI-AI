@@ -11,7 +11,6 @@ import {
     Palette, ArrowLeft, Save, Trash2, Feather, Check
 } from "lucide-react";
 import AIChatPanel from './AIChatPanel';
-import FloatingDiffToolbar from './FloatingDiffToolbar';
 
 export default function Editor({ 
   documentId, 
@@ -51,188 +50,48 @@ export default function Editor({
     const [isDeleting, setIsDeleting] = useState(false)
     const [documentTitle, setDocumentTitle] = useState('Untitled Document')
     
-    // Edit preview state
-    const [previewHunks, setPreviewHunks] = useState<any[]>([])
-    const [isPreviewVisible, setIsPreviewVisible] = useState(false)
-    const [previewStats, setPreviewStats] = useState({ hunksCount: 0, wordsAdded: 0, wordsRemoved: 0 })
-    const [conflicts, setConflicts] = useState<string[]>([])
-    const [previewOriginalContent, setPreviewOriginalContent] = useState<string>('')
     const [originalTitle, setOriginalTitle] = useState('Untitled Document')
     
-    // Edit preview handlers
-    const handlePreviewHunkClick = useCallback((hunk: any) => {
-        console.log('Hunk clicked:', hunk)
+    // User typing state
+    const [isUserTyping, setIsUserTyping] = useState(false)
+    const [lastUserTypingTime, setLastUserTypingTime] = useState<Date | null>(null)
+    
+    // Agent typing state - prevents auto-save during agent typing
+    const [isAgentTyping, setIsAgentTyping] = useState(false)
+    
+    // Functions to control agent typing state
+    const startAgentTyping = useCallback(() => {
+        setIsAgentTyping(true)
+        setIsUserTyping(false) // Prevent user typing detection
     }, [])
     
-    const handleAcceptHunk = useCallback((hunk: any) => {
-        console.log('Accept hunk:', hunk)
-        // TODO: Implement individual hunk acceptance
+    const stopAgentTyping = useCallback(() => {
+        setIsAgentTyping(false)
+        // Re-enable user typing detection
+        setIsUserTyping(true)
+        setLastUserTypingTime(new Date())
     }, [])
     
-    const handleRejectHunk = useCallback((hunk: any) => {
-        console.log('Reject hunk:', hunk)
-        // TODO: Implement individual hunk rejection
-    }, [])
     
-    const handleAcceptAll = useCallback(async () => {
-        console.log('🎯 Accept all hunks called - applying changes atomically')
+    
+    
+    
+    
+    
+    // Expose document content getter to parent components
+    useEffect(() => {
+        // Only run on client side
+        if (typeof window === 'undefined') return
+        
+        // Safely set window properties
         try {
-            // Get the current proposal from the edit workflow
-            if (typeof window !== 'undefined' && (window as any).getCurrentProposal) {
-                const proposal = (window as any).getCurrentProposal()
-                if (proposal) {
-                    console.log('🎯 Applying proposal atomically:', proposal.id)
-                    
-                    const response = await fetch('/api/ai/edit/apply', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            proposalId: proposal.id
-                        })
-                    })
-
-                    if (response.ok) {
-                        const result = await response.json()
-                        console.log('🎯 Atomic apply result:', result)
-                        
-                        // Update the document content atomically
-                        if (onContentChange && result.newContent) {
-                            onContentChange(result.newContent)
-                        }
-                        
-                        // Restore normal editor styling
-                        if (editorRef.current) {
-                            editorRef.current.style.opacity = '1';
-                            editorRef.current.style.background = '';
-                            editorRef.current.style.border = '';
-                            editorRef.current.style.borderRadius = '';
-                            editorRef.current.style.padding = '';
-                        }
-                        
-                        // Clear preview state
-                        setIsPreviewVisible(false)
-                        setPreviewHunks([])
-                        setPreviewOriginalContent('')
-                        
-                        console.log('🎯 Changes applied atomically - single undo step')
-                    } else {
-                        console.error('Failed to apply edits:', await response.text())
-                    }
-                }
-            } else {
-                console.log('No current proposal available')
+            ;(window as any).getCurrentDocumentContent = () => {
+                return editorRef.current?.innerText || ''
             }
         } catch (error) {
-            console.error('Error applying edits:', error)
+            console.warn('Failed to set window properties:', error)
         }
-    }, [onContentChange])
-    
-    const handleRejectAll = useCallback(() => {
-        console.log('🎯 Reject all hunks - restoring original content')
-        
-        // Restore original content and styling
-        if (editorRef.current && previewOriginalContent) {
-            editorRef.current.innerHTML = previewOriginalContent
-        }
-        
-        // Restore normal editor styling
-        if (editorRef.current) {
-            editorRef.current.style.opacity = '1';
-            editorRef.current.style.background = '';
-            editorRef.current.style.border = '';
-            editorRef.current.style.borderRadius = '';
-            editorRef.current.style.padding = '';
-        }
-        
-        // Clear preview state
-        setIsPreviewVisible(false)
-        setPreviewHunks([])
-        setPreviewOriginalContent('')
-        
-        console.log('🎯 Preview rejected - original content restored')
-    }, [previewOriginalContent])
-    
-    const handleReviewChanges = useCallback(() => {
-        console.log('Review changes')
-        // TODO: Open review modal or switch to chat
     }, [])
-    
-    // Function to start preview (called from edit workflow)
-    const startPreview = useCallback((hunks: any[], stats: any) => {
-        console.log('🎯 Editor startPreview called with:', { hunks, stats });
-        
-        // Store the original content for restoration
-        if (editorRef.current && !isPreviewVisible) {
-            setPreviewOriginalContent(editorRef.current.innerHTML);
-        }
-        
-        // Apply hunks to create the "ghost document" - like Cursor
-        if (hunks && hunks.length > 0 && editorRef.current) {
-            let previewContent = editorRef.current.innerHTML;
-            
-            // Sort hunks by position (reverse order to avoid position shifts)
-            const sortedHunks = [...hunks].sort((a, b) => b.from - a.from);
-            
-            for (const hunk of sortedHunks) {
-                const beforeText = previewContent.substring(0, hunk.from);
-                const afterText = previewContent.substring(hunk.to);
-                previewContent = beforeText + hunk.replacement + afterText;
-            }
-            
-            // Update the editor with the "ghost document" - looks like it's already written
-            editorRef.current.innerHTML = previewContent;
-            
-            // Add ghost text styling to make it clear it's a preview
-            editorRef.current.style.opacity = '0.7';
-            editorRef.current.style.background = 'rgba(34, 197, 94, 0.05)';
-            editorRef.current.style.border = '2px dashed #22c55e';
-            editorRef.current.style.borderRadius = '8px';
-            editorRef.current.style.padding = '16px';
-        }
-        
-        setPreviewHunks(hunks);
-        setPreviewStats(stats);
-        setIsPreviewVisible(true);
-        
-        console.log('🎯 Cursor-style ghost document activated:', { 
-            hunksCount: hunks?.length || 0, 
-            isVisible: true,
-            stats 
-        });
-    }, [isPreviewVisible])
-    
-    // Helper function to format content for preview
-    const formatContentForPreview = (text: string) => {
-        // Convert plain text to properly formatted HTML
-        const paragraphs = text.split('\n\n').filter(p => p.trim().length > 0);
-        const formattedParagraphs = paragraphs.map(paragraph => {
-            const trimmed = paragraph.trim();
-            if (trimmed.length === 0) return '';
-            
-            // Check if it looks like a heading (short, no period, all caps or title case)
-            const isHeading = trimmed.length < 100 && 
-                             !trimmed.endsWith('.') && 
-                             (trimmed === trimmed.toUpperCase() || 
-                              trimmed.split(' ').every(word => word[0] === word[0].toUpperCase()));
-            
-            if (isHeading) {
-                return `<h2 style="margin: 1.5em 0 0.5em 0; font-size: 1.5em; font-weight: bold; color: #333;">${trimmed}</h2>`;
-            } else {
-                return `<p style="margin: 0 0 1em 0; line-height: 1.6;">${trimmed}</p>`;
-            }
-        });
-        
-        return formattedParagraphs.join('');
-    }
-    
-    // Expose startPreview to parent components
-    useEffect(() => {
-        if (typeof window !== 'undefined' && window) {
-            (window as any).startEditPreview = startPreview
-        }
-    }, [startPreview])
     const [isSavingTitle, setIsSavingTitle] = useState(false)
     const [mounted, setMounted] = useState(false)
     const [justSaved, setJustSaved] = useState(false)
@@ -298,41 +157,58 @@ export default function Editor({
     const loadDocumentContent = useCallback(async () => {
         if (!mounted) return
         
+        console.log('📥 Loading document content for ID:', documentId)
+        
         try {
             setIsLoading(true)
             const response = await fetch(`/api/documents/${documentId}`)
             
+            console.log('📥 API response status:', response.status)
+            
             if (response.ok) {
                 const document = await response.json()
-                console.log('Loaded document:', document)
+                console.log('📥 Document loaded from API:', {
+                    id: document.id,
+                    title: document.title,
+                    hasContent: !!document.content,
+                    contentType: typeof document.content
+                })
                 
                 // Handle content that might be JSON or string
                 let documentContent = '<p>Start writing your document here...</p>'
                 if (document.content) {
-                    console.log('Raw document content:', document.content)
-                    console.log('Content type:', typeof document.content)
+                    console.log('🔍 Loading document content:', {
+                        contentType: typeof document.content,
+                        content: document.content,
+                        hasHtml: document.content?.html ? 'yes' : 'no',
+                        hasPlainText: document.content?.plainText ? 'yes' : 'no'
+                    })
                     
                     if (typeof document.content === 'string') {
+                        // Legacy string content
                         documentContent = document.content
-                        console.log('Content is string, using as-is')
-                    } else if (typeof document.content === 'object' && document.content.html) {
+                    } else if (typeof document.content === 'object' && document.content !== null) {
+                        // Modern JSON content structure
+                        if (document.content.html) {
                         documentContent = document.content.html
-                        console.log('Content is object with html, extracted:', documentContent)
-                    } else if (typeof document.content === 'object') {
-                        // If content is an object, try to extract HTML or convert to string
-                        documentContent = JSON.stringify(document.content)
-                        console.log('Content is object without html, stringified:', documentContent)
+                        } else if (document.content.plainText) {
+                            // If no HTML but we have plain text, wrap it in a paragraph
+                            documentContent = `<p>${document.content.plainText}</p>`
+                        } else {
+                            // Fallback for unexpected object structure
+                            documentContent = '<p>Start writing your document here...</p>'
+                        }
                     }
-                } else {
-                    console.log('No content field found in document')
                 }
                 
+                console.log('📄 Final document content to display:', documentContent)
+                
                 // If we still don't have valid HTML, use default content
-                if (!documentContent || documentContent === '{}' || documentContent === 'null' || documentContent === 'undefined') {
+                if (!documentContent || documentContent === '{}' || documentContent === 'null' || documentContent === 'undefined' || documentContent.trim() === '') {
                     documentContent = '<p>Start writing your document here...</p>'
                 }
                 
-                console.log('Setting document content:', documentContent)
+                console.log('📝 Setting editor content:', documentContent)
                 setContent(documentContent)
                 setOriginalContent(documentContent)
                 setUndoStack([documentContent])
@@ -341,7 +217,6 @@ export default function Editor({
                 const title = document.title && document.title.trim() !== '' 
                     ? document.title.trim() 
                     : 'Untitled Document'
-                console.log('Setting document title:', title)
                 setDocumentTitle(title)
                 setOriginalTitle(title)
                 
@@ -349,7 +224,6 @@ export default function Editor({
                     editorRef.current.innerHTML = documentContent
                 }
             } else {
-                console.error('Failed to load document, status:', response.status)
                 // Use default content if loading fails
                 if (editorRef.current) {
                     editorRef.current.innerHTML = content
@@ -358,7 +232,6 @@ export default function Editor({
                 }
             }
         } catch (error) {
-            console.error('Error loading document:', error)
             // Use default content if loading fails
             if (editorRef.current) {
                 editorRef.current.innerHTML = content
@@ -372,12 +245,38 @@ export default function Editor({
 
     // Ensure editor content is synchronized after loading
     useEffect(() => {
+        console.log('🔄 Editor sync effect triggered:', {
+            mounted,
+            hasEditorRef: !!editorRef.current,
+            content: content?.substring(0, 100) + '...',
+            isDefaultContent: content === '<p>Start writing your document here...</p>'
+        })
+        
         if (mounted && editorRef.current && content && content !== '<p>Start writing your document here...</p>') {
             // Only update if the content is different from the default
             if (editorRef.current.innerHTML !== content) {
-                console.log('Synchronizing editor content with state:', content)
+                console.log('🔄 Syncing editor DOM with content:', {
+                    currentInnerHTML: editorRef.current.innerHTML,
+                    newContent: content
+                })
+                
+                // Add a small delay to ensure the editor is fully initialized
+                setTimeout(() => {
+                    if (editorRef.current) {
                 editorRef.current.innerHTML = content
+                        console.log('✅ Editor content synced successfully')
+                    }
+                }, 100)
+            } else {
+                console.log('🔄 Editor DOM already in sync')
             }
+        } else {
+            console.log('🔄 Editor sync skipped:', {
+                mounted,
+                hasEditorRef: !!editorRef.current,
+                hasContent: !!content,
+                isDefaultContent: content === '<p>Start writing your document here...</p>'
+            })
         }
     }, [content, mounted])
 
@@ -427,7 +326,6 @@ export default function Editor({
             setIsSaving(true)
             setSaveError(null)
             
-            console.log('Saving document:', { documentId, title: documentTitle, contentLength: contentToSave.length })
             
             const response = await fetch(`/api/documents/${documentId}`, {
                 method: 'PATCH',
@@ -448,14 +346,13 @@ export default function Editor({
 
             if (response.ok) {
                 const updatedDoc = await response.json()
-                console.log('Document saved successfully:', updatedDoc)
                 setLastSaved(new Date())
                 setOriginalContent(contentToSave)
                 setOriginalTitle(documentTitle.trim())
                 setHasUnsavedChanges(false)
                 
                 if (showSuccessMessage) {
-                    // Show green feedback for manual saves
+                    // Show blue feedback for manual saves
                     setJustSaved(true)
                     setTimeout(() => {
                         setJustSaved(false)
@@ -463,11 +360,9 @@ export default function Editor({
                 }
             } else {
                 const errorData = await response.json()
-                console.error('Save failed with status:', response.status, errorData)
                 throw new Error(errorData.error || `Failed to save document (${response.status})`)
             }
         } catch (error) {
-            console.error('Error saving document:', error)
             setSaveError(error instanceof Error ? error.message : 'Failed to save document')
             
             // Clear error after 5 seconds
@@ -479,19 +374,19 @@ export default function Editor({
         }
     }, [documentId, documentTitle])
 
-    // Auto-save content periodically
+    // Auto-save content periodically - only for user writings
     useEffect(() => {
-        if (!mounted || documentId === 'new' || !hasUnsavedChanges) return
+        if (!mounted || documentId === 'new' || !hasUnsavedChanges || !isUserTyping) return
         
         const autoSaveTimer = setTimeout(() => {
-            if (hasUnsavedChanges && content !== originalContent) {
-                console.log('Auto-saving document...')
+            if (hasUnsavedChanges && content !== originalContent && isUserTyping) {
+                console.log('💾 Auto-saving user writing...')
                 saveDocument(content, false)
             }
-        }, 3000) // Auto-save every 3 seconds if there are unsaved changes
+        }, 3000) // Auto-save every 3 seconds if there are unsaved changes and user is typing
         
         return () => clearTimeout(autoSaveTimer)
-    }, [content, originalContent, hasUnsavedChanges, documentId, mounted, saveDocument])
+    }, [content, originalContent, hasUnsavedChanges, documentId, mounted, saveDocument, isUserTyping])
 
     // Manual save function
     const handleManualSave = useCallback(async () => {
@@ -524,11 +419,9 @@ export default function Editor({
                 router.push('/home')
             } else {
                 const errorData = await response.json()
-                console.error('Failed to delete document:', errorData.error)
                 // You could show an error toast here
             }
         } catch (error) {
-            console.error('Error deleting document:', error)
             // You could show an error toast here
         } finally {
             setIsDeleting(false)
@@ -1422,8 +1315,14 @@ export default function Editor({
             setContent(newContent)
             // Save to undo stack when content changes (but not during undo/redo)
             saveToUndoStack(newContent)
+            
+            // Only detect user typing if agent is not typing
+            if (!isAgentTyping) {
+                setIsUserTyping(true)
+                setLastUserTypingTime(new Date())
+            }
         }
-    }, [saveToUndoStack, isUndoRedo])
+    }, [saveToUndoStack, isUndoRedo, isAgentTyping])
 
     // Handle paste events to capture images
     const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -2018,7 +1917,7 @@ export default function Editor({
                          disabled={isSaving || documentId === 'new'}
                          className={`p-1.5 rounded-lg transition-all ${
                              justSaved
-                                 ? 'bg-white text-green-600 border-2 border-green-500'
+                                 ? 'bg-white text-blue-600 border-2 border-blue-500'
                                  : isSaving
                                      ? 'bg-gray-100 text-gray-600 cursor-not-allowed'
                                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -2283,19 +2182,10 @@ export default function Editor({
                 }}
             >
                 <div className="max-w-4xl mx-auto p-8 relative">
-                    {/* Ghost Document Indicator */}
-                    {isPreviewVisible && (
-                        <div className="mb-4 p-3 bg-green-100 border border-green-300 rounded-lg flex items-center gap-2 text-sm text-green-800">
-                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                            <span className="font-medium">Ghost Document Active</span>
-                            <span className="text-green-600">•</span>
-                            <span>Content appears written but not saved until you accept</span>
-                        </div>
-                    )}
                     
                     <div
                         ref={editorRef}
-                        contentEditable={!isPreviewVisible}
+                        contentEditable
                         className="min-h-[600px] focus:outline-none max-w-none relative"
                         style={{
                             color: '#000000',
@@ -2386,16 +2276,7 @@ export default function Editor({
                       `}</style>
                 </div>
                 
-                {/* Floating Diff Toolbar */}
-                <FloatingDiffToolbar
-                    isVisible={isPreviewVisible && previewHunks.length > 0}
-                    onAcceptAll={handleAcceptAll}
-                    onRejectAll={handleRejectAll}
-                    onReviewChanges={handleReviewChanges}
-                    hunksCount={previewStats.hunksCount}
-                    wordsAdded={previewStats.wordsAdded}
-                    wordsRemoved={previewStats.wordsRemoved}
-                />
+                
             </div>
 
             {/* Bottom Status Bar */}
@@ -2476,6 +2357,8 @@ export default function Editor({
                         onWidthChange={setAiChatWidth}
                         documentId={documentId}
                         onContentChange={onContentChange}
+                        onStartAgentTyping={startAgentTyping}
+                        onStopAgentTyping={stopAgentTyping}
                     />
                 </div>
             )}

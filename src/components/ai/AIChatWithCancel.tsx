@@ -201,7 +201,7 @@ export default function AIChatWithCancel({
 
       {/* Status indicators */}
       {useWebSearch && (
-        <div className="px-4 py-2 bg-green-50 text-green-800 text-sm flex items-center gap-2">
+        <div className="px-4 py-2 bg-blue-50 text-blue-800 text-sm flex items-center gap-2">
           <Globe className="w-4 h-4" />
           Web search enabled - AI will search the web for current information
         </div>

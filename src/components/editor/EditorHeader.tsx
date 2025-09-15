@@ -87,7 +87,7 @@ export default function EditorHeader({ documentId }: { documentId: string }) {
                 <div className='flex items-center gap-2 text-sm text-ink/60'>
                     {saveStatus === 'saved' && (
                         <>
-                            <Check className='w-4 h-4 text-green-600' />
+                            <Check className='w-4 h-4 text-blue-600' />
                             <span>Saved</span>
                         </>
                     )}

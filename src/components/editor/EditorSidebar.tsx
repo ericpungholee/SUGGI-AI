@@ -116,12 +116,12 @@ export default function EditorSidebar({
             <span className="text-2xl font-bold text-blue-700">{getWordCount()}</span>
           </div>
           
-          <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border border-green-200/50">
+          <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200/50">
             <div className="flex items-center gap-2 mb-2">
-              <Clock className="w-4 h-4 text-green-600" />
+              <Clock className="w-4 h-4 text-blue-600" />
               <span className="text-sm font-medium text-ink">Reading time</span>
             </div>
-            <span className="text-2xl font-bold text-green-700">{getReadingTime()} min</span>
+            <span className="text-2xl font-bold text-blue-700">{getReadingTime()} min</span>
           </div>
         </div>
         

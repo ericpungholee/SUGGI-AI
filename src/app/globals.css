@@ -299,7 +299,6 @@
 
 /* Text color support */
 .prose .text-red { color: #dc2626; }
-.prose .text-green { color: #16a34a; }
 .prose .text-blue { color: #2563eb; }
 .prose .text-yellow { color: #ca8a04; }
 .prose .text-purple { color: #9333ea; }
@@ -309,9 +308,31 @@
 
 /* Background color support */
 .prose .bg-red-light { background-color: #fef2f2; }
-.prose .bg-green-light { background-color: #f0fdf4; }
 .prose .bg-blue-light { background-color: #eff6ff; }
 .prose .bg-yellow-light { background-color: #fefce8; }
+
+/* Typing cursor animation */
+.typing-cursor {
+  animation: blink 1s infinite;
+  color: #3b82f6;
+  font-weight: bold;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* Pending AI content styling */
+.pending-ai-content {
+  color: #6b7280;
+  background: rgba(107, 114, 128, 0.1);
+  border-bottom: 2px dashed #d1d5db;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-style: italic;
+  transition: all 0.3s ease;
+}
 .prose .bg-purple-light { background-color: #faf5ff; }
 .prose .bg-pink-light { background-color: #fdf2f8; }
 .prose .bg-orange-light { background-color: #fff7ed; }
