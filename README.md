@@ -1,10 +1,10 @@
-# SSUGI - All-in-One AI Writing Platform
+# SUGGI - All-in-One AI Writing Platform
 
 **The writing app that actually gets it.**
 
-I built SSUGI because I was tired of the writing workflow that everyone else seems to accept. You know the drill: write in Notion, but there's no proper home page to see all your documents. Need AI help? Switch to ChatGPT tab. Need context from another document? Flip between tabs constantly. It's a mess.
+I built SUGGI because I was tired of the writing workflow that everyone else seems to accept. You know the drill: write in Notion, but there's no proper home page to see all your documents. Need AI help? Switch to ChatGPT tab. Need context from another document? Flip between tabs constantly. It's a mess.
 
-SSUGI fixes this by putting everything in one place: your documents, AI chat, and context - all working together seamlessly.
+SUGGI fixes this by putting everything in one place: your documents, AI chat, and context - all working together seamlessly.
 
 RAG: 
 <img src="https://github.com/user-attachments/assets/fbfccd86-a703-4675-b21d-18968591b423"
@@ -267,12 +267,10 @@ So I built SSUGI to solve these problems:
 
 ## 🎯 The Bottom Line
 
-SSUGI is what happens when you get tired of the fragmented writing experience and decide to build something better. It's not just another writing app - it's a unified workspace where your documents, AI assistant, and context all work together.
+SUGGI is what happens when you get tired of the fragmented writing experience and decide to build something better. It's not just another writing app - it's a unified workspace where your documents, AI assistant, and context all work together.
 
 **No more tab switching. No more lost context. No more hunting through cluttered interfaces.**
 
 Just write, with AI that actually understands your content.
 
 ---
-
-**Built with ❤️ because the current writing workflow is broken.**
