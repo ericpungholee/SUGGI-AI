@@ -30,7 +30,7 @@ Home Page:
 
 **Context Fragmentation**: Your AI doesn't know about your other documents. You have to copy-paste content or explain context every time.
 
-**SSUGI fixes all of this** with a unified workspace where your documents, AI assistant, and context live together.
+**SUGGI fixes all of this** with a unified workspace where your documents, AI assistant, and context live together.
 
 ## ✨ What Makes SSUGI Different
 
