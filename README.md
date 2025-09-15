@@ -5,10 +5,21 @@
 I built SSUGI because I was tired of the writing workflow that everyone else seems to accept. You know the drill: write in Notion, but there's no proper home page to see all your documents. Need AI help? Switch to ChatGPT tab. Need context from another document? Flip between tabs constantly. It's a mess.
 
 SSUGI fixes this by putting everything in one place: your documents, AI chat, and context - all working together seamlessly.
-<img width="2838" height="1458" alt="image" src="https://github.com/user-attachments/assets/fbfccd86-a703-4675-b21d-18968591b423" />
-<img width="2780" height="1424" alt="image" src="https://github.com/user-attachments/assets/5318ad42-de1d-46a7-91f7-1970f8cc7338" />
-<img width="2852" height="1408" alt="image" src="https://github.com/user-attachments/assets/b1f2ee94-0c74-40a4-8c87-a58cdc3187d5" />
 
+RAG:
+<img src="https://github.com/user-attachments/assets/fbfccd86-a703-4675-b21d-18968591b423"
+     width="1419" height="729" alt="image" />
+Automated Writing:
+<img src="https://github.com/user-attachments/assets/5318ad42-de1d-46a7-91f7-1970f8cc7338"
+     width="1390" height="712" alt="image" />
+Web Search:
+<img src="https://github.com/user-attachments/assets/b914a48f-79e6-4a5a-82de-37a2af661608"
+     width="476" height="742" alt="image" />
+
+
+Home Page:
+<img src="https://github.com/user-attachments/assets/b1f2ee94-0c74-40a4-8c87-a58cdc3187d5"
+     width="1426" height="704" alt="image" />
 
 
 ## 🎯 The Problem I Solved
