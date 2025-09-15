@@ -245,38 +245,20 @@ export default function Editor({
 
     // Ensure editor content is synchronized after loading
     useEffect(() => {
-        console.log('🔄 Editor sync effect triggered:', {
-            mounted,
-            hasEditorRef: !!editorRef.current,
-            content: content?.substring(0, 100) + '...',
-            isDefaultContent: content === '<p>Start writing your document here...</p>'
-        })
         
         if (mounted && editorRef.current && content && content !== '<p>Start writing your document here...</p>') {
             // Only update if the content is different from the default
             if (editorRef.current.innerHTML !== content) {
-                console.log('🔄 Syncing editor DOM with content:', {
-                    currentInnerHTML: editorRef.current.innerHTML,
-                    newContent: content
-                })
                 
                 // Add a small delay to ensure the editor is fully initialized
                 setTimeout(() => {
                     if (editorRef.current) {
                 editorRef.current.innerHTML = content
-                        console.log('✅ Editor content synced successfully')
                     }
                 }, 100)
             } else {
-                console.log('🔄 Editor DOM already in sync')
             }
         } else {
-            console.log('🔄 Editor sync skipped:', {
-                mounted,
-                hasEditorRef: !!editorRef.current,
-                hasContent: !!content,
-                isDefaultContent: content === '<p>Start writing your document here...</p>'
-            })
         }
     }, [content, mounted])
 
@@ -380,7 +362,6 @@ export default function Editor({
         
         const autoSaveTimer = setTimeout(() => {
             if (hasUnsavedChanges && content !== originalContent && isUserTyping) {
-                console.log('💾 Auto-saving user writing...')
                 saveDocument(content, false)
             }
         }, 3000) // Auto-save every 3 seconds if there are unsaved changes and user is typing

@@ -26,9 +26,6 @@ export default function AIChatPanel({
 }: AIChatPanelProps) {
   const { data: session, status } = useSession()
   
-  console.log('🔐 AIChatPanel: Session status:', { status, hasSession: !!session, userId: session?.user?.id })
-  console.log('🎨 AIChatPanel: Component rendered with props:', { isOpen, documentId, width })
-  
   const [messages, setMessages] = useState<Array<{id: string, type: 'user' | 'assistant', content: string, timestamp: Date, needsApproval?: boolean, pendingContent?: string}>>([
     {
       id: '1',
@@ -42,9 +39,24 @@ export default function AIChatPanel({
   const [isLoading, setIsLoading] = useState(false)
   const [showQuickActions, setShowQuickActions] = useState(false)
   const [useWebSearch, setUseWebSearch] = useState(false)
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true)
   const panelRef = useRef<HTMLDivElement>(null)
   const resizeRef = useRef<HTMLDivElement>(null)
 
+  // Load chat history when component mounts or documentId changes
+  useEffect(() => {
+    if (documentId && isOpen) {
+      loadChatHistory()
+    }
+  }, [documentId, isOpen])
+
+  // Save chat history whenever messages change (but not on initial load)
+  useEffect(() => {
+    if (conversationId && messages.length > 1) { // Don't save the initial welcome message
+      saveChatHistory(messages)
+    }
+  }, [messages, conversationId])
 
   
   
@@ -107,6 +119,11 @@ export default function AIChatPanel({
   // Generate content for edit requests
   const generateEditContent = async (userMessage: string, editRequest: any) => {
     try {
+      // Create an AbortController for timeout
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+      
+    try {
       // Call the AI to generate actual content based on the edit request
       const response = await fetch('/api/ai/generate-content', {
         method: 'POST',
@@ -117,11 +134,15 @@ export default function AIChatPanel({
           message: userMessage,
           documentId,
           editRequest
+          }),
+          signal: controller.signal
         })
-      })
+
+        clearTimeout(timeoutId)
 
       if (response.ok) {
         const data = await response.json()
+          
         let content = data.content || ''
         
         // Clean up any meta-commentary that might have slipped through
@@ -136,52 +157,71 @@ export default function AIChatPanel({
           .trim()
         
         // Special handling for delete/clear requests
-        if (userMessage.toLowerCase().includes('delete') || userMessage.toLowerCase().includes('clear')) {
+          if (userMessage.toLowerCase().includes('delete') || userMessage.toLowerCase().includes('clear') || userMessage.toLowerCase().includes('get rid of')) {
           return '' // Return empty content for delete/clear requests
         }
         
         return content || ''
       } else {
-        return 'Content generated successfully.'
+          const errorText = await response.text()
+          throw new Error(`API error: ${response.status} ${response.statusText}`)
+        }
+      } catch (fetchError) {
+        clearTimeout(timeoutId)
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          throw new Error('Request timed out. Please try again.')
+        }
+        throw fetchError
       }
     } catch (error) {
-      console.error('Error generating edit content:', error)
-      return 'Content generated successfully.'
+      throw error // Re-throw to be handled by the calling function
     }
   }
 
   // Type content directly into the editor with live typing effect
-  const typeContentIntoEditor = async (content: string) => {
+  const typeContentIntoEditor = async (content: string, userMessage: string = '') => {
     try {
       // Get the editor element
       const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement
       if (!editorElement) {
-        console.error('Editor element not found')
         return
       }
 
       // Start agent typing mode to prevent auto-save
       onStartAgentTyping?.()
-      
+
       // Disable auto-save during typing
       const originalContent = editorElement.innerHTML
       
       // Focus the editor
       editorElement.focus()
 
-      // Split content into words for typing effect
-      const words = content.split(' ')
+      // Split content into paragraphs first, then words within each paragraph
+      const paragraphs = content.split('\n\n').filter(p => p.trim())
       let currentContent = ''
 
-      // Type each word with a delay
-      for (let i = 0; i < words.length; i++) {
-        const word = words[i]
-        currentContent += (i > 0 ? ' ' : '') + word
+      // Type each paragraph
+      for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+        const paragraph = paragraphs[pIndex].trim()
+        const words = paragraph.split(' ')
+        
+        // Type each word in the current paragraph
+        for (let wIndex = 0; wIndex < words.length; wIndex++) {
+          const word = words[wIndex]
+          currentContent += (wIndex > 0 ? ' ' : '') + word
+          
+          // Convert current content to HTML with proper paragraph formatting
+          const htmlContent = currentContent.split('\n\n').map((p, index) => {
+            const para = p.trim()
+            if (para) {
+              return `<p>${para}</p>`
+            }
+            return ''
+          }).join('')
         
         // Update the editor content with gray styling for pending approval
-        // Use a temporary approach that doesn't trigger auto-save
         const tempDiv = document.createElement('div')
-        tempDiv.innerHTML = `<span class="pending-ai-content">${currentContent}</span><span class="typing-cursor">|</span>`
+          tempDiv.innerHTML = `<span class="pending-ai-content">${htmlContent}</span><span class="typing-cursor">|</span>`
         
         // Replace content without triggering input events
         editorElement.innerHTML = tempDiv.innerHTML
@@ -190,8 +230,40 @@ export default function AIChatPanel({
         await new Promise(resolve => setTimeout(resolve, 100))
       }
 
-      // Remove the typing cursor and keep content in pending state
-      editorElement.innerHTML = `<span class="pending-ai-content">${currentContent}</span>`
+        // Add paragraph break after each paragraph (except the last one)
+        if (pIndex < paragraphs.length - 1) {
+          currentContent += '\n\n'
+          
+          // Update with paragraph break
+          const htmlContent = currentContent.split('\n\n').map((p, index) => {
+            const para = p.trim()
+            if (para) {
+              return `<p>${para}</p>`
+            }
+            return ''
+          }).join('')
+          
+          const tempDiv = document.createElement('div')
+          tempDiv.innerHTML = `<span class="pending-ai-content">${htmlContent}</span><span class="typing-cursor">|</span>`
+          editorElement.innerHTML = tempDiv.innerHTML
+          
+          // Pause between paragraphs
+          await new Promise(resolve => setTimeout(resolve, 200))
+        }
+      }
+
+
+      // Convert final content to HTML with proper paragraph formatting
+      const finalHtmlContent = currentContent.split('\n\n').map(paragraph => {
+        const para = paragraph.trim()
+        if (para) {
+          return `<p>${para}</p>`
+        }
+        return ''
+      }).join('')
+
+      // Remove the typing cursor and keep content in pending state with proper formatting
+      editorElement.innerHTML = `<span class="pending-ai-content">${finalHtmlContent}</span>`
       
       // Store the pending content for later approval/rejection
       ;(window as any).pendingAIContent = {
@@ -199,27 +271,116 @@ export default function AIChatPanel({
         originalContent: originalContent
       }
       
+      
       // Show approval UI in chat
-      showApprovalUI(content)
+      showApprovalUI(content, userMessage)
 
     } catch (error) {
-      console.error('Error typing content into editor:', error)
       // Stop agent typing on error
       onStopAgentTyping?.()
     }
   }
 
   // Show approval UI in chat
-  const showApprovalUI = (content: string) => {
+  const showApprovalUI = (content: string, userMessage: string) => {
+    // Determine the appropriate message based on the user's request
+    const isDeleteRequest = userMessage.toLowerCase().includes('delete') || userMessage.toLowerCase().includes('clear')
+    const messageContent = isDeleteRequest 
+      ? 'I\'ve cleared the content from your document. Please review and approve or reject this change.'
+      : 'I\'ve typed the content into your document. Please review and approve or reject it.'
+    
     const approvalMessage = {
       id: (Date.now() + 1).toString(),
       type: 'assistant' as const,
-      content: 'I\'ve typed the content into your document. Please review and approve or reject it.',
+      content: messageContent,
       timestamp: new Date(),
       needsApproval: true,
       pendingContent: content
     }
     setMessages(prev => [...prev, approvalMessage])
+  }
+
+  // Save content directly to database
+  const saveContentToDatabase = async (htmlContent: string) => {
+    try {
+      
+      const response = await fetch(`/api/documents/${documentId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: {
+            html: htmlContent,
+            plainText: htmlContent.replace(/<[^>]*>/g, ''),
+            wordCount: htmlContent.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length
+          },
+          plainText: htmlContent.replace(/<[^>]*>/g, ''),
+          wordCount: htmlContent.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length
+        })
+      })
+
+      if (!response.ok) {
+        console.error('Failed to save content to database:', response.status)
+      }
+    } catch (error) {
+      console.error('Error saving content to database:', error)
+    }
+  }
+
+  // Load chat history for this document
+  const loadChatHistory = async () => {
+    if (!documentId) return
+
+    try {
+      setIsLoadingHistory(true)
+
+      const response = await fetch(`/api/ai/chat-history?documentId=${documentId}`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        
+        if (data.messages && data.messages.length > 0) {
+          // Convert stored messages to the correct format
+          const loadedMessages = data.messages.map((msg: any) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          }))
+          setMessages(loadedMessages)
+        }
+        
+        setConversationId(data.conversationId)
+      }
+    } catch (error) {
+      console.error('Error loading chat history:', error)
+    } finally {
+      setIsLoadingHistory(false)
+    }
+  }
+
+  // Save chat history for this document
+  const saveChatHistory = async (messagesToSave: typeof messages) => {
+    if (!documentId || !conversationId) return
+
+    try {
+      
+      const response = await fetch('/api/ai/chat-history', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          documentId,
+          messages: messagesToSave
+        })
+      })
+
+      if (!response.ok) {
+        console.error('❌ Failed to save chat history:', response.status)
+      }
+    } catch (error) {
+      console.error('❌ Error saving chat history:', error)
+    }
   }
 
   // Handle content approval
@@ -239,28 +400,31 @@ export default function AIChatPanel({
         return
       }
 
+      // Store the user message for determining the action
+      const userMessage = (window as any).lastUserMessage || ''
+
       // Remove pending styling and make content normal
       const pendingContent = editorElement.querySelector('.pending-ai-content')
       if (pendingContent) {
-        const content = pendingContent.textContent || ''
-        console.log('✅ Approving AI content:', content)
+        // Get the HTML content directly, not textContent
+        const htmlContent = pendingContent.innerHTML || ''
         
-        // Convert plain text to HTML paragraphs
-        const htmlContent = content.split('\n\n').map(paragraph => 
-          paragraph.trim() ? `<p>${paragraph.trim()}</p>` : ''
-        ).join('')
+        // If the content is empty or just whitespace, use empty paragraph
+        const finalHtmlContent = htmlContent.trim() || '<p><br></p>'
         
-        editorElement.innerHTML = htmlContent
+        editorElement.innerHTML = finalHtmlContent
         
         // Trigger the onContentChange callback to save the content
         if (onContentChange) {
-          console.log('💾 Triggering onContentChange with HTML content:', htmlContent)
-          onContentChange(htmlContent)
+          onContentChange(finalHtmlContent)
         }
         
         // Also trigger input event to notify the editor of changes
         const inputEvent = new Event('input', { bubbles: true })
         editorElement.dispatchEvent(inputEvent)
+        
+        // Directly save the content to the database to ensure it persists
+        await saveContentToDatabase(finalHtmlContent)
       }
 
       // Clear pending content
@@ -272,11 +436,15 @@ export default function AIChatPanel({
       // Remove approval UI from messages
       setMessages(prev => prev.filter(msg => !msg.needsApproval))
 
-      // Add approved message
+      // Add approved message based on what was actually done
+      const isDeleteRequest = userMessage.toLowerCase().includes('delete') || 
+                             userMessage.toLowerCase().includes('clear') ||
+                             pendingData.content === ''
+      
       const approvedMessage = {
         id: (Date.now() + 1).toString(),
         type: 'assistant' as const,
-        content: 'Content approved and added to your document.',
+        content: isDeleteRequest ? 'Content cleared from your document.' : 'Content added to your document.',
         timestamp: new Date()
       }
       setMessages(prev => [...prev, approvedMessage])
@@ -318,14 +486,20 @@ export default function AIChatPanel({
       // Remove approval UI from messages
       setMessages(prev => prev.filter(msg => !msg.needsApproval))
 
-      // Add rejected message
+      // Get the original user message for context
+      const originalUserMessage = (window as any).lastUserMessage || ''
+      
+      // Add rejected message with retry option
       const rejectedMessage = {
         id: (Date.now() + 1).toString(),
         type: 'assistant' as const,
-        content: 'Content rejected and removed from your document.',
+        content: 'Content rejected and removed from your document. I can try again - what would you like me to change about the content?',
         timestamp: new Date()
       }
       setMessages(prev => [...prev, rejectedMessage])
+
+      // Store the original request for potential retry
+      ;(window as any).lastRejectedRequest = originalUserMessage
 
     } catch (error) {
       console.error('Error rejecting content:', error)
@@ -345,15 +519,7 @@ export default function AIChatPanel({
   }
 
   const handleSendMessage = async () => {
-    console.log('🎯 AIChatPanel: handleSendMessage called', {
-      inputValue: inputValue.trim(),
-      isLoading,
-      documentId,
-      hasInputValue: !!inputValue.trim()
-    })
-    
     if (!inputValue.trim() || isLoading) {
-      console.log('❌ AIChatPanel: Early return - no input or loading')
       return
     }
 
@@ -365,11 +531,34 @@ export default function AIChatPanel({
       return
     }
 
+    // Check if this is feedback on a rejected request
+    const lastRejectedRequest = (window as any).lastRejectedRequest
+    const isFeedbackOnRejection = lastRejectedRequest && (
+      message.toLowerCase().includes('paragraph') ||
+      message.toLowerCase().includes('separate') ||
+      message.toLowerCase().includes('different') ||
+      message.toLowerCase().includes('change') ||
+      message.toLowerCase().includes('fix') ||
+      message.toLowerCase().includes('again') ||
+      message.toLowerCase().includes('retry')
+    )
+
+    // Combine original request with feedback if this is feedback on rejection
+    const finalMessage = isFeedbackOnRejection 
+      ? `${lastRejectedRequest} (${message})`
+      : message
+
+
+    // Clear rejected request if this is a new request (not feedback)
+    if (!isFeedbackOnRejection) {
+      delete (window as any).lastRejectedRequest
+    }
+
     // Add user message to chat
     const userMessage = {
       id: Date.now().toString(),
       type: 'user' as const,
-      content: message,
+      content: message, // Show original message to user
       timestamp: new Date()
     }
 
@@ -385,7 +574,7 @@ export default function AIChatPanel({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          message: userMessage.content,
+          message: finalMessage, // Use the combined message for AI processing
           documentId,
           includeContext: true,
           useWebSearch
@@ -397,24 +586,46 @@ export default function AIChatPanel({
       }
 
       const data = await response.json()
-      console.log('Chat response received:', data)
 
       // Handle edit requests by typing content directly into the editor
       if (data.editRequest) {
-        // Generate content and type it directly into the editor
-        const editContent = await generateEditContent(userMessage.content, data.editRequest)
         
-        // Type the content directly into the editor
-        await typeContentIntoEditor(editContent)
+        // Store the user message for later use in approval
+        ;(window as any).lastUserMessage = userMessage.content
         
-        // Add a message indicating the content was added to the document
-        const aiMessage = {
+        try {
+          // Generate content and type it directly into the editor
+          const editContent = await generateEditContent(finalMessage, data.editRequest)
+          
+          // Type the content directly into the editor
+          await typeContentIntoEditor(editContent, userMessage.content)
+        } catch (error) {
+          
+          // For delete/clear requests, try to clear the content directly
+          const isDeleteRequest = finalMessage.toLowerCase().includes('delete') || 
+                                 finalMessage.toLowerCase().includes('clear') || 
+                                 finalMessage.toLowerCase().includes('get rid of')
+          
+          if (isDeleteRequest) {
+            try {
+              // Try to clear content directly
+              await typeContentIntoEditor('', userMessage.content)
+            } catch (clearError) {
+              console.error('Direct clear failed:', clearError)
+            }
+          }
+          
+          // Add error message to chat
+          const errorMessage = {
           id: (Date.now() + 1).toString(),
           type: 'assistant' as const,
-          content: 'I\'ve added the essay to your document. You can see it being typed in the editor.',
+            content: (error instanceof Error && error.message?.includes('timeout')) 
+              ? 'The request timed out. Please try again with a shorter request.'
+              : 'Sorry, I encountered an error while processing your request. Please try again.',
           timestamp: new Date()
+          }
+          setMessages(prev => [...prev, errorMessage])
         }
-        setMessages(prev => [...prev, aiMessage])
       } else {
         // Regular chat response
         const aiMessage = {
@@ -442,9 +653,7 @@ export default function AIChatPanel({
 
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    console.log('⌨️ AIChatPanel: Key pressed', { key: e.key, shiftKey: e.shiftKey })
     if (e.key === 'Enter' && !e.shiftKey) {
-      console.log('⌨️ AIChatPanel: Enter pressed, calling handleSendMessage')
       e.preventDefault()
       handleSendMessage()
     }
@@ -555,7 +764,13 @@ export default function AIChatPanel({
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/30">
-          {messages.map((message) => (
+          {isLoadingHistory ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              <span className="ml-2 text-sm text-gray-500">Loading chat history...</span>
+            </div>
+          ) : (
+            messages.map((message) => (
             <div
               key={message.id}
               className={`flex gap-3 animate-in slide-in-from-bottom-2 duration-300 ${
@@ -584,14 +799,14 @@ export default function AIChatPanel({
                     <div className="flex gap-2">
                       <button
                         onClick={handleApproveContent}
-                        className="px-3 py-1.5 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors flex items-center gap-1"
+                        className="px-3 py-1.5 bg-black text-white text-xs rounded hover:bg-gray-800 transition-colors flex items-center gap-1"
                       >
                         <Check className="w-3 h-3" />
                         Approve
                       </button>
                       <button
                         onClick={handleRejectContent}
-                        className="px-3 py-1.5 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors flex items-center gap-1"
+                        className="px-3 py-1.5 bg-white text-black text-xs rounded hover:bg-gray-100 transition-colors flex items-center gap-1 border border-gray-300"
                       >
                         <X className="w-3 h-3" />
                         Reject
@@ -617,7 +832,8 @@ export default function AIChatPanel({
                 </div>
               )}
             </div>
-          ))}
+            ))
+          )}
 
         {/* Loading indicator */}
         {isLoading && (

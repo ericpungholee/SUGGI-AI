@@ -163,7 +163,6 @@ export function useRealTimeAgentTyping({
 
   // Complete the current typing block
   const completeTypingBlock = useCallback((block: AgentTextBlock) => {
-    console.log('✅ Completed typing block:', block.id)
     
     const completedBlock: AgentTextBlock = {
       ...block,
@@ -218,7 +217,6 @@ export function useRealTimeAgentTyping({
 
   // Approve a block (turn it from light blue to black)
   const approveBlock = useCallback((blockId: string) => {
-    console.log('✅ Approving block:', blockId)
     
     setState(prev => ({
       ...prev,
@@ -238,7 +236,6 @@ export function useRealTimeAgentTyping({
 
   // Reject a block (remove it)
   const rejectBlock = useCallback((blockId: string) => {
-    console.log('❌ Rejecting block:', blockId)
     
     setState(prev => ({
       ...prev,

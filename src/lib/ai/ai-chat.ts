@@ -99,23 +99,23 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
       documentId
     })
 
-    // Check if this is an editing request using AI classification
-    if (classification.isEditRequest && documentId) {
-      const editRequest = detectEditRequest(message)
-      console.log('AI Edit detection in chat:', { 
-        message, 
-        editRequest, 
-        documentId,
-        classification
-      })
-      
-      console.log('Edit request detected, returning early with editRequest')
-      return {
-        message: 'I\'ll help you edit your document. Let me analyze the content and propose improvements.',
-        conversationId: conversationId || '',
-        editRequest
-      }
+  // Check if this is an editing request using AI classification
+  if (classification.isEditRequest && documentId) {
+    const editRequest = detectEditRequest(message, documentId)
+    console.log('AI Edit detection in chat:', { 
+      message, 
+      editRequest, 
+      documentId,
+      classification
+    })
+    
+    console.log('Edit request detected, returning early with editRequest')
+    return {
+      message: 'I\'ll help you edit your document. Let me analyze the content and propose improvements.',
+      conversationId: conversationId || '',
+      editRequest
     }
+  }
 
     // Get document context if requested using advanced RAG
     let context = ''
@@ -535,7 +535,7 @@ export async function deleteConversation(
 /**
  * Detect if a message is an editing request
  */
-function detectEditRequest(message: string): {
+function detectEditRequest(message: string, documentId?: string): {
   intent: string
   scope: 'selection' | 'document'
   guardrails: {
@@ -587,7 +587,8 @@ function detectEditRequest(message: string): {
     'replace', 'substitute', 'swap', 'exchange', 'switch',
     'entire content', 'whole content', 'all content', 'full content',
     'into this document', 'to this document', 'in this document',
-    'to the document', 'in the document', 'into the document'
+    'to the document', 'in the document', 'into the document',
+    'get rid of', 'rid of', 'eliminate', 'wipe', 'clean out', 'empty'
   ]
   
   const weakEditKeywords = [
@@ -601,6 +602,9 @@ function detectEditRequest(message: string): {
   const hasDocumentContext = lowerMessage.includes('document') || lowerMessage.includes('this')
   const hasWeakEditKeywords = weakEditKeywords.some(keyword => lowerMessage.includes(keyword))
   
+  // If we have a documentId, we're in a document context even without explicit document references
+  const isInDocumentContext = hasDocumentContext || !!documentId
+  
   // Determine if this should be treated as an edit request
   let isEditRequest = false
   
@@ -610,10 +614,10 @@ function detectEditRequest(message: string): {
   } else if (hasStrongEditKeywords) {
     // Strong edit keywords always trigger edit mode
     isEditRequest = true
-  } else if (isContentGeneration && hasDocumentContext) {
+  } else if (isContentGeneration && isInDocumentContext) {
     // Content generation requests with document context should trigger edit mode
     isEditRequest = true
-  } else if (hasWeakEditKeywords && hasDocumentContext && !isConversational) {
+  } else if (hasWeakEditKeywords && isInDocumentContext && !isConversational) {
     // Weak edit keywords only trigger edit mode if:
     // - They have document context AND
     // - No conversational indicators are present AND
@@ -635,7 +639,11 @@ function detectEditRequest(message: string): {
   
   // Extract intent
   let intent = 'improve writing'
-  if (lowerMessage.includes('replace') && (lowerMessage.includes('entire') || lowerMessage.includes('whole') || lowerMessage.includes('all') || lowerMessage.includes('full'))) {
+  if (lowerMessage.includes('get rid of') || lowerMessage.includes('rid of') || lowerMessage.includes('eliminate') || lowerMessage.includes('wipe') || lowerMessage.includes('clean out') || lowerMessage.includes('empty')) {
+    intent = 'delete all content'
+  } else if (lowerMessage.includes('delete') || lowerMessage.includes('clear') || lowerMessage.includes('remove')) {
+    intent = 'delete content'
+  } else if (lowerMessage.includes('replace') && (lowerMessage.includes('entire') || lowerMessage.includes('whole') || lowerMessage.includes('all') || lowerMessage.includes('full'))) {
     intent = 'replace entire content'
   } else if (lowerMessage.includes('replace')) {
     intent = 'replace content'
