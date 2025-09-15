@@ -5,6 +5,11 @@
 I built SSUGI because I was tired of the writing workflow that everyone else seems to accept. You know the drill: write in Notion, but there's no proper home page to see all your documents. Need AI help? Switch to ChatGPT tab. Need context from another document? Flip between tabs constantly. It's a mess.
 
 SSUGI fixes this by putting everything in one place: your documents, AI chat, and context - all working together seamlessly.
+<img width="2838" height="1458" alt="image" src="https://github.com/user-attachments/assets/fbfccd86-a703-4675-b21d-18968591b423" />
+<img width="2780" height="1424" alt="image" src="https://github.com/user-attachments/assets/5318ad42-de1d-46a7-91f7-1970f8cc7338" />
+<img width="2852" height="1408" alt="image" src="https://github.com/user-attachments/assets/b1f2ee94-0c74-40a4-8c87-a58cdc3187d5" />
+
+
 
 ## 🎯 The Problem I Solved
 
