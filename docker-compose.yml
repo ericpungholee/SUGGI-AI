@@ -3,12 +3,12 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: suggi_db
+    container_name: suggi-ai_db
     restart: always
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: suggi_password_123
-      POSTGRES_DB: suggi_db
+      POSTGRES_PASSWORD: suggi-ai_password_123
+      POSTGRES_DB: suggi-ai_db
     ports:
       - "5433:5432"
     volumes:
@@ -23,9 +23,9 @@ services:
   # Optional: pgAdmin for database management UI
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: suggi_pgadmin
+    container_name: suggi-ai_pgadmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@suggi.com
+      PGADMIN_DEFAULT_EMAIL: admin@suggi-ai.com
       PGADMIN_DEFAULT_PASSWORD: admin
       PGADMIN_CONFIG_SERVER_MODE: 'False'
     ports:

@@ -8,6 +8,7 @@ export interface AIChatRequest {
   message: string
   userId: string
   documentId?: string
+  connectedDocumentIds?: string[]
   conversationId?: string
   includeContext?: boolean
   useWebSearch?: boolean
@@ -68,6 +69,7 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
       message,
       userId,
       documentId,
+      connectedDocumentIds = [],
       conversationId,
       includeContext = true,
       useWebSearch = false,
@@ -151,7 +153,9 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
           }
         }
         
-        context = await getDocumentContext(message, userId, documentId, 8) // Increased context chunks
+        // Get context from current document and connected documents
+        const allDocumentIds = [documentId, ...connectedDocumentIds].filter(Boolean) as string[]
+        context = await getDocumentContext(message, userId, allDocumentIds, 8) // Increased context chunks
         if (context) {
           contextUsed = [context]
         }
@@ -183,7 +187,7 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
     const messages: ChatMessage[] = [
       {
         role: 'system',
-        content: buildSystemPrompt(context, documentId, contextSource, isGeneralQuery, false)
+        content: buildSystemPrompt(context, documentId, connectedDocumentIds, contextSource, isGeneralQuery, false)
       },
       ...conversation.messages.slice(-10), // Last 10 messages for context
       {
@@ -352,7 +356,7 @@ async function saveMessages(conversationId: string, messages: ConversationMessag
 /**
  * Build system prompt with context
  */
-function buildSystemPrompt(context: string, documentId?: string, contextSource: string = 'document', isGeneralQuery: boolean = false, isEditRequest: boolean = false): string {
+function buildSystemPrompt(context: string, documentId?: string, connectedDocumentIds: string[] = [], contextSource: string = 'document', isGeneralQuery: boolean = false, isEditRequest: boolean = false): string {
   let prompt = `You are an advanced AI writing assistant specialized in Retrieval-Augmented Generation (RAG). You excel at understanding document context, providing accurate information, and helping with complex writing tasks.
 
 Your capabilities:
@@ -431,8 +435,9 @@ IMPORTANT - Editing Requests:
     }
   }
 
-  if (documentId) {
-    prompt += `\n\nNote: You are currently helping with document ID: ${documentId}. If you cannot access the specific content of this document in the context above, explain that the document content is not currently available and suggest that the user may need to re-vectorize the document.`
+  if (documentId || connectedDocumentIds.length > 0) {
+    const allDocIds = [documentId, ...connectedDocumentIds].filter(Boolean)
+    prompt += `\n\nNote: You are currently helping with ${allDocIds.length} document(s). If you cannot access the specific content of these documents in the context above, explain that the document content is not currently available and suggest that the user may need to re-vectorize the documents.`
   }
 
   return prompt

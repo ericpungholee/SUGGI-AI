@@ -40,3 +40,6 @@ coverage/
 # OS
 .DS_Store
 Thumbs.db
+
+# Documentation (excluded from upload)
+README.md

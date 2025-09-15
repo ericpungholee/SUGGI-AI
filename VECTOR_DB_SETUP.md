@@ -20,7 +20,7 @@ Create a `.env.local` file in your project root:
 ```bash
 # Pinecone Vector Database
 PINECONE_API_KEY="your-pinecone-api-key"
-PINECONE_INDEX_NAME="ssugi-docs"
+PINECONE_INDEX_NAME="suggi-ai-docs"
 ```
 
 ### 4. **Test the Setup**
@@ -45,7 +45,7 @@ Document → Chunks → Embeddings → Pinecone → Search → Context → AI Re
 
 ## 📊 **Database Schema**
 
-### **Pinecone Index: `ssugi-docs`**
+### **Pinecone Index: `suggi-ai-docs`**
 - **Model**: text-embedding-3-small (integrated)
 - **Cloud**: AWS
 - **Region**: us-east-1

@@ -1,10 +1,10 @@
-# SSUGI - All-in-One AI Writing Platform
+# SUGGI-AI - All-in-One AI Writing Platform
 
 **The writing app that actually gets it.**
 
-I built SSUGI because I was tired of the writing workflow that everyone else seems to accept. You know the drill: write in Notion, but there's no proper home page to see all your documents. Need AI help? Switch to ChatGPT tab. Need context from another document? Flip between tabs constantly. It's a mess.
+I built SUGGI-AI because I was tired of the writing workflow that everyone else seems to accept. You know the drill: write in Notion, but there's no proper home page to see all your documents. Need AI help? Switch to ChatGPT tab. Need context from another document? Flip between tabs constantly. It's a mess.
 
-SSUGI fixes this by putting everything in one place: your documents, AI chat, and context - all working together seamlessly.
+SUGGI-AI fixes this by putting everything in one place: your documents, AI chat, and context - all working together seamlessly.
 
 ## 🎯 The Problem I Solved
 
@@ -14,9 +14,9 @@ SSUGI fixes this by putting everything in one place: your documents, AI chat, an
 
 **Context Fragmentation**: Your AI doesn't know about your other documents. You have to copy-paste content or explain context every time.
 
-**SSUGI fixes all of this** with a unified workspace where your documents, AI assistant, and context live together.
+**SUGGI-AI fixes all of this** with a unified workspace where your documents, AI assistant, and context live together.
 
-## ✨ What Makes SSUGI Different
+## ✨ What Makes SUGGI-AI Different
 
 ### 🏠 **Proper Home Dashboard**
 - See all your documents at a glance (unlike Notion's cluttered interface)
@@ -164,7 +164,7 @@ SSUGI fixes this by putting everything in one place: your documents, AI chat, an
 ### Environment Variables
 ```bash
 # Database
-DATABASE_URL="postgresql://username:password@localhost:5432/ssugi"
+DATABASE_URL="postgresql://username:password@localhost:5432/suggi-ai"
 
 # NextAuth
 NEXTAUTH_URL=http://localhost:3000
@@ -175,14 +175,14 @@ OPENAI_API_KEY=your-openai-api-key
 
 # Pinecone
 PINECONE_API_KEY=your-pinecone-api-key
-PINECONE_INDEX_NAME=ssugi-docs
+PINECONE_INDEX_NAME=suggi-ai-docs
 ```
 
 ### Installation
 ```bash
 # Clone and install
 git clone <repository-url>
-cd ssugi
+cd suggi-ai
 npm install
 
 # Setup database
@@ -230,7 +230,7 @@ I was frustrated with the current writing workflow:
 3. **Lost context** - AI doesn't know about your other documents
 4. **Fragmented experience** - Everything is separate, nothing works together
 
-So I built SSUGI to solve these problems:
+So I built SUGGI-AI to solve these problems:
 
 - **Proper home dashboard** - See all your documents at a glance
 - **Unified interface** - Write, chat with AI, and reference docs all in one place
@@ -241,7 +241,7 @@ So I built SSUGI to solve these problems:
 
 ### Pinecone Setup
 1. Create account at [pinecone.io](https://pinecone.io)
-2. Create index named `ssugi-docs` with 3072 dimensions
+2. Create index named `suggi-ai-docs` with 3072 dimensions
 3. Add API key to environment variables
 
 ### OpenAI Setup
@@ -251,7 +251,7 @@ So I built SSUGI to solve these problems:
 
 ## 🎯 The Bottom Line
 
-SSUGI is what happens when you get tired of the fragmented writing experience and decide to build something better. It's not just another writing app - it's a unified workspace where your documents, AI assistant, and context all work together.
+SUGGI-AI is what happens when you get tired of the fragmented writing experience and decide to build something better. It's not just another writing app - it's a unified workspace where your documents, AI assistant, and context all work together.
 
 **No more tab switching. No more lost context. No more hunting through cluttered interfaces.**
 

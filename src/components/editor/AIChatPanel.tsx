@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
-import { X, Send, Bot, User, GripVertical, Feather, Paperclip, Search, FileText, Loader2, Globe, Sparkles, Check } from 'lucide-react'
+import { X, Send, Bot, User, GripVertical, Feather, Paperclip, Search, Loader2, Globe, Sparkles, Check } from 'lucide-react'
 
 interface AIChatPanelProps {
   isOpen: boolean
@@ -37,10 +37,13 @@ export default function AIChatPanel({
   const [inputValue, setInputValue] = useState('')
   const [isResizing, setIsResizing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [showQuickActions, setShowQuickActions] = useState(false)
   const [useWebSearch, setUseWebSearch] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isLoadingHistory, setIsLoadingHistory] = useState(true)
+  const [connectedDocuments, setConnectedDocuments] = useState<Array<{id: string, title: string}>>([])
+  const [showDocumentSelector, setShowDocumentSelector] = useState(false)
+  const [availableDocuments, setAvailableDocuments] = useState<Array<{id: string, title: string}>>([])
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const resizeRef = useRef<HTMLDivElement>(null)
 
@@ -48,6 +51,7 @@ export default function AIChatPanel({
   useEffect(() => {
     if (documentId && isOpen) {
       loadChatHistory()
+      loadAvailableDocuments()
     }
   }, [documentId, isOpen])
 
@@ -383,6 +387,64 @@ export default function AIChatPanel({
     }
   }
 
+  // Load available documents for selection
+  const loadAvailableDocuments = async () => {
+    if (!session?.user?.id) return
+
+    try {
+      setIsLoadingDocuments(true)
+      const response = await fetch('/api/documents')
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('Documents API response:', data)
+        
+        // Filter out the current document and already connected documents
+        const currentDocId = documentId
+        const connectedDocIds = connectedDocuments.map(doc => doc.id)
+        const available = data
+          .filter((doc: any) => 
+            doc.id !== currentDocId && 
+            !connectedDocIds.includes(doc.id)
+          )
+          .sort((a: any, b: any) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()) // Sort by newest first
+          .map((doc: any) => ({
+            id: doc.id,
+            title: doc.title
+          }))
+        
+        console.log('Available documents after filtering:', available)
+        setAvailableDocuments(available)
+      } else {
+        console.error('Failed to fetch documents:', response.status, response.statusText)
+      }
+    } catch (error) {
+      console.error('Error loading available documents:', error)
+    } finally {
+      setIsLoadingDocuments(false)
+    }
+  }
+
+  // Connect a document to the chat
+  const connectDocument = (document: {id: string, title: string}) => {
+    if (connectedDocuments.length >= 3) {
+      alert('You can connect up to 3 additional documents.')
+      return
+    }
+    
+    setConnectedDocuments(prev => [...prev, document])
+    setAvailableDocuments(prev => prev.filter(doc => doc.id !== document.id))
+  }
+
+  // Disconnect a document from the chat
+  const disconnectDocument = (documentId: string) => {
+    const document = connectedDocuments.find(doc => doc.id === documentId)
+    if (document) {
+      setConnectedDocuments(prev => prev.filter(doc => doc.id !== documentId))
+      setAvailableDocuments(prev => [...prev, document])
+    }
+  }
+
   // Handle content approval
   const handleApproveContent = async () => {
     try {
@@ -576,6 +638,7 @@ export default function AIChatPanel({
         body: JSON.stringify({
           message: finalMessage, // Use the combined message for AI processing
           documentId,
+          connectedDocumentIds: connectedDocuments.map(doc => doc.id),
           includeContext: true,
           useWebSearch
         }),
@@ -663,19 +726,6 @@ export default function AIChatPanel({
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
-  const handleQuickAction = (action: string) => {
-    setInputValue(action)
-    setShowQuickActions(false)
-  }
-
-  const quickActions = [
-    { label: 'Improve writing', action: 'Please improve the writing quality and style of this text.' },
-    { label: 'Summarize', action: 'Please provide a concise summary of this content.' },
-    { label: 'Expand ideas', action: 'Please expand on these ideas with more detail and examples.' },
-    { label: 'Fix grammar', action: 'Please check and fix any grammar or spelling errors.' },
-    { label: 'Research topic', action: 'Please help me research this topic and provide relevant information.' },
-    { label: 'Generate outline', action: 'Please create a structured outline for this content.' }
-  ]
 
   if (!isOpen) return null
 
@@ -699,11 +749,24 @@ export default function AIChatPanel({
             <p className="text-xs text-gray-600">
               {documentId ? 'Document context enabled' : 'Writing helper'}
               {useWebSearch && ' • Web search enabled'}
+              {connectedDocuments.length > 0 && ` • ${connectedDocuments.length} additional docs`}
             </p>
           </div>
         </div>
         
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setShowDocumentSelector(!showDocumentSelector)
+              if (!showDocumentSelector) {
+                loadAvailableDocuments()
+              }
+            }}
+            className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+            title="Connect additional documents"
+          >
+            <Paperclip className="w-4 h-4 text-gray-900" />
+          </button>
           <button
             onClick={() => setUseWebSearch(!useWebSearch)}
             className={`p-1.5 rounded transition-colors ${
@@ -716,13 +779,6 @@ export default function AIChatPanel({
             <Globe className="w-4 h-4" />
           </button>
           <button
-            onClick={() => setShowQuickActions(!showQuickActions)}
-            className="p-1.5 hover:bg-gray-100 rounded transition-colors"
-            title="Quick Actions"
-          >
-            <FileText className="w-4 h-4 text-gray-900" />
-          </button>
-          <button
             onClick={onClose}
             className="p-1.5 hover:bg-gray-200 rounded transition-colors"
             title="Close"
@@ -731,6 +787,74 @@ export default function AIChatPanel({
           </button>
         </div>
       </div>
+
+      {/* Document Selector */}
+      {showDocumentSelector && (
+        <div className="border-b border-gray-200 bg-gray-50 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-medium text-gray-900">Connect Documents</h4>
+            <button
+              onClick={() => setShowDocumentSelector(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          
+          {/* Connected Documents */}
+          {connectedDocuments.length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs text-gray-600 mb-2">Connected documents:</p>
+              <div className="space-y-1">
+                {connectedDocuments.map((doc) => (
+                  <div key={doc.id} className="flex items-center justify-between bg-white rounded px-2 py-1 text-xs">
+                    <span className="text-gray-900 truncate">{doc.title}</span>
+                    <button
+                      onClick={() => disconnectDocument(doc.id)}
+                      className="text-red-500 hover:text-red-700 ml-2"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Available Documents */}
+          <div>
+            <p className="text-xs text-gray-600 mb-2">
+              Available documents ({availableDocuments.length}):
+            </p>
+            {isLoadingDocuments ? (
+              <div className="flex items-center justify-center py-2">
+                <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                <span className="ml-2 text-xs text-gray-500">Loading...</span>
+              </div>
+            ) : availableDocuments.length > 0 ? (
+              <div className="space-y-1 max-h-32 overflow-y-auto">
+                {availableDocuments.map((doc) => (
+                  <button
+                    key={doc.id}
+                    onClick={() => connectDocument(doc)}
+                    disabled={connectedDocuments.length >= 3}
+                    className="w-full text-left bg-white rounded px-2 py-1 text-xs hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <span className="text-gray-900 truncate">{doc.title}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs text-gray-500">No additional documents available</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Debug: Current doc: {documentId}, Connected: {connectedDocuments.length}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Resize Handle */}
       <div
@@ -744,23 +868,6 @@ export default function AIChatPanel({
         </div>
       </div>
 
-      {/* Quick Actions Panel */}
-      {showQuickActions && (
-        <div className="border-b border-gray-200 p-4 bg-white">
-          <h4 className="text-sm font-medium text-gray-900 mb-3">Quick Actions</h4>
-          <div className="grid grid-cols-2 gap-2">
-            {quickActions.map((action, index) => (
-              <button
-                key={index}
-                onClick={() => handleQuickAction(action.action)}
-                className="text-left p-2 text-xs bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200 hover:border-gray-300 text-gray-900"
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/30">
@@ -857,12 +964,6 @@ export default function AIChatPanel({
       {/* Input Area */}
       <div className="border-t border-gray-200 p-4 bg-white">
         <div className="flex gap-2">
-          <button
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex items-center justify-center"
-            title="Attach file"
-          >
-            <Paperclip className="w-4 h-4 text-gray-900" />
-          </button>
           <textarea
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}

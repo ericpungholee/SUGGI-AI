@@ -1,6 +1,6 @@
 # LangGraph Integration for Agentic Editing
 
-This document describes the implementation of LangGraph for improved agentic editing in the SSUGI project.
+This document describes the implementation of LangGraph for improved agentic editing in the SUGGI-AI project.
 
 ## Overview
 

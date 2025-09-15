@@ -16,7 +16,7 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json()
-        const { message, documentId, conversationId, includeContext = true, useWebSearch = false, operationId } = body
+        const { message, documentId, connectedDocumentIds = [], conversationId, includeContext = true, useWebSearch = false, operationId } = body
 
         if (!message || typeof message !== 'string' || message.trim().length === 0) {
             return NextResponse.json(
@@ -72,6 +72,7 @@ export async function POST(request: Request) {
             message: message.trim(),
             userId: session.user.id,
             documentId,
+            connectedDocumentIds,
             conversationId,
             includeContext,
             useWebSearch,

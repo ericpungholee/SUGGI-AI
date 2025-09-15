@@ -45,12 +45,12 @@ class VectorDatabase {
   private currentIndexName: string | null = null
 
   async initialize() {
-    const expectedIndexName = process.env.PINECONE_INDEX_NAME || 'ssugi-documents'
+    const expectedIndexName = process.env.PINECONE_INDEX_NAME || 'suggi-ai-documents'
     if (this.isInitialized && this.currentIndexName === expectedIndexName) return
 
     try {
       const apiKey = process.env.PINECONE_API_KEY
-      const indexName = process.env.PINECONE_INDEX_NAME || 'ssugi-documents'
+      const indexName = process.env.PINECONE_INDEX_NAME || 'suggi-ai-documents'
 
       console.log('Initializing Pinecone with API key:', apiKey ? 'Present' : 'Missing')
       console.log('Index name:', indexName)

@@ -669,16 +669,19 @@ function applyDiversityScoring(results: SearchResult[]): (SearchResult & { diver
 export async function getDocumentContext(
   query: string,
   userId: string,
-  documentId?: string,
+  documentIds?: string | string[],
   limit: number = 5
 ): Promise<string> {
   try {
-    // If a specific document is requested, get its content directly first
-    if (documentId) {
+    // Normalize documentIds to array
+    const docIds = Array.isArray(documentIds) ? documentIds : documentIds ? [documentIds] : []
+    
+    // If specific documents are requested, get their content directly first
+    if (docIds.length > 0) {
       try {
-        const document = await prisma.document.findFirst({
+        const documents = await prisma.document.findMany({
           where: {
-            id: documentId,
+            id: { in: docIds },
             userId: userId,
             isDeleted: false
           },
@@ -690,18 +693,34 @@ export async function getDocumentContext(
           }
         })
 
-        if (document) {
-          // Extract text content from the document
-          const content = document.plainText || extractTextFromContent(document.content)
-          
-          if (content && content.trim().length > 0) {
-            // For summarization requests, return the full document content
-            if (query.toLowerCase().includes('summar') || query.toLowerCase().includes('summary') || query.toLowerCase().includes('about')) {
+        if (documents.length > 0) {
+          // For single document, return full content
+          if (documents.length === 1) {
+            const document = documents[0]
+            const content = document.plainText || extractTextFromContent(document.content)
+            
+            if (content && content.trim().length > 0) {
+              // For summarization requests, return the full document content
+              if (query.toLowerCase().includes('summar') || query.toLowerCase().includes('summary') || query.toLowerCase().includes('about')) {
+                return `Document: "${document.title}"\n\nContent:\n${content}`
+              }
+              
+              // For other queries, use the full content as context
               return `Document: "${document.title}"\n\nContent:\n${content}`
             }
+          } else {
+            // For multiple documents, combine their content
+            const combinedContent = documents
+              .map(doc => {
+                const content = doc.plainText || extractTextFromContent(doc.content)
+                return content && content.trim().length > 0 ? `**${doc.title}**\n\n${content}` : null
+              })
+              .filter(Boolean)
+              .join('\n\n---\n\n')
             
-            // For other queries, use the full content as context
-            return `Document: "${document.title}"\n\nContent:\n${content}`
+            if (combinedContent) {
+              return `Query: "${query}"\n\nRelevant Context (use document TITLES when citing sources):\n\n${combinedContent}`
+            }
           }
         }
       } catch (error) {
@@ -721,9 +740,9 @@ export async function getDocumentContext(
       useAdaptiveRetrieval: true
     })
 
-    // Filter by specific document if provided
-    const relevantResults = documentId 
-      ? searchResults.filter(result => result.documentId === documentId)
+    // Filter by specific documents if provided
+    const relevantResults = docIds.length > 0
+      ? searchResults.filter(result => docIds.includes(result.documentId))
       : searchResults
 
     if (relevantResults.length === 0) {
