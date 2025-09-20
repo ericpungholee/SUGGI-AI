@@ -1,5 +1,5 @@
 'use client'
-import { FileText, Clock, Star, Loader2 } from 'lucide-react'
+import { FileText, Clock, Bookmark, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface DocumentSearchResult {
@@ -57,7 +57,7 @@ export default function DocumentSearchResults({ results, isLoading, query }: Doc
                                 <FileText className='w-5 h-5 text-brown-medium' />
                                 <div className='flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity'>
                                     {doc.starred && (
-                                        <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                                        <Bookmark className="w-4 h-4 fill-black text-black" />
                                     )}
                                 </div>
                             </div>

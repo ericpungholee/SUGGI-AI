@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { FileText, Plus, Star, Clock, MoreVertical, X } from 'lucide-react'
+import { FileText, Plus, Bookmark, Clock, MoreVertical, X } from 'lucide-react'
 import AddDocumentsModal from './AddDocumentsModal'
 
 interface Document {
@@ -196,7 +196,7 @@ export default function FolderContent({ folderId }: FolderContentProps) {
                                             className="p-1 hover:bg-gray-100 rounded transition-colors"
                                             title={starredDocs.has(doc.id) ? "Remove from starred" : "Add to starred"}
                                         >
-                                            <Star className={`w-4 h-4 ${starredDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : 'text-gray-500'}`} />
+                                            <Bookmark className={`w-4 h-4 ${starredDocs.has(doc.id) ? 'fill-black text-black' : 'text-gray-500'}`} />
                                         </button>
                                         <button
                                             onClick={(e) => {

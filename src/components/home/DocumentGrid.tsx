@@ -1,5 +1,5 @@
 'use client'
-import { FileText, MoreVertical, Star, Clock, Plus, RefreshCw, Trash2, Edit3 } from "lucide-react"
+import { FileText, MoreVertical, Bookmark, Clock, RefreshCw, Trash2, Edit3 } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect, useCallback } from "react"
 import { useSession } from "next-auth/react"
@@ -147,10 +147,6 @@ export default function DocumentGrid() {
         setShowMoreOptions(showMoreOptions === docId ? null : docId)
     }
 
-    const handleCreateDocument = () => {
-        // Navigate to new document page
-        router.push('/editor/new')
-    }
 
     const handleRefresh = () => {
         fetchDocuments()
@@ -226,23 +222,13 @@ export default function DocumentGrid() {
             {/* Header with refresh button */}
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-medium text-ink/70">Documents</h2>
-                <div className="flex gap-2">
-                    <button
-                        onClick={handleRefresh}
-                        className="p-2 hover:bg-stone-light rounded-lg transition-colors"
-                        title="Refresh documents"
-                    >
-                        <RefreshCw className="w-4 h-4 text-ink/60" />
-                    </button>
-                    <button
-                        onClick={handleCreateDocument}
-                        className="inline-flex items-center gap-2 bg-brown-medium text-white px-3 py-2 rounded-lg hover:bg-brown-dark transition-colors text-sm"
-                        style={{ color: 'white' }}
-                    >
-                        <Plus className="w-4 h-4" style={{ color: 'white' }} />
-                        <span style={{ color: 'white' }}>New Document</span>
-                    </button>
-                </div>
+                <button
+                    onClick={handleRefresh}
+                    className="p-2 hover:bg-stone-light rounded-lg transition-colors"
+                    title="Refresh documents"
+                >
+                    <RefreshCw className="w-4 h-4 text-ink/60" />
+                </button>
             </div>
             
             {/* Documents grid */}
@@ -257,7 +243,7 @@ export default function DocumentGrid() {
                                     className="p-1 hover:bg-stone-light rounded transition-colors"
                                     type="button"
                                 >
-                                    <Star className={`w-4 h-4 ${starredDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : 'text-ink/40'}`} />
+                                    <Bookmark className={`w-4 h-4 ${starredDocs.has(doc.id) ? 'fill-black text-black' : 'text-ink/40'}`} />
                                 </button>
                                 <button
                                     onClick={(e) => handleMoreOptions(e, doc.id)}

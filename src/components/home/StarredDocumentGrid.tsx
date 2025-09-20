@@ -1,5 +1,5 @@
 'use client'
-import { FileText, MoreVertical, Star, Clock, Plus, RefreshCw } from "lucide-react"
+import { FileText, MoreVertical, Bookmark, Clock, Plus, RefreshCw } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect, useCallback } from "react"
 import { useSession } from "next-auth/react"
@@ -138,7 +138,7 @@ export default function StarredDocumentGrid() {
         return (
             <div className="text-center py-12">
                 <div className="w-16 h-16 mx-auto mb-4 bg-stone-light rounded-full flex items-center justify-center">
-                    <Star className="w-8 h-8 text-amber-400" />
+                    <Bookmark className="w-8 h-8 text-black" />
                 </div>
                 <h3 className="text-lg font-medium text-ink/70 mb-2">No starred documents</h3>
                 <p className="text-ink/50 mb-6">Star important documents to see them here</p>
@@ -194,7 +194,7 @@ export default function StarredDocumentGrid() {
                                     type="button"
                                     title="Remove from starred"
                                 >
-                                    <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                                    <Bookmark className="w-4 h-4 fill-black text-black" />
                                 </button>
                                 <button
                                     onClick={handleMoreOptions}

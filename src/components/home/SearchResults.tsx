@@ -1,5 +1,5 @@
 'use client'
-import { FileText, Folder, Clock, Star, Search, X } from 'lucide-react'
+import { FileText, Folder, Clock, Bookmark, Search, X } from 'lucide-react'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
 
@@ -107,7 +107,7 @@ export default function SearchResults({ results, query, isLoading, onClose }: Se
                                 <div className="flex items-start justify-between mb-3">
                                     <FileText className="w-5 h-5 text-brown-medium" />
                                     {doc.starred && (
-                                        <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                                        <Bookmark className="w-4 h-4 fill-black text-black" />
                                     )}
                                 </div>
                                 <h5 className="font-medium text-ink mb-2 line-clamp-1 group-hover:text-brown-medium transition-colors">

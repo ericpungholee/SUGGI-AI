@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Search, Folder, Clock, X } from 'lucide-react'
 import Link from 'next/link'
-import { FileText, Star } from 'lucide-react'
+import { FileText, Bookmark } from 'lucide-react'
 
 interface SearchResult {
     id: string
@@ -145,7 +145,7 @@ export default function SearchContent() {
                                                 <div className="flex items-start justify-between mb-3">
                                                     <FileText className="w-5 h-5 text-brown-medium" />
                                                     {result.starred && (
-                                                        <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                                                        <Bookmark className="w-4 h-4 fill-black text-black" />
                                                     )}
                                                 </div>
                                                 <h5 className="font-medium text-ink mb-2 line-clamp-1 group-hover:text-brown-medium transition-colors">

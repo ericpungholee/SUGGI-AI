@@ -1,5 +1,5 @@
 'use client'
-import { FileText, MoreVertical, Star, Clock, Edit3, Trash2 } from "lucide-react"
+import { FileText, MoreVertical, Bookmark, Clock, Edit3, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 
@@ -63,7 +63,7 @@ export default function DocumentCard({
                                 className="p-1 hover:bg-stone-light rounded transition-colors"
                                 type="button"
                             >
-                                <Star className={`w-4 h-4 ${starred ? 'fill-amber-400 text-amber-400' : 'text-ink/40'}`} />
+                                <Bookmark className={`w-4 h-4 ${starred ? 'fill-black text-black' : 'text-ink/40'}`} />
                             </button>
                         )}
                         <button

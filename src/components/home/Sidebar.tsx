@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Home, FileText, Folder, Clock, Star, Settings, Plus, User, LogOut, Feather } from 'lucide-react'
+import { Home, FileText, Folder, Clock, Bookmark, Settings, Plus, User, LogOut, Feather } from 'lucide-react'
 import { useState } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 
@@ -14,9 +14,9 @@ export default function Sidebar() {
   const menuItems = [
     { icon: Home, label: 'Home', href: '/home' },
     { icon: Folder, label: 'Folders', href: '/folders' },
-    { icon: FileText, label: 'All Documents', href: '/documents' },
+    { icon: FileText, label: 'Documents', href: '/documents' },
     { icon: Clock, label: 'Recent', href: '/recent' },
-    { icon: Star, label: 'Starred', href: '/starred' },
+    { icon: Bookmark, label: 'Saved', href: '/starred' },
     { icon: Settings, label: 'Settings', href: '/settings' },
   ]
 

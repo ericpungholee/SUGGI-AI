@@ -1,5 +1,5 @@
 'use client'
-import { FileText, MoreVertical, Star, Clock, Plus, RefreshCw } from "lucide-react"
+import { FileText, MoreVertical, Bookmark, Clock, Plus, RefreshCw } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect, useCallback } from "react"
 import { useSession } from "next-auth/react"
@@ -190,7 +190,7 @@ export default function RecentDocumentGrid() {
                                     className="p-1 hover:bg-stone-light rounded transition-colors"
                                     type="button"
                                 >
-                                    <Star className={`w-4 h-4 ${starredDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : 'text-ink/40'}`} />
+                                    <Bookmark className={`w-4 h-4 ${starredDocs.has(doc.id) ? 'fill-black text-black' : 'text-ink/40'}`} />
                                 </button>
                                 <button
                                     onClick={handleMoreOptions}
