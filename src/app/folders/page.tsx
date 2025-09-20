@@ -5,8 +5,7 @@ import { prisma } from "@/lib/prisma";
 import ClientOnly from "@/components/ui/ClientOnly";
 import Sidebar from "@/components/home/Sidebar";
 import HomeHeader from "@/components/home/HomeHeader";
-import FolderGrid from "@/components/home/FolderGrid";
-import CreateFolderButton from "@/components/home/CreateFolderButton";
+import FoldersPageContent from "@/components/folders/FoldersPageContent";
 
 export default async function FoldersPage() {
     const session = await getServerSession(authOptions);
@@ -37,17 +36,18 @@ export default async function FoldersPage() {
                 </ClientOnly>
 
                 {/* Content */}
-                <main className="flex-1 overflow-y-auto px-8 py-6">
-                    <div className="mb-6 flex justify-between items-center">
-                        <div>
-                            <h1 className="text-2xl font-bold text-ink mb-2">Folders</h1>
-                            <p className="text-ink/60">Organize your documents into folders</p>
+                <ClientOnly fallback={
+                    <main className="flex-1 overflow-y-auto px-8 py-6">
+                        <div className="mb-6 flex justify-between items-center">
+                            <div>
+                                <h1 className="text-2xl font-bold text-ink mb-2">Folders</h1>
+                                <p className="text-ink/60">Organize your documents into folders</p>
+                            </div>
                         </div>
-                        <CreateFolderButton />
-                    </div>
-                    
-                    <FolderGrid showCreateButton={false} />
-                </main>
+                    </main>
+                }>
+                    <FoldersPageContent />
+                </ClientOnly>
             </div>
         </div>
     );

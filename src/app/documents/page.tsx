@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import ClientOnly from "@/components/ui/ClientOnly";
 import Sidebar from "@/components/home/Sidebar";
 import HomeHeader from "@/components/home/HomeHeader";
-import DocumentGrid from "@/components/home/DocumentGrid";
+import DocumentsPageContent from "@/components/documents/DocumentsPageContent";
 
 export default async function AllDocumentsPage() {
     const session = await getServerSession(authOptions);
@@ -36,14 +36,16 @@ export default async function AllDocumentsPage() {
                 </ClientOnly>
 
                 {/* Content */}
-                <main className="flex-1 overflow-y-auto px-8 py-6">
-                    <div className="mb-6">
-                        <h1 className="text-2xl font-bold text-ink mb-2">All Documents</h1>
-                        <p className="text-ink/60">View and manage all your documents</p>
-                    </div>
-                    
-                    <DocumentGrid />
-                </main>
+                <ClientOnly fallback={
+                    <main className="flex-1 overflow-y-auto px-8 py-6">
+                        <div className="mb-6">
+                            <h1 className="text-2xl font-bold text-ink mb-2">All Documents</h1>
+                            <p className="text-ink/60">View and manage all your documents</p>
+                        </div>
+                    </main>
+                }>
+                    <DocumentsPageContent />
+                </ClientOnly>
             </div>
         </div>
     );
