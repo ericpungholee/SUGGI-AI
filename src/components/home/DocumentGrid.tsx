@@ -1,5 +1,5 @@
 'use client'
-import { FileText, MoreVertical, Bookmark, Clock, RefreshCw, Trash2, Edit3 } from "lucide-react"
+import { FileText, MoreVertical, Bookmark, Clock, RefreshCw, Trash2, Edit3, Plus } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect, useCallback } from "react"
 import { useSession } from "next-auth/react"
@@ -152,6 +152,10 @@ export default function DocumentGrid() {
         fetchDocuments()
     }
 
+    const handleCreateDocument = () => {
+        router.push('/editor/new')
+    }
+
     // Close more options menu when clicking outside
     useEffect(() => {
         if (!mounted) return
@@ -219,15 +223,16 @@ export default function DocumentGrid() {
 
     return (
         <div>
-            {/* Header with refresh button */}
+            {/* Header with new document button */}
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-medium text-ink/70">Documents</h2>
                 <button
-                    onClick={handleRefresh}
-                    className="p-2 hover:bg-stone-light rounded-lg transition-colors"
-                    title="Refresh documents"
+                    onClick={handleCreateDocument}
+                    className="inline-flex items-center justify-center bg-white w-12 h-12 rounded-lg hover:bg-gray-100 transition-colors shadow-sm border border-gray-200"
+                    title="Create New Document"
+                    style={{ backgroundColor: 'white', borderColor: '#e5e7eb' }}
                 >
-                    <RefreshCw className="w-4 h-4 text-ink/60" />
+                    <Plus className="w-6 h-6 text-black" style={{ color: 'black' }} />
                 </button>
             </div>
             
