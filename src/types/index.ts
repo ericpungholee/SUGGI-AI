@@ -39,6 +39,7 @@ export interface ToolbarProps {
     canUndo: boolean;
     canRedo: boolean;
     onAIClick?: () => void;
+    onTableClick?: () => void;
 }
 
 // Document Types
@@ -84,7 +85,8 @@ export type FormatCommand =
     | 'backColor'
     | 'foreColor'
     | 'fontSize'
-    | 'fontFamily';
+    | 'fontFamily'
+    | 'insertTable';
 
 // Font Options
 export interface FontOption {
@@ -181,7 +183,8 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     { command: 'justifyFull', key: 'J', description: 'Justify', modifier: 'ctrl' },
     { command: 'formatBlock', key: 'Q', description: 'Quote Block', modifier: 'ctrl+shift' },
     { command: 'formatBlock', key: 'K', description: 'Code Block', modifier: 'ctrl+shift' },
-    { command: 'backColor', key: 'H', description: 'Highlight Text', modifier: 'ctrl+shift' }
+    { command: 'backColor', key: 'H', description: 'Highlight Text', modifier: 'ctrl+shift' },
+    { command: 'insertTable', key: 'T', description: 'Insert Table', modifier: 'ctrl+shift' }
 ];
 
 // Editor State

@@ -1,0 +1,226 @@
+/* Table Styles */
+.editor-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 20px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 2px solid #000000;
+}
+
+.editor-table td,
+.editor-table th {
+  border-right: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0;
+  padding: 12px 16px;
+  min-width: 100px;
+  min-height: 44px;
+  position: relative;
+  vertical-align: top;
+  background: white;
+  color: #000000;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+/* Table cells - no resize handles */
+.editor-table td,
+.editor-table th {
+  min-width: 100px;
+  min-height: 44px;
+  overflow: hidden;
+}
+
+/* Column resize handles */
+.editor-table td::after,
+.editor-table th::after {
+  content: '';
+  position: absolute;
+  right: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: transparent;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+.editor-table td:hover::after,
+.editor-table th:hover::after {
+  background: #007acc;
+  opacity: 0.6;
+}
+
+/* Row resize handles */
+.editor-table tr {
+  position: relative;
+}
+
+.editor-table tr::after {
+  content: '';
+  position: absolute;
+  bottom: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: transparent;
+  cursor: row-resize;
+  z-index: 10;
+}
+
+.editor-table tr:hover::after {
+  background: #007acc;
+  opacity: 0.6;
+}
+
+
+.editor-table th {
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #000000;
+  border-bottom: 2px solid #000000;
+}
+
+.editor-table td:hover,
+.editor-table th:hover {
+  background: #f5f5f5;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.editor-table td:focus,
+.editor-table th:focus {
+  outline: 2px solid #000000;
+  outline-offset: -2px;
+  background: #fafafa;
+  box-shadow: inset 0 0 0 2px #000000;
+}
+
+.editor-table tr:last-child td {
+  border-bottom: none;
+}
+
+.editor-table td:last-child,
+.editor-table th:last-child {
+  border-right: none;
+}
+
+/* Table cell editing */
+.editor-table td[contenteditable="true"]:empty::before,
+.editor-table th[contenteditable="true"]:empty::before {
+  content: "Type here...";
+  color: #999999;
+  pointer-events: none;
+  font-style: italic;
+}
+
+/* Table selection styles */
+.editor-table td.selected,
+.editor-table th.selected {
+  background: #f0f0f0;
+  border-color: #000000;
+  box-shadow: inset 0 0 0 2px #000000;
+}
+
+.editor-table td.selected-row {
+  background: #f8f8f8;
+  border-color: #000000;
+}
+
+.editor-table td.selected-column {
+  background: #f8f8f8;
+  border-color: #000000;
+}
+
+/* Table context menu trigger */
+.editor-table td[data-table-cell],
+.editor-table th[data-table-cell] {
+  cursor: text;
+  position: relative;
+}
+
+.editor-table td[data-table-cell]:hover,
+.editor-table th[data-table-cell]:hover {
+  background: #f9f9f9;
+}
+
+
+
+/* Table toolbar */
+.table-toolbar {
+  position: absolute;
+  background: white;
+  border: 1px solid #000000;
+  border-radius: 4px;
+  padding: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  display: flex;
+  gap: 4px;
+  z-index: 1000;
+}
+
+.table-toolbar button {
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #000000;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.table-toolbar button:hover {
+  background: #f0f0f0;
+  color: #000000;
+}
+
+.table-toolbar button.active {
+  background: #000000;
+  color: white;
+}
+
+/* Responsive table */
+@media (max-width: 768px) {
+  .editor-table {
+    font-size: 14px;
+    margin: 16px 0;
+    border-radius: 6px;
+  }
+  
+  .editor-table td,
+  .editor-table th {
+    padding: 10px 12px;
+    min-width: 80px;
+    min-height: 36px;
+  }
+  
+  .editor-table td:hover,
+  .editor-table th:hover {
+    transform: none;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+}
+
+/* Print styles */
+@media print {
+  .editor-table {
+    box-shadow: none;
+    border: 1px solid #000;
+  }
+  
+  .editor-table td,
+  .editor-table th {
+    border: 1px solid #000;
+    background: white !important;
+    color: #000 !important;
+  }
+  
+  .table-toolbar {
+    display: none !important;
+  }
+}

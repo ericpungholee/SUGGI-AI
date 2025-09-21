@@ -6,7 +6,11 @@ import { useDocumentSearch } from "@/hooks/useDocumentSearch";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 
-export default function DocumentsPageContent() {
+interface DocumentsPageContentProps {
+    gridDensity?: 'compact' | 'comfortable' | 'spacious';
+}
+
+export default function DocumentsPageContent({ gridDensity = 'comfortable' }: DocumentsPageContentProps) {
     const { results, isLoading, query, hasSearched, search, clearSearch } = useDocumentSearch();
     const router = useRouter();
 
@@ -45,7 +49,7 @@ export default function DocumentsPageContent() {
                     query={query}
                 />
             ) : (
-                <DocumentGrid />
+                <DocumentGrid gridDensity={gridDensity} />
             )}
         </main>
     );

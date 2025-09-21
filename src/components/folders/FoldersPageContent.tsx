@@ -5,7 +5,11 @@ import FolderSearchResults from "@/components/home/FolderSearchResults";
 import CreateFolderButton from "@/components/home/CreateFolderButton";
 import { useFolderSearch } from "@/hooks/useFolderSearch";
 
-export default function FoldersPageContent() {
+interface FoldersPageContentProps {
+    gridDensity?: 'compact' | 'comfortable' | 'spacious';
+}
+
+export default function FoldersPageContent({ gridDensity = 'comfortable' }: FoldersPageContentProps) {
     const { results, isLoading, query, hasSearched, search, clearSearch } = useFolderSearch();
 
     return (
@@ -33,7 +37,7 @@ export default function FoldersPageContent() {
                     query={query}
                 />
             ) : (
-                <FolderGrid showCreateButton={false} />
+                <FolderGrid showCreateButton={false} gridDensity={gridDensity} />
             )}
         </main>
     );

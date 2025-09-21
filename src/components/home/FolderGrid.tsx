@@ -16,9 +16,10 @@ interface Folder {
 
 interface FolderGridProps {
     showCreateButton?: boolean;
+    gridDensity?: 'compact' | 'comfortable' | 'spacious';
 }
 
-export default function FolderGrid({ showCreateButton = true }: FolderGridProps) {
+export default function FolderGrid({ showCreateButton = true, gridDensity = 'comfortable' }: FolderGridProps) {
     const [folders, setFolders] = useState<Folder[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -27,6 +28,35 @@ export default function FolderGrid({ showCreateButton = true }: FolderGridProps)
     const [selectedFolder, setSelectedFolder] = useState<Folder | null>(null)
     const { data: session } = useSession()
     const router = useRouter()
+
+    // Get grid classes based on density
+    const getGridClasses = (density: string) => {
+        switch (density) {
+            case 'compact':
+                return 'grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3'
+            case 'comfortable':
+                return 'grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4'
+            case 'spacious':
+                return 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6'
+            default:
+                return 'grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4'
+        }
+    }
+
+    // Get card classes based on density
+    const getCardClasses = (density: string) => {
+        const baseClasses = 'group relative bg-white border border-brown-light/20 rounded-xl hover:shadow-md transition-all hover:-translate-y-0.5 cursor-pointer'
+        switch (density) {
+            case 'compact':
+                return `${baseClasses} p-3`
+            case 'comfortable':
+                return `${baseClasses} p-4`
+            case 'spacious':
+                return `${baseClasses} p-6`
+            default:
+                return `${baseClasses} p-4`
+        }
+    }
 
     useEffect(() => {
         if (session?.user) {
@@ -85,9 +115,9 @@ export default function FolderGrid({ showCreateButton = true }: FolderGridProps)
 
     if (loading) {
         return (
-            <div className='grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4'>
+            <div className={getGridClasses(gridDensity)}>
                 {[...Array(4)].map((_, i) => (
-                    <div key={i} className='bg-white border border-brown-light/20 rounded-xl p-4 animate-pulse'>
+                    <div key={i} className={`${getCardClasses(gridDensity)} animate-pulse`}>
                         <div className='w-12 h-12 bg-gray-200 rounded-lg mb-3'></div>
                         <div className='h-4 bg-gray-200 rounded mb-2'></div>
                         <div className='h-3 bg-gray-200 rounded'></div>
@@ -153,11 +183,11 @@ export default function FolderGrid({ showCreateButton = true }: FolderGridProps)
                 </div>
             )}
             
-            <div className='grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4'>
+            <div className={getGridClasses(gridDensity)}>
                 {folders.map((folder) => (
                     <div
                         key={folder.id}
-                        className='group relative bg-white border border-brown-light/20 rounded-xl p-4 hover:shadow-md transition-all hover:-translate-y-0.5 cursor-pointer'
+                        className={getCardClasses(gridDensity)}
                         onClick={() => handleFolderClick(folder)}
                     >
                         <button 

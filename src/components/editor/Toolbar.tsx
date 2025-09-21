@@ -6,12 +6,12 @@ import {
     AlignLeft, AlignCenter, AlignRight, AlignJustify,
     Code, Highlighter, Undo2, Redo2,
     Sparkles, Palette, Type, Subscript, Superscript,
-    ChevronDown
+    ChevronDown, Table
 } from "lucide-react";
 import { useState } from "react";
 import { FormatState, ToolbarProps, ToolbarButton } from "@/types";
 
-export default function Toolbar({ position, onFormat, formatState, onUndo, onRedo, canUndo, canRedo, onAIClick }: ToolbarProps) {
+export default function Toolbar({ position, onFormat, formatState, onUndo, onRedo, canUndo, canRedo, onAIClick, onTableClick }: ToolbarProps) {
     const [showColorPicker, setShowColorPicker] = useState(false)
     const [showFontSizePicker, setShowFontSizePicker] = useState(false)
     const [showFontFamilyPicker, setShowFontFamilyPicker] = useState(false)
@@ -177,6 +177,13 @@ export default function Toolbar({ position, onFormat, formatState, onUndo, onRed
             shortcut: 'Ctrl+K',
             active: false
         },
+        { 
+            icon: Table, 
+            command: 'insertTable', 
+            tooltip: 'Insert Table', 
+            shortcut: 'Ctrl+Shift+T',
+            active: false
+        },
     ]
 
     const fontSizes = ['12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px', '36px', '48px']
@@ -193,6 +200,8 @@ export default function Toolbar({ position, onFormat, formatState, onUndo, onRed
         if (needsInput && command === 'createLink') {
             const url = prompt('Enter the URL:')
             if (url) onFormat(command, url)
+        } else if (command === 'insertTable') {
+            onTableClick?.()
         } else if (command === 'backColor') {
             onFormat(command, value)
         } else {

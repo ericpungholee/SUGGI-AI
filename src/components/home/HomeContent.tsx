@@ -9,9 +9,10 @@ interface HomeContentProps {
     hasContent: boolean;
     folders: number;
     documents: number;
+    gridDensity?: 'compact' | 'comfortable' | 'spacious';
 }
 
-export default function HomeContent({ hasContent, folders, documents }: HomeContentProps) {
+export default function HomeContent({ hasContent, folders, documents, gridDensity = 'comfortable' }: HomeContentProps) {
     const { results, isLoading, query, hasSearched, search, clearSearch } = useSearch();
 
     if (!hasContent) {
@@ -72,14 +73,14 @@ export default function HomeContent({ hasContent, folders, documents }: HomeCont
                     {/* Folders */}
                     {folders > 0 && (
                         <section className="mb-8">
-                            <FolderGrid />
+                            <FolderGrid gridDensity={gridDensity} />
                         </section>
                     )}
                     
                     {/* Documents */}
                     {documents > 0 && (
                         <section className="mb-8">
-                            <DocumentGrid />
+                            <DocumentGrid gridDensity={gridDensity} />
                         </section>
                     )}
                 </>

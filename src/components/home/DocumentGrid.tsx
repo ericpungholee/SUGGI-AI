@@ -14,7 +14,11 @@ interface Document {
     starred: boolean
 }
 
-export default function DocumentGrid() {
+interface DocumentGridProps {
+    gridDensity?: 'compact' | 'comfortable' | 'spacious'
+}
+
+export default function DocumentGrid({ gridDensity = 'comfortable' }: DocumentGridProps) {
     const [documents, setDocuments] = useState<Document[]>([])
     const [loading, setLoading] = useState(true)
     const [starredDocs, setStarredDocs] = useState<Set<string>>(new Set())
@@ -24,6 +28,35 @@ export default function DocumentGrid() {
     const [mounted, setMounted] = useState(false)
     const { data: session } = useSession()
     const router = useRouter()
+
+    // Get grid classes based on density
+    const getGridClasses = (density: string) => {
+        switch (density) {
+            case 'compact':
+                return 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-3'
+            case 'comfortable':
+                return 'grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'
+            case 'spacious':
+                return 'grid md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6'
+            default:
+                return 'grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'
+        }
+    }
+
+    // Get card classes based on density
+    const getCardClasses = (density: string) => {
+        const baseClasses = 'group relative bg-white border border-brown-light/20 rounded-xl hover:shadow-md transition-all hover:-translate-0.5'
+        switch (density) {
+            case 'compact':
+                return `${baseClasses} p-3`
+            case 'comfortable':
+                return `${baseClasses} p-5`
+            case 'spacious':
+                return `${baseClasses} p-6`
+            default:
+                return `${baseClasses} p-5`
+        }
+    }
 
     // Prevent hydration mismatch by only running on client
     useEffect(() => {
@@ -175,9 +208,9 @@ export default function DocumentGrid() {
     // Don't render until mounted to prevent hydration mismatch
     if (!mounted) {
         return (
-            <div className='grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'>
+            <div className={getGridClasses(gridDensity)}>
                 {[...Array(4)].map((_, i) => (
-                    <div key={i} className='bg-white border border-brown-light/20 rounded-xl p-5 animate-pulse'>
+                    <div key={i} className={`${getCardClasses(gridDensity)} animate-pulse`}>
                         <div className='h-5 bg-gray-200 rounded mb-3'></div>
                         <div className='h-4 bg-gray-200 rounded mb-2'></div>
                         <div className='h-3 bg-gray-200 rounded'></div>
@@ -189,9 +222,9 @@ export default function DocumentGrid() {
 
     if (loading) {
         return (
-            <div className='grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'>
+            <div className={getGridClasses(gridDensity)}>
                 {[...Array(4)].map((_, i) => (
-                    <div key={i} className='bg-white border border-brown-light/20 rounded-xl p-5 animate-pulse'>
+                    <div key={i} className={`${getCardClasses(gridDensity)} animate-pulse`}>
                         <div className='h-5 bg-gray-200 rounded mb-3'></div>
                         <div className='h-4 bg-gray-200 rounded mb-2'></div>
                         <div className='h-3 bg-gray-200 rounded'></div>
@@ -237,9 +270,9 @@ export default function DocumentGrid() {
             </div>
             
             {/* Documents grid */}
-            <div className='grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'>
+            <div className={getGridClasses(gridDensity)}>
                 {documents.map((doc) => (
-                    <div key={doc.id} className='group relative bg-white border border-brown-light/20 rounded-xl p-5 hover:shadow-md transition-all hover:-translate-0.5'>
+                    <div key={doc.id} className={getCardClasses(gridDensity)}>
                         <div className='flex items-start justify-between mb-3'>
                             <FileText className='w-5 h-5 text-brown-medium' />
                             <div className='flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity'>
