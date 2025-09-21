@@ -59,10 +59,13 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     try {
       setIsGoogleLoading(true)
+      // Let NextAuth handle the OAuth flow completely
       await signIn('google', {
         callbackUrl: '/home',
+        redirect: true, // Let NextAuth handle redirect
       })
     } catch (error) {
+      console.error('Google sign-in error:', error)
       toast.error('Failed to sign in with Google')
       setIsGoogleLoading(false)
     }

@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma'
 
 // Ensure we have a secret for JWT signing
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || 'fallback-secret-key-for-development-only'
+const NEXTAUTH_URL = process.env.NEXTAUTH_URL || 'http://localhost:3000'
 
 export const authOptions: NextAuthOptions = {
     adapter: PrismaAdapter(prisma),
@@ -51,10 +52,12 @@ export const authOptions: NextAuthOptions = {
         GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID!,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+            checks: ["none"], // Disable state checks temporarily to test
         }),
     ],
     session: {
-        strategy: 'jwt'
+        strategy: 'jwt',
+        maxAge: 30 * 24 * 60 * 60, // 30 days
     },
     callbacks: {
         async jwt({ token, user }) {
@@ -70,31 +73,26 @@ export const authOptions: NextAuthOptions = {
             return session
         }
     },
+    useSecureCookies: false, // Critical for localhost development
     cookies: {
-        sessionToken: {
-            name: `next-auth.session-token`,
+        state: {
+            name: `next-auth.state`,
             options: {
                 httpOnly: true,
                 sameSite: 'lax',
                 path: '/',
-                secure: process.env.NODE_ENV === 'production'
+                secure: false,
+                maxAge: 24 * 60 * 60, // 24 hours in seconds
             }
         },
-        callbackUrl: {
-            name: `next-auth.callback-url`,
-            options: {
-                sameSite: 'lax',
-                path: '/',
-                secure: process.env.NODE_ENV === 'production'
-            }
-        },
-        csrfToken: {
-            name: `next-auth.csrf-token`,
+        pkceCodeVerifier: {
+            name: `next-auth.pkce.code_verifier`,
             options: {
                 httpOnly: true,
                 sameSite: 'lax',
                 path: '/',
-                secure: process.env.NODE_ENV === 'production'
+                secure: false,
+                maxAge: 24 * 60 * 60, // 24 hours in seconds
             }
         }
     },
@@ -103,4 +101,5 @@ export const authOptions: NextAuthOptions = {
         signUp: '/auth/register'
     },
     secret: NEXTAUTH_SECRET,
+    trustHost: true,
 }

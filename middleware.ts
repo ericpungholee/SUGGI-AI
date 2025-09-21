@@ -3,8 +3,8 @@ import { NextResponse } from "next/server"
 
 export default withAuth(
     function middleware(req) {
-        // Add CORS headers for API routes
-        if (req.nextUrl.pathname.startsWith('/api/')) {
+        // Add CORS headers for API routes (but exclude NextAuth routes)
+        if (req.nextUrl.pathname.startsWith('/api/') && !req.nextUrl.pathname.startsWith('/api/auth/')) {
             const response = NextResponse.next()
             response.headers.set('Access-Control-Allow-Origin', '*')
             response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
