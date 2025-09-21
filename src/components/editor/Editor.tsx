@@ -38,6 +38,7 @@ export default function Editor({
     })
     
     const editorRef = useRef<HTMLDivElement>(null)
+    const isUpdatingContentRef = useRef(false)
     const [undoStack, setUndoStack] = useState<string[]>([])
     const [redoStack, setRedoStack] = useState<string[]>([])
     const [isUndoRedo, setIsUndoRedo] = useState(false)
@@ -264,8 +265,11 @@ export default function Editor({
 
     // Sync content with parent component
     useEffect(() => {
-        onContentChange?.(content)
-    }, [content, onContentChange])
+        // Only call onContentChange if content is not empty, different from original, and we're not currently updating
+        if (content && content !== originalContent && !isUpdatingContentRef.current) {
+            onContentChange?.(content)
+        }
+    }, [content, onContentChange, originalContent])
 
     // Check for unsaved changes (content and title)
     useEffect(() => {
@@ -1291,19 +1295,29 @@ export default function Editor({
 
     // Handle content changes from the editor
     const handleContentChange = useCallback(() => {
-        if (editorRef.current && !isUndoRedo) {
+        if (editorRef.current && !isUndoRedo && !isUpdatingContentRef.current) {
             const newContent = editorRef.current.innerHTML
-            setContent(newContent)
-            // Save to undo stack when content changes (but not during undo/redo)
-            saveToUndoStack(newContent)
             
-            // Only detect user typing if agent is not typing
-            if (!isAgentTyping) {
-                setIsUserTyping(true)
-                setLastUserTypingTime(new Date())
+            // Only update if content actually changed to prevent infinite loops
+            if (newContent !== content) {
+                isUpdatingContentRef.current = true
+                setContent(newContent)
+                // Save to undo stack when content changes (but not during undo/redo)
+                saveToUndoStack(newContent)
+                
+                // Only detect user typing if agent is not typing
+                if (!isAgentTyping) {
+                    setIsUserTyping(true)
+                    setLastUserTypingTime(new Date())
+                }
+                
+                // Reset the flag after a brief delay to allow the update to complete
+                setTimeout(() => {
+                    isUpdatingContentRef.current = false
+                }, 10)
             }
         }
-    }, [saveToUndoStack, isUndoRedo, isAgentTyping])
+    }, [saveToUndoStack, isUndoRedo, isAgentTyping, content])
 
     // Handle paste events to capture images
     const handlePaste = useCallback((e: React.ClipboardEvent) => {

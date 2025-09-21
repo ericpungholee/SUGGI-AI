@@ -118,8 +118,13 @@ Generate the content directly without any introductory phrases, meta-commentary,
     })
 
     const choice = response.choices[0]
-    const generatedContent = choice?.message?.content || 'I apologize, but I was unable to generate the requested content.'
-
+    let generatedContent = choice?.message?.content || 'I apologize, but I was unable to generate the requested content.'
+    
+    // Clean up the generated content
+    generatedContent = generatedContent
+      .replace(/\|+/g, '') // Remove pipe characters that cause blue line artifacts
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim()
 
     return NextResponse.json({
       content: generatedContent,

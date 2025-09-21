@@ -129,10 +129,18 @@ export async function PATCH(
         if (content !== undefined) {
             // Ensure content is properly structured
             if (typeof content === 'string') {
+                // Clean the HTML content to remove pipe characters
+                const cleanHtmlContent = content.replace(/\|+/g, '')
+                
+                const plainText = cleanHtmlContent
+                    .replace(/<img[^>]*>/gi, ' ') // Remove img tags and their content
+                    .replace(/<[^>]*>/g, ' ') // Remove remaining HTML tags
+                    .replace(/\s+/g, ' ') // Normalize whitespace
+                    .trim()
                 updateData.content = {
-                    html: content,
-                    plainText: content.replace(/<[^>]*>/g, ''),
-                    wordCount: content.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length
+                    html: cleanHtmlContent,
+                    plainText: plainText,
+                    wordCount: plainText.split(/\s+/).filter(Boolean).length
                 }
             } else if (typeof content === 'object' && content.html) {
                 updateData.content = content

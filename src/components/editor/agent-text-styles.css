@@ -29,7 +29,7 @@
 }
 
 .agent-text-block.typing::after {
-  content: '|';
+  content: '';
   color: #3b82f6;
   animation: blink 1s infinite;
 }

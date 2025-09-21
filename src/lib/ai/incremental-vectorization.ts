@@ -256,12 +256,13 @@ function extractTextFromContent(content: any): string {
 }
 
 /**
- * Strip HTML tags from text
+ * Strip HTML tags from text, excluding image data
  */
 function stripHtml(html: string): string {
   return html
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/<img[^>]*>/gi, ' ') // Remove img tags and their content
+    .replace(/<[^>]*>/g, ' ') // Remove remaining HTML tags
+    .replace(/\s+/g, ' ') // Normalize whitespace
     .trim()
 }
 

@@ -149,6 +149,16 @@ export default function AIChatPanel({
           
         let content = data.content || ''
         
+        // Debug: Check if generated content has pipe characters
+        if (content.includes('|')) {
+          console.log('🚨 Frontend: Generated content has pipe characters:', {
+            originalLength: content.length,
+            pipeCount: (content.match(/\|/g) || []).length,
+            preview: content.substring(0, 200) + '...',
+            fullContent: content
+          })
+        }
+        
         // Clean up any meta-commentary that might have slipped through
         content = content
           .replace(/^(Here's|I've|This document|I'll|Let me|I'm going to|I can|I will).*?[.!?]\s*/gmi, '')
@@ -158,6 +168,8 @@ export default function AIChatPanel({
           .replace(/^(Draft cleared|Content cleared|Document cleared).*?[.!?]\s*/gmi, '')
           .replace(/^(What would you like|Here are|Please share|If you prefer).*?[.!?]\s*/gmi, '')
           .replace(/^(I can|I will|I'll help|I'm here).*?[.!?]\s*/gmi, '')
+          .replace(/\|+/g, '') // Remove pipe characters that cause blue line artifacts
+          .replace(/\s+/g, ' ') // Normalize whitespace
           .trim()
         
         // Special handling for delete/clear requests
@@ -194,11 +206,51 @@ export default function AIChatPanel({
       // Start agent typing mode to prevent auto-save
       onStartAgentTyping?.()
 
-      // Disable auto-save during typing
+      // Store the original content to preserve existing content and images
       const originalContent = editorElement.innerHTML
+      
+      // Debug: Check if original content has pipe characters
+      if (originalContent.includes('|')) {
+        console.log('🚨 Frontend: Original content has pipe characters:', {
+          originalLength: originalContent.length,
+          pipeCount: (originalContent.match(/\|/g) || []).length,
+          preview: originalContent.substring(0, 200) + '...'
+        })
+      }
       
       // Focus the editor
       editorElement.focus()
+
+      // Check if this is a delete/clear request
+      const isDeleteRequest = userMessage.toLowerCase().includes('delete') || 
+                             userMessage.toLowerCase().includes('clear') || 
+                             userMessage.toLowerCase().includes('get rid of')
+
+      if (isDeleteRequest) {
+        // For delete requests, clear the content but preserve the structure
+        editorElement.innerHTML = '<p><br></p>'
+        
+        // Store the pending content for later approval/rejection
+        ;(window as any).pendingAIContent = {
+          content: '',
+          originalContent: originalContent
+        }
+        
+        // Show approval UI in chat
+        showApprovalUI('', userMessage)
+        return
+      }
+
+      // For content generation, append to existing content
+      // Move cursor to the end of the document
+      const selection = window.getSelection()
+      if (selection) {
+        const range = document.createRange()
+        range.selectNodeContents(editorElement)
+        range.collapse(false) // Collapse to end
+        selection.removeAllRanges()
+        selection.addRange(range)
+      }
 
       // Split content into paragraphs first, then words within each paragraph
       const paragraphs = content.split('\n\n').filter(p => p.trim())
@@ -223,12 +275,40 @@ export default function AIChatPanel({
             return ''
           }).join('')
         
-        // Update the editor content with gray styling for pending approval
-        const tempDiv = document.createElement('div')
-          tempDiv.innerHTML = `<span class="pending-ai-content">${htmlContent}</span><span class="typing-cursor">|</span>`
+        // Debug: Check if htmlContent has pipe characters
+        if (htmlContent.includes('|')) {
+          console.log('🚨 Frontend: htmlContent has pipe characters:', {
+            originalLength: htmlContent.length,
+            pipeCount: (htmlContent.match(/\|/g) || []).length,
+            preview: htmlContent.substring(0, 200) + '...',
+            fullContent: htmlContent
+          })
+        }
         
-        // Replace content without triggering input events
-        editorElement.innerHTML = tempDiv.innerHTML
+        // Append content to existing content with gray styling for pending approval
+        const pendingContent = `<div class="pending-ai-content">${htmlContent}</div><span class="typing-cursor">|</span>`
+        
+        // Remove any existing typing cursor first
+        const existingCursor = editorElement.querySelector('.typing-cursor')
+        if (existingCursor) {
+          existingCursor.remove()
+        }
+        
+        // Remove any elements with typing class that might have CSS-generated pipe characters
+        const typingElements = editorElement.querySelectorAll('.typing')
+        typingElements.forEach(el => {
+          el.classList.remove('typing')
+        })
+        
+        // Replace only the pending content area, preserving existing content
+        const existingPendingContent = editorElement.querySelector('.pending-ai-content')
+        if (existingPendingContent) {
+          // Replace existing pending content
+          existingPendingContent.outerHTML = pendingContent
+        } else {
+          // Insert new pending content at the end
+          editorElement.insertAdjacentHTML('beforeend', pendingContent)
+        }
         
         // Wait before typing the next word
         await new Promise(resolve => setTimeout(resolve, 100))
@@ -247,15 +327,33 @@ export default function AIChatPanel({
             return ''
           }).join('')
           
-          const tempDiv = document.createElement('div')
-          tempDiv.innerHTML = `<span class="pending-ai-content">${htmlContent}</span><span class="typing-cursor">|</span>`
-          editorElement.innerHTML = tempDiv.innerHTML
+          const pendingContent = `<div class="pending-ai-content">${htmlContent}</div><span class="typing-cursor">|</span>`
+          
+          // Remove any existing typing cursor first
+          const existingCursor = editorElement.querySelector('.typing-cursor')
+          if (existingCursor) {
+            existingCursor.remove()
+          }
+          
+          // Remove any elements with typing class that might have CSS-generated pipe characters
+          const typingElements = editorElement.querySelectorAll('.typing')
+          typingElements.forEach(el => {
+            el.classList.remove('typing')
+          })
+          
+          // Replace only the pending content area
+          const existingPendingContent = editorElement.querySelector('.pending-ai-content')
+          if (existingPendingContent) {
+            existingPendingContent.outerHTML = pendingContent
+          } else {
+            // Insert new pending content at the end
+            editorElement.insertAdjacentHTML('beforeend', pendingContent)
+          }
           
           // Pause between paragraphs
           await new Promise(resolve => setTimeout(resolve, 200))
         }
       }
-
 
       // Convert final content to HTML with proper paragraph formatting
       const finalHtmlContent = currentContent.split('\n\n').map(paragraph => {
@@ -267,7 +365,25 @@ export default function AIChatPanel({
       }).join('')
 
       // Remove the typing cursor and keep content in pending state with proper formatting
-      editorElement.innerHTML = `<span class="pending-ai-content">${finalHtmlContent}</span>`
+      const finalPendingContent = `<div class="pending-ai-content">${finalHtmlContent}</div>`
+      
+      // Remove any existing typing cursor first
+      const existingCursor = editorElement.querySelector('.typing-cursor')
+      if (existingCursor) {
+        existingCursor.remove()
+      }
+      
+      // Remove any elements with typing class that might have CSS-generated pipe characters
+      const typingElements = editorElement.querySelectorAll('.typing')
+      typingElements.forEach(el => {
+        el.classList.remove('typing')
+      })
+      
+      // Replace the pending content
+      const existingPendingContent = editorElement.querySelector('.pending-ai-content')
+      if (existingPendingContent) {
+        existingPendingContent.outerHTML = finalPendingContent
+      }
       
       // Store the pending content for later approval/rejection
       ;(window as any).pendingAIContent = {
@@ -282,6 +398,9 @@ export default function AIChatPanel({
     } catch (error) {
       // Stop agent typing on error
       onStopAgentTyping?.()
+      
+      // Final cleanup to ensure no pipe characters remain
+      cleanupPipeCharacters()
     }
   }
 
@@ -304,9 +423,51 @@ export default function AIChatPanel({
     setMessages(prev => [...prev, approvalMessage])
   }
 
+  // Comprehensive cleanup function to remove all pipe character sources
+  const cleanupPipeCharacters = () => {
+    const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement
+    if (!editorElement) return
+    
+    // 1. Remove all typing cursors
+    const typingCursors = editorElement.querySelectorAll('.typing-cursor')
+    typingCursors.forEach(cursor => cursor.remove())
+    
+    // 2. Remove typing classes that generate CSS pipe characters
+    const typingElements = editorElement.querySelectorAll('.typing')
+    typingElements.forEach(el => {
+      el.classList.remove('typing')
+    })
+    
+    // 3. Remove any literal pipe characters from content
+    const currentContent = editorElement.innerHTML
+    const cleanedContent = currentContent.replace(/\|+/g, '')
+    if (currentContent !== cleanedContent) {
+      editorElement.innerHTML = cleanedContent
+    }
+    
+    // 4. Remove any agent typing indicators
+    const typingIndicators = editorElement.querySelectorAll('.agent-typing-indicator')
+    typingIndicators.forEach(indicator => indicator.remove())
+  }
+
   // Save content directly to database
   const saveContentToDatabase = async (htmlContent: string) => {
     try {
+      // Final cleanup: remove any pipe characters and typing classes before saving
+      let cleanHtmlContent = htmlContent.replace(/\|+/g, '')
+      
+      // Remove any remaining typing classes that might generate CSS pipe characters
+      const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement
+      if (editorElement) {
+        const typingElements = editorElement.querySelectorAll('.typing')
+        typingElements.forEach(el => {
+          el.classList.remove('typing')
+        })
+        // Update the content after removing typing classes
+        cleanHtmlContent = editorElement.innerHTML.replace(/\|+/g, '')
+      }
+      
+      const cleanPlainText = cleanHtmlContent.replace(/<[^>]*>/g, '')
       
       const response = await fetch(`/api/documents/${documentId}`, {
         method: 'PATCH',
@@ -315,12 +476,12 @@ export default function AIChatPanel({
         },
         body: JSON.stringify({
           content: {
-            html: htmlContent,
-            plainText: htmlContent.replace(/<[^>]*>/g, ''),
-            wordCount: htmlContent.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length
+            html: cleanHtmlContent,
+            plainText: cleanPlainText,
+            wordCount: cleanPlainText.split(/\s+/).filter(Boolean).length
           },
-          plainText: htmlContent.replace(/<[^>]*>/g, ''),
-          wordCount: htmlContent.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length
+          plainText: cleanPlainText,
+          wordCount: cleanPlainText.split(/\s+/).filter(Boolean).length
         })
       })
 
@@ -465,6 +626,9 @@ export default function AIChatPanel({
       // Store the user message for determining the action
       const userMessage = (window as any).lastUserMessage || ''
 
+      // Comprehensive cleanup to remove all pipe character sources
+      cleanupPipeCharacters()
+
       // Remove pending styling and make content normal
       const pendingContent = editorElement.querySelector('.pending-ai-content')
       if (pendingContent) {
@@ -474,11 +638,21 @@ export default function AIChatPanel({
         // If the content is empty or just whitespace, use empty paragraph
         const finalHtmlContent = htmlContent.trim() || '<p><br></p>'
         
-        editorElement.innerHTML = finalHtmlContent
+        // Replace only the pending content with the final content, preserving existing content
+        pendingContent.outerHTML = finalHtmlContent
+        
+        // Get the complete editor content after the replacement
+        let completeContent = editorElement.innerHTML
+        
+        // Final cleanup: remove any remaining pipe characters from the complete content
+        completeContent = completeContent.replace(/\|+/g, '')
+        
+        // Update the editor with the cleaned content
+        editorElement.innerHTML = completeContent
         
         // Trigger the onContentChange callback to save the content
         if (onContentChange) {
-          onContentChange(finalHtmlContent)
+          onContentChange(completeContent)
         }
         
         // Also trigger input event to notify the editor of changes
@@ -486,7 +660,7 @@ export default function AIChatPanel({
         editorElement.dispatchEvent(inputEvent)
         
         // Directly save the content to the database to ensure it persists
-        await saveContentToDatabase(finalHtmlContent)
+        await saveContentToDatabase(completeContent)
       }
 
       // Clear pending content
@@ -525,6 +699,9 @@ export default function AIChatPanel({
         console.error('Editor element not found')
         return
       }
+
+      // Comprehensive cleanup to remove all pipe character sources
+      cleanupPipeCharacters()
 
       // Get the pending content and restore original
       const pendingData = (window as any).pendingAIContent

@@ -152,10 +152,24 @@ export async function POST(request: Request) {
 
         // Handle different content formats
         if (typeof documentContent === 'string') {
-            plainText = documentContent.replace(/<[^>]*>/g, '')
+            // Clean the HTML content to remove pipe characters
+            documentContent = documentContent.replace(/\|+/g, '')
+            
+            plainText = documentContent
+                .replace(/<img[^>]*>/gi, ' ') // Remove img tags and their content
+                .replace(/<[^>]*>/g, ' ') // Remove remaining HTML tags
+                .replace(/\s+/g, ' ') // Normalize whitespace
+                .trim()
             wordCount = plainText.split(/\s+/).filter(Boolean).length
         } else if (typeof documentContent === 'object' && documentContent.html) {
-            plainText = documentContent.html.replace(/<[^>]*>/g, '')
+            // Clean the HTML content to remove pipe characters
+            documentContent.html = documentContent.html.replace(/\|+/g, '')
+            
+            plainText = documentContent.html
+                .replace(/<img[^>]*>/gi, ' ') // Remove img tags and their content
+                .replace(/<[^>]*>/g, ' ') // Remove remaining HTML tags
+                .replace(/\s+/g, ' ') // Normalize whitespace
+                .trim()
             wordCount = plainText.split(/\s+/).filter(Boolean).length
         }
 

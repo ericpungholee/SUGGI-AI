@@ -178,6 +178,16 @@ Generate the content directly without any introductory phrases, meta-commentary,
 
       let rawContent = response.choices[0]?.message?.content || ''
       
+      // Debug: Check if AI is generating pipe characters
+      if (rawContent.includes('|')) {
+        console.log('🚨 Real-time AI generated pipe characters:', {
+          originalLength: rawContent.length,
+          pipeCount: (rawContent.match(/\|/g) || []).length,
+          preview: rawContent.substring(0, 200) + '...',
+          fullContent: rawContent
+        })
+      }
+      
       // Clean up any meta-commentary that might have slipped through
       generatedContent = rawContent
         .replace(/^(Here's|I've|This document|I'll|Let me|I'm going to|I can|I will).*?[.!?]\s*/gmi, '')
@@ -187,6 +197,8 @@ Generate the content directly without any introductory phrases, meta-commentary,
         .replace(/^(Draft cleared|Content cleared|Document cleared).*?[.!?]\s*/gmi, '')
         .replace(/^(What would you like|Here are|Please share|If you prefer).*?[.!?]\s*/gmi, '')
         .replace(/^(I can|I will|I'll help|I'm here).*?[.!?]\s*/gmi, '')
+        .replace(/\|+/g, '') // Remove pipe characters that cause blue line artifacts
+        .replace(/\s+/g, ' ') // Normalize whitespace
         .trim()
       
       // Special handling for delete/clear requests

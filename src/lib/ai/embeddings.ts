@@ -360,9 +360,10 @@ export async function processDocumentContent(
     console.log('Content length:', content.length)
     console.log('Content preview:', content.substring(0, 100) + '...')
     
-    // Clean and prepare text
+    // Clean and prepare text, excluding image data
     const cleanText = content
-      .replace(/<[^>]*>/g, ' ') // Remove HTML tags
+      .replace(/<img[^>]*>/gi, ' ') // Remove img tags and their content
+      .replace(/<[^>]*>/g, ' ') // Remove remaining HTML tags
       .replace(/\s+/g, ' ') // Normalize whitespace
       .trim()
 

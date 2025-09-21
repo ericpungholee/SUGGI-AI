@@ -229,6 +229,23 @@ export async function processAIChat(request: AIChatRequest): Promise<AIChatRespo
 
       const choice = response.choices[0]
       aiMessage = choice?.message?.content || 'I apologize, but I was unable to generate a response.'
+      
+      // Debug: Check if AI is generating pipe characters
+      if (aiMessage.includes('|')) {
+        console.log('🚨 AI generated pipe characters:', {
+          originalLength: aiMessage.length,
+          pipeCount: (aiMessage.match(/\|/g) || []).length,
+          preview: aiMessage.substring(0, 200) + '...',
+          fullContent: aiMessage
+        })
+      }
+      
+      // Clean up any pipe characters that might cause blue line artifacts
+      aiMessage = aiMessage
+        .replace(/\|+/g, '') // Remove pipe characters that cause blue line artifacts
+        .replace(/\s+/g, ' ') // Normalize whitespace
+        .trim()
+      
       responseTime = Date.now() - startTime
 
       // Extract tool calls if present
