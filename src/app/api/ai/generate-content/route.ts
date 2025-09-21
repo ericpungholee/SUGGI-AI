@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { generateChatCompletion } from '@/lib/ai/openai'
+import { parseTableRequest, generateTableHTML } from '@/lib/ai/table-utils'
+import { processTableEditRequest } from '@/lib/ai/table-editing-utils'
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,29 +41,61 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Extract document content
-    let documentContent = document.plainText || ''
-    if (!documentContent && document.content) {
+    // Extract document content - prioritize HTML content for table editing
+    let documentContent = ''
+    
+    // First try to get HTML content from document.content
+    if (document.content) {
       if (typeof document.content === 'string') {
         documentContent = document.content
       } else if (typeof document.content === 'object' && document.content !== null) {
         const contentObj = document.content as any
-        if (contentObj.blocks && Array.isArray(contentObj.blocks)) {
+        if (contentObj.html) {
+          documentContent = contentObj.html
+        } else if (contentObj.blocks && Array.isArray(contentObj.blocks)) {
+          // Try to reconstruct HTML from blocks
           documentContent = contentObj.blocks
-            .map((block: any) => block.text || '')
-            .join('\n')
+            .map((block: any) => block.html || block.text || '')
+            .join('')
         } else if (contentObj.text) {
           documentContent = contentObj.text
         }
       }
     }
+    
+    // Fallback to plainText if no HTML content found
+    if (!documentContent) {
+      documentContent = document.plainText || ''
+    }
+    
+    console.log('📄 Document content type:', typeof document.content)
+    console.log('📄 Document content preview:', documentContent.substring(0, 200))
 
-    // Check if this is a delete/clear request
-    const isDeleteRequest = message.toLowerCase().includes('delete') || message.toLowerCase().includes('clear')
+    // Check if this is a table editing request for existing tables
+    console.log('🔍 API: Checking for table edit request:', { message, contentLength: documentContent.length })
+    console.log('🔍 API: About to call processTableEditRequest...')
+    const tableEditResult = await processTableEditRequest(message, documentContent)
+    console.log('📊 API: Table edit result:', { isTableEdit: tableEditResult.isTableEdit, hasEditedContent: !!tableEditResult.editedContent })
+    
+    let generatedContent = ''
+    
+    if (tableEditResult.isTableEdit) {
+      // For table editing, return the edited content
+      generatedContent = tableEditResult.editedContent
+      console.log('✅ API: Using table edit result as generated content')
+    } else {
+      // Check if this is a new table request
+      const tableSpec = parseTableRequest(message)
+      if (tableSpec) {
+        // Generate table HTML directly
+        generatedContent = generateTableHTML(tableSpec)
+      } else {
+        // Check if this is a delete/clear request
+        const isDeleteRequest = message.toLowerCase().includes('delete') || message.toLowerCase().includes('clear')
 
-    // Build system prompt for content generation
-    const systemPrompt = isDeleteRequest 
-      ? `You are an AI writing assistant. The user has requested to delete or clear all content from their document.
+        // Build system prompt for content generation
+        const systemPrompt = isDeleteRequest 
+          ? `You are an AI writing assistant. The user has requested to delete or clear all content from their document.
 
 User request: "${message}"
 
@@ -73,7 +107,7 @@ CRITICAL RULES FOR DELETE REQUESTS:
 5. The user wants the document to be empty
 
 Generate empty content (return nothing).`
-      : `You are an AI writing assistant. Generate ONLY the substantive content requested by the user.
+          : `You are an AI writing assistant. Generate ONLY the substantive content requested by the user.
 
 User request: "${message}"
 
@@ -98,33 +132,34 @@ CRITICAL RULES:
 
 Generate the content directly without any introductory phrases, meta-commentary, or explanations.`
 
-    // Generate content using OpenAI
-    const messages = [
-      {
-        role: 'system',
-        content: systemPrompt
-      },
-      {
-        role: 'user',
-        content: message
+        // Generate content using OpenAI
+        const messages = [
+          {
+            role: 'system',
+            content: systemPrompt
+          },
+          {
+            role: 'user',
+            content: message
+          }
+        ]
+
+        const response = await generateChatCompletion(messages, {
+          model: process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo',
+          temperature: 0.7,
+          max_tokens: 2000
+        })
+
+        const choice = response.choices[0]
+        generatedContent = choice?.message?.content || 'I apologize, but I was unable to generate the requested content.'
+        
+        // Clean up the generated content
+        generatedContent = generatedContent
+          .replace(/\|+/g, '') // Remove pipe characters that cause blue line artifacts
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .trim()
       }
-    ]
-
-    
-    const response = await generateChatCompletion(messages, {
-      model: process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo',
-      temperature: 0.7,
-      max_tokens: 2000
-    })
-
-    const choice = response.choices[0]
-    let generatedContent = choice?.message?.content || 'I apologize, but I was unable to generate the requested content.'
-    
-    // Clean up the generated content
-    generatedContent = generatedContent
-      .replace(/\|+/g, '') // Remove pipe characters that cause blue line artifacts
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .trim()
+    }
 
     return NextResponse.json({
       content: generatedContent,

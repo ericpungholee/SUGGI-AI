@@ -2,6 +2,8 @@
 // This file should only be imported in API routes
 
 import { RealTimeEditAgentState, AgentTextBlock, AgentTypingSession, AgentTypingConfig } from '@/types'
+import { parseTableRequest, generateTableHTML } from './table-utils'
+import { processTableEditRequest } from './table-editing-utils'
 
 // Default typing configuration
 const defaultTypingConfig: AgentTypingConfig = {
@@ -125,9 +127,26 @@ export async function processRealTimeEditRequest(
     // Generate content using AI instead of hardcoded templates
     let generatedContent = ''
     
-    try {
-      // Import the generateChatCompletion function
-      const { generateChatCompletion } = await import('@/lib/ai/openai')
+    // Check if this is a table editing request for existing tables
+    console.log('🔍 Checking for table edit request:', { userMessage, contentLength: documentContent.length })
+    console.log('📄 Document content preview:', documentContent.substring(0, 200))
+    const tableEditResult = processTableEditRequest(userMessage, documentContent)
+    console.log('📊 Table edit result:', { isTableEdit: tableEditResult.isTableEdit, hasEditedContent: !!tableEditResult.editedContent })
+    
+    if (tableEditResult.isTableEdit) {
+      // For table editing, we need to replace the entire document content
+      // This will be handled by the frontend to replace the specific table
+      generatedContent = tableEditResult.editedContent
+      console.log('✅ Using table edit result as generated content')
+    } else {
+      // Check if this is a new table request
+      const tableSpec = parseTableRequest(userMessage)
+      if (tableSpec) {
+        generatedContent = generateTableHTML(tableSpec)
+      } else {
+      try {
+        // Import the generateChatCompletion function
+        const { generateChatCompletion } = await import('@/lib/ai/openai')
       
       // Build a system prompt that focuses on natural content generation
       const systemPrompt = `You are an AI writing assistant. Generate ONLY the substantive content requested by the user.
@@ -149,6 +168,14 @@ CRITICAL RULES:
 8. If asked to write about a topic, write directly about that topic
 9. Do NOT include options, suggestions, or prompts for the user
 10. Do NOT include phrases like "What would you like", "Here are options", "Please share"
+
+TABLE GENERATION RULES:
+- When creating tables, use proper HTML markup: <table class="editor-table" data-table="true"><tbody><tr><td contenteditable="true" data-table-cell="true">content</td></tr></tbody></table>
+- For table headers, use <th> elements instead of <td> in the first row
+- Always include the required attributes: class="editor-table", data-table="true", data-table-cell="true"
+- Generate meaningful content for table cells based on the user's request
+- For table dimensions, create the exact number of rows and columns requested
+- Include relevant data or placeholder content that makes sense for the table's purpose
 
 SPECIAL INSTRUCTIONS FOR DELETE/CLEAR REQUESTS:
 - If the user asks to delete or clear content, generate EMPTY content
@@ -211,10 +238,11 @@ Generate the content directly without any introductory phrases, meta-commentary,
         generatedContent = ''
       }
       
-    } catch (error) {
-      console.error('Error generating AI content:', error)
-      // Fallback to a simple response if AI generation fails
-      generatedContent = `I'll help you with that request. Let me generate some content for you.`
+      } catch (error) {
+        console.error('Error generating AI content:', error)
+        // Fallback to a simple response if AI generation fails
+        generatedContent = `I'll help you with that request. Let me generate some content for you.`
+      }
     }
     
     // Create typing blocks

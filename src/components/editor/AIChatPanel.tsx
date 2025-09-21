@@ -30,7 +30,7 @@ export default function AIChatPanel({
     {
       id: '1',
       type: 'assistant',
-      content: 'Hello! I\'m your AI writing assistant. How can I help you with your document today?',
+      content: 'Hello! I\'m your AI writing assistant. I can help you write, edit, and format your document. I can also create and edit tables, improve your writing, and answer questions about your content.\n\nTry asking me to:\n• "Create a 3x4 comparison table"\n• "Make a budget table with headers"\n• "Add a row to the table"\n• "Remove column 2 from the table"\n• "Edit cell in row 1, column 3"\n• "Delete the table"\n• "Edit this paragraph to be more concise"',
       timestamp: new Date()
     }
   ])
@@ -191,6 +191,65 @@ export default function AIChatPanel({
       }
     } catch (error) {
       throw error // Re-throw to be handled by the calling function
+    }
+  }
+
+  // Replace the entire editor content (for table editing)
+  const replaceEditorContent = async (content: string, userMessage: string = '') => {
+    try {
+      // Get the editor element
+      const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement
+      if (!editorElement) {
+        return
+      }
+
+      // Start agent typing mode to prevent auto-save
+      onStartAgentTyping?.()
+
+      // Store the original content to preserve existing content and images
+      const originalContent = editorElement.innerHTML
+      
+      // Focus the editor
+      editorElement.focus()
+
+      // Check if this is a delete/clear request
+      const isDeleteRequest = userMessage.toLowerCase().includes('delete') || 
+                             userMessage.toLowerCase().includes('clear') || 
+                             userMessage.toLowerCase().includes('get rid of')
+
+      if (isDeleteRequest) {
+        // For delete requests, clear the content but preserve the structure
+        editorElement.innerHTML = '<p><br></p>'
+        
+        // Store the pending content for later approval/rejection
+        ;(window as any).pendingAIContent = {
+          content: '',
+          originalContent: originalContent
+        }
+        
+        // Show approval UI in chat
+        showApprovalUI('', userMessage)
+        return
+      }
+
+      // For content replacement, replace the entire content
+      editorElement.innerHTML = content
+      
+      // Store the pending content for later approval/rejection
+      ;(window as any).pendingAIContent = {
+        content: content,
+        originalContent: originalContent
+      }
+      
+      // Show approval UI in chat
+      showApprovalUI(content, userMessage)
+
+    } catch (error) {
+      // Stop agent typing on error
+      onStopAgentTyping?.()
+      
+      // Final cleanup to ensure no pipe characters remain
+      cleanupPipeCharacters()
     }
   }
 
@@ -837,8 +896,19 @@ export default function AIChatPanel({
           // Generate content and type it directly into the editor
           const editContent = await generateEditContent(finalMessage, data.editRequest)
           
-          // Type the content directly into the editor
-          await typeContentIntoEditor(editContent, userMessage.content)
+          // Check if this is a table editing request
+          const isTableEdit = finalMessage.toLowerCase().includes('table') && 
+                             (finalMessage.toLowerCase().includes('edit') || 
+                              finalMessage.toLowerCase().includes('change') || 
+                              finalMessage.toLowerCase().includes('modify'))
+          
+          if (isTableEdit) {
+            // For table editing, replace the entire editor content
+            await replaceEditorContent(editContent, userMessage.content)
+          } else {
+            // For regular editing, type content into the editor
+            await typeContentIntoEditor(editContent, userMessage.content)
+          }
         } catch (error) {
           
           // For delete/clear requests, try to clear the content directly

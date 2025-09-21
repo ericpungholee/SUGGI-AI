@@ -389,6 +389,10 @@ Your capabilities:
 - Detect when users want to edit their documents and offer editing assistance
 - Directly edit and modify document content when requested
 - Make precise text changes, improvements, and corrections
+- Create and edit tables with specified dimensions and content
+- Generate structured data in table format
+- Modify existing tables by adding/removing rows and columns
+- Format data into organized table layouts
 
 Guidelines for accuracy and context usage:
 - ALWAYS prioritize information from the provided context over general knowledge
@@ -426,6 +430,16 @@ IMPORTANT - Editing Requests:
 - Generate natural content that continues or builds upon existing content seamlessly
 - Avoid referencing the document title or structure in a meta way when generating content
 - If asked to delete content, generate empty content or a fresh start
+
+IMPORTANT - Table Creation and Editing:
+- When users request table creation, generate proper HTML table markup with the specified dimensions
+- Use the format: <table class="editor-table" data-table="true"><tbody><tr><td contenteditable="true" data-table-cell="true">content</td></tr></tbody></table>
+- Always include proper table attributes: class="editor-table", data-table="true", data-table-cell="true"
+- For table headers, use <th> elements instead of <td> in the first row
+- When editing existing tables, preserve the table structure and only modify cell content
+- For table modifications (add/remove rows/columns), generate the complete updated table HTML
+- Include meaningful content in table cells based on the user's request
+- Ensure tables are properly formatted and ready for immediate use in the editor
 
 `
 
@@ -580,7 +594,8 @@ function detectEditRequest(message: string, documentId?: string): {
   // Check for content generation requests (should trigger edit mode)
   const contentGenerationIndicators = [
     'write', 'create', 'generate', 'compose', 'draft',
-    'essay', 'article', 'report', 'document', 'content'
+    'essay', 'article', 'report', 'document', 'content',
+    'table', 'chart', 'grid', 'matrix', 'list', 'schedule'
   ]
   
   const isConversational = chatModeIndicators.some(indicator => lowerMessage.includes(indicator))
@@ -601,7 +616,7 @@ function detectEditRequest(message: string, documentId?: string): {
   
   // Define edit keywords
   const strongEditKeywords = [
-    'edit', 'improve', 'fix', 'change', 'revise', 'rewrite', 'enhance',
+    'edit', 'table', 'create table', 'add table', 'insert table', 'make table', 'build table', 'add row', 'add column', 'remove row', 'remove column', 'delete table', 'edit cell', 'improve', 'fix', 'change', 'revise', 'rewrite', 'enhance',
     'grammar', 'clarity', 'tone', 'structure', 'concise', 'expand',
     'tighten', 'professional', 'better', 'polish', 'refine', 'modify',
     'erase', 'clear', 'remove', 'delete', 'correct', 'adjust', 'update',
@@ -661,7 +676,23 @@ function detectEditRequest(message: string, documentId?: string): {
   
   // Extract intent
   let intent = 'improve writing'
-  if (lowerMessage.includes('get rid of') || lowerMessage.includes('rid of') || lowerMessage.includes('eliminate') || lowerMessage.includes('wipe') || lowerMessage.includes('clean out') || lowerMessage.includes('empty')) {
+  if (lowerMessage.includes('table') && (lowerMessage.includes('create') || lowerMessage.includes('add') || lowerMessage.includes('insert') || lowerMessage.includes('make') || lowerMessage.includes('build'))) {
+    intent = 'create table'
+  } else if (lowerMessage.includes('add row') || lowerMessage.includes('insert row')) {
+    intent = 'add table row'
+  } else if (lowerMessage.includes('add column') || lowerMessage.includes('insert column')) {
+    intent = 'add table column'
+  } else if (lowerMessage.includes('remove row') || lowerMessage.includes('delete row')) {
+    intent = 'remove table row'
+  } else if (lowerMessage.includes('remove column') || lowerMessage.includes('delete column')) {
+    intent = 'remove table column'
+  } else if (lowerMessage.includes('delete table') || lowerMessage.includes('remove table')) {
+    intent = 'delete table'
+  } else if (lowerMessage.includes('edit cell') || lowerMessage.includes('change cell') || lowerMessage.includes('update cell')) {
+    intent = 'edit table cell'
+  } else if (lowerMessage.includes('table') && (lowerMessage.includes('edit') || lowerMessage.includes('modify') || lowerMessage.includes('update') || lowerMessage.includes('change'))) {
+    intent = 'edit table'
+  } else if (lowerMessage.includes('get rid of') || lowerMessage.includes('rid of') || lowerMessage.includes('eliminate') || lowerMessage.includes('wipe') || lowerMessage.includes('clean out') || lowerMessage.includes('empty')) {
     intent = 'delete all content'
   } else if (lowerMessage.includes('delete') || lowerMessage.includes('clear') || lowerMessage.includes('remove')) {
     intent = 'delete content'
