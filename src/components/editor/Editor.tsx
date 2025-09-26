@@ -52,7 +52,6 @@ export default function Editor({
     const [isLoading, setIsLoading] = useState(false)
     const [showColorPicker, setShowColorPicker] = useState(false)
     const [isDeleting, setIsDeleting] = useState(false)
-    const [isDragging, setIsDragging] = useState(false)
     const colorPickerRef = useRef<HTMLDivElement>(null)
     const [documentTitle, setDocumentTitle] = useState('Untitled Document')
     
@@ -2384,34 +2383,12 @@ export default function Editor({
         return content.replace(/<[^>]*>/g, '').length
     }
 
-    // Color picker helper functions
-    const hexToHsl = (hex: string) => {
-        const r = parseInt(hex.slice(1, 3), 16) / 255
-        const g = parseInt(hex.slice(3, 5), 16) / 255
-        const b = parseInt(hex.slice(5, 7), 16) / 255
-
-        const max = Math.max(r, g, b)
-        const min = Math.min(r, g, b)
-        let h = 0, s = 0, l = (max + min) / 2
-
-        if (max !== min) {
-            const d = max - min
-            s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
-            switch (max) {
-                case r: h = (g - b) / d + (g < b ? 6 : 0); break
-                case g: h = (b - r) / d + 2; break
-                case b: h = (r - g) / d + 4; break
-            }
-            h /= 6
-        }
-        return [h * 360, s * 100, l * 100]
-    }
-
+    // HSL to Hex conversion helper
     const hslToHex = (h: number, s: number, l: number) => {
-        // Clamp values to valid ranges
-        h = Math.max(0, Math.min(360, h))
-        s = Math.max(0, Math.min(100, s))
-        l = Math.max(0, Math.min(100, l))
+        // Ensure valid numbers
+        h = isNaN(h) ? 0 : Math.max(0, Math.min(360, h))
+        s = isNaN(s) ? 0 : Math.max(0, Math.min(100, s))
+        l = isNaN(l) ? 50 : Math.max(0, Math.min(100, l))
         
         h /= 360
         s /= 100
@@ -2442,95 +2419,41 @@ export default function Editor({
             return hex.length === 1 ? '0' + hex : hex
         }
 
-        const result = `#${toHex(r)}${toHex(g)}${toHex(b)}`
-        return result
+        return `#${toHex(r)}${toHex(g)}${toHex(b)}`
     }
 
-    const getColorPosition = (hex: string) => {
-        const [h, s, l] = hexToHsl(hex)
-        return {
-            x: h / 360 * 100,
-            y: (1 - s) * 100
+    // Hex to HSL conversion helper
+    const hexToHsl = (hex: string) => {
+        if (!hex || !hex.match(/^#[0-9A-Fa-f]{6}$/)) {
+            return [0, 0, 50] // Default to gray if invalid
         }
-    }
-
-    const getBrightnessPosition = (hex: string) => {
-        const [h, s, l] = hexToHsl(hex)
-        return l
-    }
-
-    const handleColorPaletteClick = (e: React.MouseEvent) => {
-        const rect = e.currentTarget.getBoundingClientRect()
-        const x = (e.clientX - rect.left) / rect.width
-        const y = (e.clientY - rect.top) / rect.height
         
-        const hue = x * 360
-        const saturation = (1 - y) * 100
-        const lightness = getBrightnessPosition(formatState.color)
-        
-        const newColor = hslToHex(hue, saturation, lightness)
-        handleFormat('foreColor', newColor)
-    }
+        const r = parseInt(hex.slice(1, 3), 16) / 255
+        const g = parseInt(hex.slice(3, 5), 16) / 255
+        const b = parseInt(hex.slice(5, 7), 16) / 255
 
-    const handleBrightnessSliderClick = (e: React.MouseEvent) => {
-        const rect = e.currentTarget.getBoundingClientRect()
-        const x = (e.clientX - rect.left) / rect.width
-        const lightness = x * 100
-        
-        const [h, s] = hexToHsl(formatState.color)
-        const newColor = hslToHex(h, s, lightness)
-        handleFormat('foreColor', newColor)
-    }
+        const max = Math.max(r, g, b)
+        const min = Math.min(r, g, b)
+        let h = 0, s = 0, l = (max + min) / 2
 
-    // Drag functionality for color picker
-    useEffect(() => {
-        const handleMouseMove = (e: MouseEvent) => {
-            if (!isDragging) return
-            
-            // Find which element is being dragged
-            const paletteElement = document.querySelector('[data-color-palette]') as HTMLElement
-            const brightnessElement = document.querySelector('[data-brightness-slider]') as HTMLElement
-            
-            if (paletteElement && paletteElement.getAttribute('data-drag-target') === 'palette') {
-                const rect = paletteElement.getBoundingClientRect()
-                const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-                const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
-                
-                const hue = x * 360
-                const saturation = (1 - y) * 100
-                const lightness = getBrightnessPosition(formatState.color)
-                
-                const newColor = hslToHex(hue, saturation, lightness)
-                handleFormat('foreColor', newColor)
-            } else if (brightnessElement && brightnessElement.getAttribute('data-drag-target') === 'brightness') {
-                const rect = brightnessElement.getBoundingClientRect()
-                const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-                const lightness = x * 100
-                
-                const [h, s] = hexToHsl(formatState.color)
-                const newColor = hslToHex(h, s, lightness)
-                handleFormat('foreColor', newColor)
+        if (max !== min) {
+            const d = max - min
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+            switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break
+                case g: h = (b - r) / d + 2; break
+                case b: h = (r - g) / d + 4; break
             }
+            h /= 6
         }
+        
+        return [
+            Math.round(h * 360),
+            Math.round(s * 100),
+            Math.round(l * 100)
+        ]
+    }
 
-        const handleMouseUp = () => {
-            setIsDragging(false)
-            // Clear drag targets
-            const paletteElement = document.querySelector('[data-color-palette]') as HTMLElement
-            const brightnessElement = document.querySelector('[data-brightness-slider]') as HTMLElement
-            if (paletteElement) paletteElement.removeAttribute('data-drag-target')
-            if (brightnessElement) brightnessElement.removeAttribute('data-drag-target')
-        }
-
-        if (isDragging) {
-            document.addEventListener('mousemove', handleMouseMove)
-            document.addEventListener('mouseup', handleMouseUp)
-            return () => {
-                document.removeEventListener('mousemove', handleMouseMove)
-                document.removeEventListener('mouseup', handleMouseUp)
-            }
-        }
-    }, [isDragging, formatState.color])
 
     const fontSizes = ['12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px', '36px', '48px']
     const fontFamilies = [
@@ -2795,11 +2718,7 @@ export default function Editor({
                         title="Text Color"
                         suppressHydrationWarning
                     >
-                        <Palette className="w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors" />
-                        <div 
-                            className="w-3 h-3 rounded-full border border-gray-300 pointer-events-none"
-                            style={{ backgroundColor: formatState.color }}
-                        />
+                        <Palette className="w-4 h-4 transition-colors" style={{ color: formatState.color }} />
                     </button>
                     
                     {showColorPicker && (
@@ -2827,82 +2746,41 @@ export default function Editor({
                                 </div>
                             </div>
                             
+                            {/* Simple HTML Color Picker */}
                             <div className="border-t border-gray-200 pt-3">
                                 <label className="block text-xs font-medium text-gray-700 mb-2">Custom Color</label>
                                 <div className="space-y-3">
-                                    {/* Color Palette */}
-                                    <div className="relative">
-                                        <div 
-                                            className="w-full h-32 rounded-lg border border-gray-300 cursor-crosshair relative overflow-hidden"
-                                            style={{ 
-                                                background: 'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)'
-                                            }}
-                                            data-color-palette
-                                            onMouseDown={(e) => {
-                                                e.preventDefault()
-                                                e.stopPropagation()
-                                                setIsDragging(true)
-                                                // Set drag target for the effect
-                                                const paletteElement = e.currentTarget as HTMLElement
-                                                paletteElement.setAttribute('data-drag-target', 'palette')
-                                                handleColorPaletteClick(e)
-                                            }}
-                                        >
-                                            <div 
-                                                className="absolute w-3 h-3 border-2 border-white rounded-full shadow-lg pointer-events-none"
-                                                style={{ 
-                                                    left: `${getColorPosition(formatState.color).x}%`, 
-                                                    top: `${getColorPosition(formatState.color).y}%`,
-                                                    transform: 'translate(-50%, -50%)'
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Brightness Slider */}
-                                    <div className="relative">
-                                        <div 
-                                            className="w-full h-6 rounded border border-gray-300 cursor-pointer"
-                                            style={{ 
-                                                background: `linear-gradient(to right, #000000, ${formatState.color}, #ffffff)`
-                                            }}
-                                            data-brightness-slider
-                                            onMouseDown={(e) => {
-                                                e.preventDefault()
-                                                e.stopPropagation()
-                                                setIsDragging(true)
-                                                // Set drag target for the effect
-                                                const brightnessElement = e.currentTarget as HTMLElement
-                                                brightnessElement.setAttribute('data-drag-target', 'brightness')
-                                                handleBrightnessSliderClick(e)
-                                            }}
-                                        >
-                                            <div 
-                                                className="absolute w-3 h-6 border-2 border-white rounded shadow-lg pointer-events-none"
-                                                style={{ 
-                                                    left: `${getBrightnessPosition(formatState.color)}%`,
-                                                    transform: 'translateX(-50%)'
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Color Preview and Hex Input */}
+                                    {/* HTML Color Input without eyedropper */}
                                     <div className="flex items-center gap-2">
-                                        <div 
-                                            className="w-8 h-8 rounded border border-gray-300"
-                                            style={{ backgroundColor: formatState.color }}
+                                        <input
+                                            type="color"
+                                            value={formatState.color}
+                                            onChange={(e) => handleFormat('foreColor', e.target.value)}
+                                            className="w-8 h-8 rounded border border-gray-300 cursor-pointer"
+                                            style={{ 
+                                                WebkitAppearance: 'none',
+                                                appearance: 'none',
+                                                background: 'none',
+                                                border: '1px solid #d1d5db',
+                                                borderRadius: '4px'
+                                            }}
                                         />
                                         <input
                                             type="text"
                                             value={formatState.color}
-                                            onChange={(e) => handleFormat('foreColor', e.target.value)}
+                                            onChange={(e) => {
+                                                const value = e.target.value
+                                                if (value.match(/^#[0-9A-Fa-f]{6}$/)) {
+                                                    handleFormat('foreColor', value)
+                                                }
+                                            }}
                                             className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                                             placeholder="#000000"
                                         />
                                     </div>
                                 </div>
                             </div>
+                            
                         </div>
                     )}
                 </div>
