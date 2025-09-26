@@ -986,52 +986,62 @@ export default function AIChatPanel({
       }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center shadow-sm">
-            <Feather className="w-4 h-4 text-white" />
+      <div className="border-b border-gray-200 bg-white">
+        {/* Title Row */}
+        <div className="flex items-center justify-between p-4 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center shadow-sm">
+              <Feather className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900 text-lg">Suggi AI</h3>
+            </div>
           </div>
-          <div>
-            <h3 className="font-semibold text-gray-900">Suggi AI</h3>
-            <p className="text-xs text-gray-600">
+          
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Close"
+          >
+            <X className="w-5 h-5 text-gray-900" />
+          </button>
+        </div>
+        
+        {/* Status and Controls Row */}
+        <div className="px-4 pb-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-600">
               {documentId ? 'Document context enabled' : 'Writing helper'}
               {useWebSearch && ' • Web search enabled'}
               {connectedDocuments.length > 0 && ` • ${connectedDocuments.length} additional docs`}
             </p>
+            
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  setShowDocumentSelector(!showDocumentSelector)
+                  if (!showDocumentSelector) {
+                    loadAvailableDocuments()
+                  }
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Connect additional documents"
+              >
+                <Paperclip className="w-4 h-4 text-gray-900" />
+              </button>
+              <button
+                onClick={() => setUseWebSearch(!useWebSearch)}
+                className={`p-2 rounded-lg transition-colors ${
+                  useWebSearch 
+                    ? 'bg-gray-900 text-white' 
+                    : 'hover:bg-gray-100 text-gray-900'
+                }`}
+                title={useWebSearch ? 'Web search enabled' : 'Enable web search'}
+              >
+                <Globe className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              setShowDocumentSelector(!showDocumentSelector)
-              if (!showDocumentSelector) {
-                loadAvailableDocuments()
-              }
-            }}
-            className="p-1.5 hover:bg-gray-100 rounded transition-colors"
-            title="Connect additional documents"
-          >
-            <Paperclip className="w-4 h-4 text-gray-900" />
-          </button>
-          <button
-            onClick={() => setUseWebSearch(!useWebSearch)}
-            className={`p-1.5 rounded transition-colors ${
-              useWebSearch 
-                ? 'bg-gray-900 text-white' 
-                : 'hover:bg-gray-100 text-gray-900'
-            }`}
-            title={useWebSearch ? 'Web search enabled' : 'Enable web search'}
-          >
-            <Globe className="w-4 h-4" />
-          </button>
-          <button
-            onClick={onClose}
-            className="p-1.5 hover:bg-gray-200 rounded transition-colors"
-            title="Close"
-          >
-            <X className="w-4 h-4 text-gray-900" />
-          </button>
         </div>
       </div>
 

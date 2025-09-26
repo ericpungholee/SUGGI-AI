@@ -6,7 +6,7 @@ import {
     AlignLeft, AlignCenter, AlignRight, AlignJustify,
     Code, Highlighter, Undo2, Redo2,
     Sparkles, Palette, Type, Subscript, Superscript,
-    ChevronDown, Table
+    ChevronDown, Table, Indent, Outdent, MoreHorizontal
 } from "lucide-react";
 import { useState } from "react";
 import { FormatState, ToolbarProps, ToolbarButton } from "@/types";
@@ -144,6 +144,23 @@ export default function Toolbar({ position, onFormat, formatState, onUndo, onRed
         },
     ]
 
+    const indentationButtons = [
+        { 
+            icon: Outdent, 
+            command: 'outdent', 
+            tooltip: 'Decrease Indent', 
+            shortcut: 'Ctrl+[',
+            active: false
+        },
+        { 
+            icon: Indent, 
+            command: 'indent', 
+            tooltip: 'Increase Indent', 
+            shortcut: 'Ctrl+]',
+            active: false
+        },
+    ]
+
     const specialFormatButtons = [
         { 
             icon: Quote, 
@@ -217,26 +234,26 @@ export default function Toolbar({ position, onFormat, formatState, onUndo, onRed
                     <button
                         key={index}
                         onClick={() => handleCommand(button.command, button.value, button.needsInput)}
-                        className={`p-2 rounded-lg transition-all duration-200 hover:scale-105 group relative ${
+                        className={`p-1.5 md:p-2 rounded-md transition-all duration-150 hover:bg-gray-100 group relative ${
                             button.active 
-                                ? 'bg-purple-100 text-purple-700' 
-                                : 'hover:bg-stone-light'
+                                ? 'bg-blue-100 text-blue-700 shadow-sm' 
+                                : 'hover:bg-gray-50'
                         }`}
                         title={button.tooltip}
                     >
                         <Icon className={`w-4 h-4 transition-colors ${
                             button.active 
-                                ? 'text-purple-700' 
-                                : 'text-ink group-hover:text-purple-600'
+                                ? 'text-blue-700' 
+                                : 'text-gray-700 group-hover:text-blue-600'
                         }`} />
                         
                         {/* Tooltip */}
-                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-ink text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
+                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50 shadow-lg">
                             {button.tooltip}
                             {button.shortcut && (
                                 <span className="block text-xs opacity-75 mt-1">{button.shortcut}</span>
                             )}
-                            <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-ink"></div>
+                            <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
                         </div>
                     </button>
                 )
@@ -246,69 +263,76 @@ export default function Toolbar({ position, onFormat, formatState, onUndo, onRed
 
     return (
         <div
-            className='fixed z-50 bg-white border border-brown-light/20 rounded-xl shadow-2xl p-3 animate-fadeIn backdrop-blur-sm toolbar-container'
+            className='fixed z-50 bg-white border border-gray-200 rounded-lg shadow-xl p-2 animate-fadeIn backdrop-blur-sm toolbar-container'
             style={{
                 top: `${position.top}px`,
                 left: `${position.left}px`,
                 transform: 'translateX(-50%)',
+                minWidth: '320px',
+                maxWidth: '90vw'
             }}
         >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 md:gap-2 overflow-x-auto">
                 {/* Undo/Redo */}
                 <div className="flex items-center gap-1">
                     <button
                         onClick={onUndo}
                         disabled={!canUndo}
-                        className="p-2 hover:bg-stone-light rounded-lg transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed group relative"
+                        className="p-1.5 md:p-2 hover:bg-gray-100 rounded-md transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed group relative"
                         title="Undo (Ctrl+Z)"
                     >
-                        <Undo2 className="w-4 h-4 text-ink group-hover:text-purple-600 transition-colors" />
+                        <Undo2 className="w-4 h-4 text-gray-700 group-hover:text-blue-600 transition-colors" />
                     </button>
                     <button
                         onClick={onRedo}
                         disabled={!canRedo}
-                        className="p-2 hover:bg-stone-light rounded-lg transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed group relative"
+                        className="p-1.5 md:p-2 hover:bg-gray-100 rounded-md transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed group relative"
                         title="Redo (Ctrl+Shift+Z)"
                     >
-                        <Redo2 className="w-4 h-4 text-ink group-hover:text-purple-600 transition-colors" />
+                        <Redo2 className="w-4 h-4 text-gray-700 group-hover:text-blue-600 transition-colors" />
                     </button>
                 </div>
                 
-                <div className="w-px h-6 bg-brown-light/20"></div>
+                <div className="w-px h-6 bg-gray-300"></div>
 
                 {/* Text Formatting */}
                 {renderButtonGroup(textFormatButtons, 'text')}
                 
-                <div className="w-px h-6 bg-brown-light/20"></div>
+                <div className="w-px h-6 bg-gray-300"></div>
                 
                 {/* Headings */}
                 {renderButtonGroup(headingButtons, 'headings')}
                 
-                <div className="w-px h-6 bg-brown-light/20"></div>
+                <div className="w-px h-6 bg-gray-300"></div>
                 
                 {/* Lists */}
                 {renderButtonGroup(listButtons, 'lists')}
                 
-                <div className="w-px h-6 bg-brown-light/20"></div>
+                <div className="w-px h-6 bg-gray-300"></div>
                 
                 {/* Alignment */}
                 {renderButtonGroup(alignmentButtons, 'alignment')}
                 
-                <div className="w-px h-6 bg-brown-light/20"></div>
+                <div className="w-px h-6 bg-gray-300"></div>
+                
+                {/* Indentation */}
+                {renderButtonGroup(indentationButtons, 'indentation')}
+                
+                <div className="w-px h-6 bg-gray-300"></div>
                 
                 {/* Special Formats */}
                 {renderButtonGroup(specialFormatButtons, 'special')}
                 
-                <div className="w-px h-6 bg-brown-light/20"></div>
+                <div className="w-px h-6 bg-gray-300"></div>
 
                 {/* Text Color */}
                 <div className="relative">
                     <button
                         onClick={() => setShowColorPicker(!showColorPicker)}
-                        className="p-2 hover:bg-stone-light rounded-lg transition-all duration-200 hover:scale-105 group relative"
+                        className="p-2 hover:bg-gray-100 rounded-md transition-all duration-150 group relative"
                         title="Text Color"
                     >
-                        <Palette className="w-4 h-4 text-ink group-hover:text-purple-600 transition-colors" />
+                        <Palette className="w-4 h-4 text-gray-700 group-hover:text-blue-600 transition-colors" />
                         <div 
                             className="w-3 h-3 rounded-full border border-gray-300 mt-1"
                             style={{ backgroundColor: formatState.color }}
@@ -340,12 +364,12 @@ export default function Toolbar({ position, onFormat, formatState, onUndo, onRed
                 <div className="relative">
                     <button
                         onClick={() => setShowFontSizePicker(!showFontSizePicker)}
-                        className="p-2 hover:bg-stone-light rounded-lg transition-all duration-200 hover:scale-105 group relative flex items-center gap-1"
+                        className="p-2 hover:bg-gray-100 rounded-md transition-all duration-150 group relative flex items-center gap-1"
                         title="Font Size"
                     >
-                        <Type className="w-4 h-4 text-ink group-hover:text-purple-600 transition-colors" />
-                        <span className="text-xs text-ink">{formatState.fontSize}</span>
-                        <ChevronDown className="w-3 h-3 text-ink" />
+                        <Type className="w-4 h-4 text-gray-700 group-hover:text-blue-600 transition-colors" />
+                        <span className="text-xs text-gray-700">{formatState.fontSize}</span>
+                        <ChevronDown className="w-3 h-3 text-gray-700" />
                     </button>
                     
                     {showFontSizePicker && (
@@ -371,12 +395,12 @@ export default function Toolbar({ position, onFormat, formatState, onUndo, onRed
                 <div className="relative">
                     <button
                         onClick={() => setShowFontFamilyPicker(!showFontFamilyPicker)}
-                        className="p-2 hover:bg-stone-light rounded-lg transition-all duration-200 hover:scale-105 group relative flex items-center gap-1"
+                        className="p-2 hover:bg-gray-100 rounded-md transition-all duration-150 group relative flex items-center gap-1"
                         title="Font Family"
                     >
-                        <Type className="w-4 h-4 text-ink group-hover:text-purple-600 transition-colors" />
-                        <span className="text-xs text-ink">{fontFamilies.find(f => f.value === formatState.fontFamily)?.name || 'Font'}</span>
-                        <ChevronDown className="w-3 h-3 text-ink" />
+                        <Type className="w-4 h-4 text-gray-700 group-hover:text-blue-600 transition-colors" />
+                        <span className="text-xs text-gray-700">{fontFamilies.find(f => f.value === formatState.fontFamily)?.name || 'Font'}</span>
+                        <ChevronDown className="w-3 h-3 text-gray-700" />
                     </button>
                     
                     {showFontFamilyPicker && (
@@ -398,20 +422,20 @@ export default function Toolbar({ position, onFormat, formatState, onUndo, onRed
                     )}
                 </div>
                 
-                <div className="w-px h-6 bg-brown-light/20"></div>
+                <div className="w-px h-6 bg-gray-300"></div>
                 
                 {/* AI Writing Assistant */}
                 <button
                     onClick={onAIClick}
-                    className="p-2 hover:bg-purple-50 rounded-lg transition-all duration-200 hover:scale-105 group relative"
+                    className="p-2 hover:bg-blue-50 rounded-md transition-all duration-150 group relative"
                     title="AI Writing Assistant"
                 >
-                    <Sparkles className="w-4 h-4 text-purple-600 group-hover:text-purple-700" />
+                    <Sparkles className="w-4 h-4 text-blue-600 group-hover:text-blue-700" />
                     
                     {/* Tooltip */}
-                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-ink text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap">
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">
                         AI Writing Assistant
-                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-ink"></div>
+                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
                     </div>
                 </button>
             </div>

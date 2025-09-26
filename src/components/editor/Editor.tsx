@@ -50,7 +50,10 @@ export default function Editor({
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
     const [isLoading, setIsLoading] = useState(false)
+    const [showColorPicker, setShowColorPicker] = useState(false)
     const [isDeleting, setIsDeleting] = useState(false)
+    const [isDragging, setIsDragging] = useState(false)
+    const colorPickerRef = useRef<HTMLDivElement>(null)
     const [documentTitle, setDocumentTitle] = useState('Untitled Document')
     
     const [originalTitle, setOriginalTitle] = useState('Untitled Document')
@@ -1195,10 +1198,67 @@ export default function Editor({
 
     const applyBackgroundColor = (color: string, range: Range): boolean => {
         try {
-            const mark = document.createElement('mark')
-            mark.style.backgroundColor = color
-            range.surroundContents(mark)
-            return true
+            // Check if the range can be surrounded (only text nodes)
+            if (range.collapsed) {
+                // If no selection, apply to the current element
+                const container = range.commonAncestorContainer
+                if (container.nodeType === Node.TEXT_NODE) {
+                    const textNode = container as Text
+                    const mark = document.createElement('mark')
+                    mark.style.backgroundColor = color
+                    textNode.parentNode?.insertBefore(mark, textNode)
+                    mark.appendChild(textNode)
+                } else if (container.nodeType === Node.ELEMENT_NODE) {
+                    (container as Element).style.backgroundColor = color
+                }
+                return true
+            }
+
+            // Try to surround contents first
+            try {
+                const mark = document.createElement('mark')
+                mark.style.backgroundColor = color
+                range.surroundContents(mark)
+                return true
+            } catch (surroundError) {
+                // If surroundContents fails, walk through text nodes and wrap them individually
+                const walker = document.createTreeWalker(
+                    range.commonAncestorContainer,
+                    NodeFilter.SHOW_TEXT,
+                    {
+                        acceptNode: (node) => {
+                            return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
+                        }
+                    }
+                )
+
+                const textNodes: Text[] = []
+                let node
+                while (node = walker.nextNode()) {
+                    textNodes.push(node as Text)
+                }
+
+                if (textNodes.length === 0) {
+                    // No text nodes found, apply to the container element
+                    const container = range.commonAncestorContainer
+                    if (container.nodeType === Node.ELEMENT_NODE) {
+                        (container as Element).style.backgroundColor = color
+                    }
+                    return true
+                }
+
+                // Wrap each text node individually
+                textNodes.forEach(textNode => {
+                    if (textNode.textContent && textNode.textContent.trim()) {
+                        const mark = document.createElement('mark')
+                        mark.style.backgroundColor = color
+                        textNode.parentNode?.insertBefore(mark, textNode)
+                        mark.appendChild(textNode)
+                    }
+                })
+
+                return true
+            }
         } catch (error) {
             console.error('Failed to apply background color:', error)
             return false
@@ -1207,10 +1267,67 @@ export default function Editor({
 
     const applyTextColor = (color: string, range: Range): boolean => {
         try {
-            const span = document.createElement('span')
-            span.style.color = color
-            range.surroundContents(span)
-            return true
+            // Check if the range can be surrounded (only text nodes)
+            if (range.collapsed) {
+                // If no selection, apply to the current element
+                const container = range.commonAncestorContainer
+                if (container.nodeType === Node.TEXT_NODE) {
+                    const textNode = container as Text
+                    const span = document.createElement('span')
+                    span.style.color = color
+                    textNode.parentNode?.insertBefore(span, textNode)
+                    span.appendChild(textNode)
+                } else if (container.nodeType === Node.ELEMENT_NODE) {
+                    (container as Element).style.color = color
+                }
+                return true
+            }
+
+            // Try to surround contents first
+            try {
+                const span = document.createElement('span')
+                span.style.color = color
+                range.surroundContents(span)
+                return true
+            } catch (surroundError) {
+                // If surroundContents fails, walk through text nodes and wrap them individually
+                const walker = document.createTreeWalker(
+                    range.commonAncestorContainer,
+                    NodeFilter.SHOW_TEXT,
+                    {
+                        acceptNode: (node) => {
+                            return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
+                        }
+                    }
+                )
+
+                const textNodes: Text[] = []
+                let node
+                while (node = walker.nextNode()) {
+                    textNodes.push(node as Text)
+                }
+
+                if (textNodes.length === 0) {
+                    // No text nodes found, apply to the container element
+                    const container = range.commonAncestorContainer
+                    if (container.nodeType === Node.ELEMENT_NODE) {
+                        (container as Element).style.color = color
+                    }
+                    return true
+                }
+
+                // Wrap each text node individually
+                textNodes.forEach(textNode => {
+                    if (textNode.textContent && textNode.textContent.trim()) {
+                        const span = document.createElement('span')
+                        span.style.color = color
+                        textNode.parentNode?.insertBefore(span, textNode)
+                        span.appendChild(textNode)
+                    }
+                })
+
+                return true
+            }
         } catch (error) {
             console.error('Failed to apply text color:', error)
             return false
@@ -1219,10 +1336,61 @@ export default function Editor({
 
     const applyFontSize = (size: string, range: Range): boolean => {
         try {
-            const span = document.createElement('span')
-            span.style.fontSize = size
-            range.surroundContents(span)
-            return true
+            if (range.collapsed) {
+                const container = range.commonAncestorContainer
+                if (container.nodeType === Node.TEXT_NODE) {
+                    const textNode = container as Text
+                    const span = document.createElement('span')
+                    span.style.fontSize = size
+                    textNode.parentNode?.insertBefore(span, textNode)
+                    span.appendChild(textNode)
+                } else if (container.nodeType === Node.ELEMENT_NODE) {
+                    (container as Element).style.fontSize = size
+                }
+                return true
+            }
+
+            try {
+                const span = document.createElement('span')
+                span.style.fontSize = size
+                range.surroundContents(span)
+                return true
+            } catch (surroundError) {
+                const walker = document.createTreeWalker(
+                    range.commonAncestorContainer,
+                    NodeFilter.SHOW_TEXT,
+                    {
+                        acceptNode: (node) => {
+                            return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
+                        }
+                    }
+                )
+
+                const textNodes: Text[] = []
+                let node
+                while (node = walker.nextNode()) {
+                    textNodes.push(node as Text)
+                }
+
+                if (textNodes.length === 0) {
+                    const container = range.commonAncestorContainer
+                    if (container.nodeType === Node.ELEMENT_NODE) {
+                        (container as Element).style.fontSize = size
+                    }
+                    return true
+                }
+
+                textNodes.forEach(textNode => {
+                    if (textNode.textContent && textNode.textContent.trim()) {
+                        const span = document.createElement('span')
+                        span.style.fontSize = size
+                        textNode.parentNode?.insertBefore(span, textNode)
+                        span.appendChild(textNode)
+                    }
+                })
+
+                return true
+            }
         } catch (error) {
             console.error('Failed to apply font size:', error)
             return false
@@ -1231,10 +1399,61 @@ export default function Editor({
 
     const applyFontFamily = (family: string, range: Range): boolean => {
         try {
-            const span = document.createElement('span')
-            span.style.fontFamily = family
-            range.surroundContents(span)
-            return true
+            if (range.collapsed) {
+                const container = range.commonAncestorContainer
+                if (container.nodeType === Node.TEXT_NODE) {
+                    const textNode = container as Text
+                    const span = document.createElement('span')
+                    span.style.fontFamily = family
+                    textNode.parentNode?.insertBefore(span, textNode)
+                    span.appendChild(textNode)
+                } else if (container.nodeType === Node.ELEMENT_NODE) {
+                    (container as Element).style.fontFamily = family
+                }
+                return true
+            }
+
+            try {
+                const span = document.createElement('span')
+                span.style.fontFamily = family
+                range.surroundContents(span)
+                return true
+            } catch (surroundError) {
+                const walker = document.createTreeWalker(
+                    range.commonAncestorContainer,
+                    NodeFilter.SHOW_TEXT,
+                    {
+                        acceptNode: (node) => {
+                            return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
+                        }
+                    }
+                )
+
+                const textNodes: Text[] = []
+                let node
+                while (node = walker.nextNode()) {
+                    textNodes.push(node as Text)
+                }
+
+                if (textNodes.length === 0) {
+                    const container = range.commonAncestorContainer
+                    if (container.nodeType === Node.ELEMENT_NODE) {
+                        (container as Element).style.fontFamily = family
+                    }
+                    return true
+                }
+
+                textNodes.forEach(textNode => {
+                    if (textNode.textContent && textNode.textContent.trim()) {
+                        const span = document.createElement('span')
+                        span.style.fontFamily = family
+                        textNode.parentNode?.insertBefore(span, textNode)
+                        span.appendChild(textNode)
+                    }
+                })
+
+                return true
+            }
         } catch (error) {
             console.error('Failed to apply font family:', error)
             return false
@@ -2142,6 +2361,20 @@ export default function Editor({
         return () => document.removeEventListener('selectionchange', handleSelectionChange)
     }, [updateFormatState, resetFormatState, mounted])
 
+    // Close color picker when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (colorPickerRef.current && !colorPickerRef.current.contains(event.target as Node)) {
+                setShowColorPicker(false)
+            }
+        }
+
+        if (showColorPicker) {
+            document.addEventListener('mousedown', handleClickOutside)
+            return () => document.removeEventListener('mousedown', handleClickOutside)
+        }
+    }, [showColorPicker])
+
     const getWordCount = () => {
         const text = content.replace(/<[^>]*>/g, '')
         return text.split(/\s+/).filter(Boolean).length
@@ -2150,6 +2383,154 @@ export default function Editor({
     const getCharCount = () => {
         return content.replace(/<[^>]*>/g, '').length
     }
+
+    // Color picker helper functions
+    const hexToHsl = (hex: string) => {
+        const r = parseInt(hex.slice(1, 3), 16) / 255
+        const g = parseInt(hex.slice(3, 5), 16) / 255
+        const b = parseInt(hex.slice(5, 7), 16) / 255
+
+        const max = Math.max(r, g, b)
+        const min = Math.min(r, g, b)
+        let h = 0, s = 0, l = (max + min) / 2
+
+        if (max !== min) {
+            const d = max - min
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+            switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break
+                case g: h = (b - r) / d + 2; break
+                case b: h = (r - g) / d + 4; break
+            }
+            h /= 6
+        }
+        return [h * 360, s * 100, l * 100]
+    }
+
+    const hslToHex = (h: number, s: number, l: number) => {
+        // Clamp values to valid ranges
+        h = Math.max(0, Math.min(360, h))
+        s = Math.max(0, Math.min(100, s))
+        l = Math.max(0, Math.min(100, l))
+        
+        h /= 360
+        s /= 100
+        l /= 100
+
+        const hue2rgb = (p: number, q: number, t: number) => {
+            if (t < 0) t += 1
+            if (t > 1) t -= 1
+            if (t < 1/6) return p + (q - p) * 6 * t
+            if (t < 1/2) return q
+            if (t < 2/3) return p + (q - p) * (2/3 - t) * 6
+            return p
+        }
+
+        let r, g, b
+        if (s === 0) {
+            r = g = b = l
+        } else {
+            const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+            const p = 2 * l - q
+            r = hue2rgb(p, q, h + 1/3)
+            g = hue2rgb(p, q, h)
+            b = hue2rgb(p, q, h - 1/3)
+        }
+
+        const toHex = (c: number) => {
+            const hex = Math.round(Math.max(0, Math.min(1, c)) * 255).toString(16)
+            return hex.length === 1 ? '0' + hex : hex
+        }
+
+        const result = `#${toHex(r)}${toHex(g)}${toHex(b)}`
+        return result
+    }
+
+    const getColorPosition = (hex: string) => {
+        const [h, s, l] = hexToHsl(hex)
+        return {
+            x: h / 360 * 100,
+            y: (1 - s) * 100
+        }
+    }
+
+    const getBrightnessPosition = (hex: string) => {
+        const [h, s, l] = hexToHsl(hex)
+        return l
+    }
+
+    const handleColorPaletteClick = (e: React.MouseEvent) => {
+        const rect = e.currentTarget.getBoundingClientRect()
+        const x = (e.clientX - rect.left) / rect.width
+        const y = (e.clientY - rect.top) / rect.height
+        
+        const hue = x * 360
+        const saturation = (1 - y) * 100
+        const lightness = getBrightnessPosition(formatState.color)
+        
+        const newColor = hslToHex(hue, saturation, lightness)
+        handleFormat('foreColor', newColor)
+    }
+
+    const handleBrightnessSliderClick = (e: React.MouseEvent) => {
+        const rect = e.currentTarget.getBoundingClientRect()
+        const x = (e.clientX - rect.left) / rect.width
+        const lightness = x * 100
+        
+        const [h, s] = hexToHsl(formatState.color)
+        const newColor = hslToHex(h, s, lightness)
+        handleFormat('foreColor', newColor)
+    }
+
+    // Drag functionality for color picker
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDragging) return
+            
+            // Find which element is being dragged
+            const paletteElement = document.querySelector('[data-color-palette]') as HTMLElement
+            const brightnessElement = document.querySelector('[data-brightness-slider]') as HTMLElement
+            
+            if (paletteElement && paletteElement.getAttribute('data-drag-target') === 'palette') {
+                const rect = paletteElement.getBoundingClientRect()
+                const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
+                
+                const hue = x * 360
+                const saturation = (1 - y) * 100
+                const lightness = getBrightnessPosition(formatState.color)
+                
+                const newColor = hslToHex(hue, saturation, lightness)
+                handleFormat('foreColor', newColor)
+            } else if (brightnessElement && brightnessElement.getAttribute('data-drag-target') === 'brightness') {
+                const rect = brightnessElement.getBoundingClientRect()
+                const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                const lightness = x * 100
+                
+                const [h, s] = hexToHsl(formatState.color)
+                const newColor = hslToHex(h, s, lightness)
+                handleFormat('foreColor', newColor)
+            }
+        }
+
+        const handleMouseUp = () => {
+            setIsDragging(false)
+            // Clear drag targets
+            const paletteElement = document.querySelector('[data-color-palette]') as HTMLElement
+            const brightnessElement = document.querySelector('[data-brightness-slider]') as HTMLElement
+            if (paletteElement) paletteElement.removeAttribute('data-drag-target')
+            if (brightnessElement) brightnessElement.removeAttribute('data-drag-target')
+        }
+
+        if (isDragging) {
+            document.addEventListener('mousemove', handleMouseMove)
+            document.addEventListener('mouseup', handleMouseUp)
+            return () => {
+                document.removeEventListener('mousemove', handleMouseMove)
+                document.removeEventListener('mouseup', handleMouseUp)
+            }
+        }
+    }, [isDragging, formatState.color])
 
     const fontSizes = ['12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px', '36px', '48px']
     const fontFamilies = [
@@ -2186,7 +2567,7 @@ export default function Editor({
     }
 
     return (
-            <div className="flex-1 flex flex-col relative">
+            <div className={`flex-1 flex flex-col relative transition-all duration-300 ease-in-out`} style={{ marginRight: isAIChatOpen ? `${aiChatWidth}px` : '0px' }}>
             {/* Fixed Toolbar - Google Docs Style */}
             <div className="h-14 editor-toolbar flex items-center px-4 gap-2">
                 {/* Back Button */}
@@ -2226,11 +2607,11 @@ export default function Editor({
                 <div className="w-px h-6 bg-gray-300"></div>
 
                                  {/* Document Title */}
-                 <div className="flex-1 min-w-0 mx-6">
+                 <div className="flex-1 min-w-0 ml-2 mr-2" style={{ minWidth: '180px', maxWidth: '350px' }}>
                      <div className="relative z-10">
 
                          {isLoading ? (
-                             <div className="w-full px-4 py-2.5 text-lg font-medium text-gray-400 bg-gray-50 rounded animate-pulse">
+                             <div className="w-full px-3 py-2.5 text-xl font-semibold text-gray-400 bg-gray-50 rounded animate-pulse">
                                  Loading...
                              </div>
                          ) : (
@@ -2273,7 +2654,7 @@ export default function Editor({
                                          e.currentTarget.blur()
                                      }
                                  }}
-                                 className={`w-full px-4 py-2.5 text-lg font-medium text-black bg-white border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors min-w-0 ${
+                                 className={`w-full px-3 py-2.5 text-xl font-semibold text-black bg-white border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors min-w-0 ${
                                      isSavingTitle ? 'ring-2 ring-blue-300 bg-blue-50 border-blue-300' : ''
                                  }`}
                                  placeholder="Untitled Document"
@@ -2407,18 +2788,123 @@ export default function Editor({
                 <div className="w-px h-6 bg-gray-300"></div>
 
                 {/* Text Color */}
-                <div className="relative">
+                <div className="relative" ref={colorPickerRef}>
                     <button
-                        onClick={() => {
-                            const color = prompt('Enter color (e.g., #000000, red, blue):', formatState.color)
-                            if (color) handleFormat('foreColor', color)
-                        }}
-                        className="p-2 hover:bg-gray-100 rounded transition-colors"
+                        onClick={() => setShowColorPicker(!showColorPicker)}
+                        className="p-2 hover:bg-gray-100 rounded transition-colors group relative flex flex-col items-center gap-1"
                         title="Text Color"
                         suppressHydrationWarning
                     >
-                        <Palette className="w-4 h-4 text-gray-600" />
+                        <Palette className="w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors" />
+                        <div 
+                            className="w-3 h-3 rounded-full border border-gray-300 pointer-events-none"
+                            style={{ backgroundColor: formatState.color }}
+                        />
                     </button>
+                    
+                    {showColorPicker && (
+                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 p-3 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[200px]">
+                            <div className="mb-3">
+                                <label className="block text-xs font-medium text-gray-700 mb-2">Predefined Colors</label>
+                                <div className="grid grid-cols-8 gap-1">
+                                    {[
+                                        '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF',
+                                        '#800000', '#808000', '#008000', '#800080', '#008080', '#000080', '#FFA500', '#FFC0CB',
+                                        '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F',
+                                        '#BB8FCE', '#85C1E9', '#F8C471', '#82E0AA', '#F1948A', '#A8E6CF', '#D2B4DE', '#AED6F1'
+                                    ].map((color) => (
+                                        <button
+                                            key={color}
+                                            onClick={() => {
+                                                handleFormat('foreColor', color)
+                                                setShowColorPicker(false)
+                                            }}
+                                            className="w-6 h-6 rounded border border-gray-300 hover:scale-110 transition-transform"
+                                            style={{ backgroundColor: color }}
+                                            title={color}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            <div className="border-t border-gray-200 pt-3">
+                                <label className="block text-xs font-medium text-gray-700 mb-2">Custom Color</label>
+                                <div className="space-y-3">
+                                    {/* Color Palette */}
+                                    <div className="relative">
+                                        <div 
+                                            className="w-full h-32 rounded-lg border border-gray-300 cursor-crosshair relative overflow-hidden"
+                                            style={{ 
+                                                background: 'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)'
+                                            }}
+                                            data-color-palette
+                                            onMouseDown={(e) => {
+                                                e.preventDefault()
+                                                e.stopPropagation()
+                                                setIsDragging(true)
+                                                // Set drag target for the effect
+                                                const paletteElement = e.currentTarget as HTMLElement
+                                                paletteElement.setAttribute('data-drag-target', 'palette')
+                                                handleColorPaletteClick(e)
+                                            }}
+                                        >
+                                            <div 
+                                                className="absolute w-3 h-3 border-2 border-white rounded-full shadow-lg pointer-events-none"
+                                                style={{ 
+                                                    left: `${getColorPosition(formatState.color).x}%`, 
+                                                    top: `${getColorPosition(formatState.color).y}%`,
+                                                    transform: 'translate(-50%, -50%)'
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Brightness Slider */}
+                                    <div className="relative">
+                                        <div 
+                                            className="w-full h-6 rounded border border-gray-300 cursor-pointer"
+                                            style={{ 
+                                                background: `linear-gradient(to right, #000000, ${formatState.color}, #ffffff)`
+                                            }}
+                                            data-brightness-slider
+                                            onMouseDown={(e) => {
+                                                e.preventDefault()
+                                                e.stopPropagation()
+                                                setIsDragging(true)
+                                                // Set drag target for the effect
+                                                const brightnessElement = e.currentTarget as HTMLElement
+                                                brightnessElement.setAttribute('data-drag-target', 'brightness')
+                                                handleBrightnessSliderClick(e)
+                                            }}
+                                        >
+                                            <div 
+                                                className="absolute w-3 h-6 border-2 border-white rounded shadow-lg pointer-events-none"
+                                                style={{ 
+                                                    left: `${getBrightnessPosition(formatState.color)}%`,
+                                                    transform: 'translateX(-50%)'
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Color Preview and Hex Input */}
+                                    <div className="flex items-center gap-2">
+                                        <div 
+                                            className="w-8 h-8 rounded border border-gray-300"
+                                            style={{ backgroundColor: formatState.color }}
+                                        />
+                                        <input
+                                            type="text"
+                                            value={formatState.color}
+                                            onChange={(e) => handleFormat('foreColor', e.target.value)}
+                                            className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                            placeholder="#000000"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="w-px h-6 bg-gray-300"></div>
