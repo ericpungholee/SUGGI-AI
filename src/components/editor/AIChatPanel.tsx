@@ -92,33 +92,6 @@ export default function AIChatPanel({
     }
   }, [isResizing, onWidthChange])
 
-  // Helper function to detect editing requests
-  const isEditingRequest = (message: string): boolean => {
-    const editingKeywords = [
-      'edit', 'improve', 'fix', 'change', 'revise', 'rewrite', 'enhance',
-      'grammar', 'clarity', 'tone', 'structure', 'concise', 'expand',
-      'tighten', 'professional', 'better', 'polish'
-    ]
-    
-    const lowerMessage = message.toLowerCase()
-    return editingKeywords.some(keyword => lowerMessage.includes(keyword))
-  }
-
-  // Helper function to extract editing intent
-  const extractEditingIntent = (message: string): string => {
-    const lowerMessage = message.toLowerCase()
-    
-    if (lowerMessage.includes('grammar')) return 'fix grammar'
-    if (lowerMessage.includes('clarity')) return 'improve clarity'
-    if (lowerMessage.includes('tone')) return 'enhance tone'
-    if (lowerMessage.includes('structure')) return 'improve structure'
-    if (lowerMessage.includes('concise') || lowerMessage.includes('tighten')) return 'make more concise'
-    if (lowerMessage.includes('expand')) return 'expand content'
-    if (lowerMessage.includes('professional')) return 'make tone professional'
-    if (lowerMessage.includes('polish')) return 'polish writing'
-    
-    return 'improve writing'
-  }
 
   // Generate content for edit requests
   const generateEditContent = async (userMessage: string, editRequest: any) => {
@@ -137,7 +110,9 @@ export default function AIChatPanel({
         body: JSON.stringify({
           message: userMessage,
           documentId,
-          editRequest
+          editRequest,
+          isMultiStepWorkflow: editRequest?.isMultiStepWorkflow || false,
+          requiresWebSearch: editRequest?.requiresWebSearch || false
           }),
           signal: controller.signal
         })
@@ -149,15 +124,6 @@ export default function AIChatPanel({
           
         let content = data.content || ''
         
-        // Debug: Check if generated content has pipe characters
-        if (content.includes('|')) {
-          console.log('🚨 Frontend: Generated content has pipe characters:', {
-            originalLength: content.length,
-            pipeCount: (content.match(/\|/g) || []).length,
-            preview: content.substring(0, 200) + '...',
-            fullContent: content
-          })
-        }
         
         // Clean up any meta-commentary that might have slipped through
         content = content
@@ -268,14 +234,6 @@ export default function AIChatPanel({
       // Store the original content to preserve existing content and images
       const originalContent = editorElement.innerHTML
       
-      // Debug: Check if original content has pipe characters
-      if (originalContent.includes('|')) {
-        console.log('🚨 Frontend: Original content has pipe characters:', {
-          originalLength: originalContent.length,
-          pipeCount: (originalContent.match(/\|/g) || []).length,
-          preview: originalContent.substring(0, 200) + '...'
-        })
-      }
       
       // Focus the editor
       editorElement.focus()
@@ -334,15 +292,6 @@ export default function AIChatPanel({
             return ''
           }).join('')
         
-        // Debug: Check if htmlContent has pipe characters
-        if (htmlContent.includes('|')) {
-          console.log('🚨 Frontend: htmlContent has pipe characters:', {
-            originalLength: htmlContent.length,
-            pipeCount: (htmlContent.match(/\|/g) || []).length,
-            preview: htmlContent.substring(0, 200) + '...',
-            fullContent: htmlContent
-          })
-        }
         
         // Append content to existing content with gray styling for pending approval
         const pendingContent = `<div class="pending-ai-content">${htmlContent}</div><span class="typing-cursor">|</span>`
@@ -600,10 +549,10 @@ export default function AIChatPanel({
       })
 
       if (!response.ok) {
-        console.error('❌ Failed to save chat history:', response.status)
+        console.error('Failed to save chat history:', response.status)
       }
     } catch (error) {
-      console.error('❌ Error saving chat history:', error)
+      console.error('Error saving chat history:', error)
     }
   }
 
@@ -617,7 +566,6 @@ export default function AIChatPanel({
       
       if (response.ok) {
         const data = await response.json()
-        console.log('Documents API response:', data)
         
         // Filter out the current document and already connected documents
         const currentDocId = documentId
@@ -627,13 +575,12 @@ export default function AIChatPanel({
             doc.id !== currentDocId && 
             !connectedDocIds.includes(doc.id)
           )
-          .sort((a: any, b: any) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()) // Sort by newest first
+          .sort((a: any, b: any) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
           .map((doc: any) => ({
             id: doc.id,
             title: doc.title
           }))
         
-        console.log('Available documents after filtering:', available)
         setAvailableDocuments(available)
       } else {
         console.error('Failed to fetch documents:', response.status, response.statusText)
@@ -1104,9 +1051,6 @@ export default function AIChatPanel({
             ) : (
               <div>
                 <p className="text-xs text-gray-500">No additional documents available</p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Debug: Current doc: {documentId}, Connected: {connectedDocuments.length}
-                </p>
               </div>
             )}
           </div>

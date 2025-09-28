@@ -1208,7 +1208,7 @@ export default function Editor({
                     textNode.parentNode?.insertBefore(mark, textNode)
                     mark.appendChild(textNode)
                 } else if (container.nodeType === Node.ELEMENT_NODE) {
-                    (container as Element).style.backgroundColor = color
+                    (container as HTMLElement).style.backgroundColor = color
                 }
                 return true
             }
@@ -1241,7 +1241,7 @@ export default function Editor({
                     // No text nodes found, apply to the container element
                     const container = range.commonAncestorContainer
                     if (container.nodeType === Node.ELEMENT_NODE) {
-                        (container as Element).style.backgroundColor = color
+                        (container as HTMLElement).style.backgroundColor = color
                     }
                     return true
                 }
@@ -1277,7 +1277,7 @@ export default function Editor({
                     textNode.parentNode?.insertBefore(span, textNode)
                     span.appendChild(textNode)
                 } else if (container.nodeType === Node.ELEMENT_NODE) {
-                    (container as Element).style.color = color
+                    (container as HTMLElement).style.color = color
                 }
                 return true
             }
@@ -1310,7 +1310,7 @@ export default function Editor({
                     // No text nodes found, apply to the container element
                     const container = range.commonAncestorContainer
                     if (container.nodeType === Node.ELEMENT_NODE) {
-                        (container as Element).style.color = color
+                        (container as HTMLElement).style.color = color
                     }
                     return true
                 }
@@ -1344,7 +1344,7 @@ export default function Editor({
                     textNode.parentNode?.insertBefore(span, textNode)
                     span.appendChild(textNode)
                 } else if (container.nodeType === Node.ELEMENT_NODE) {
-                    (container as Element).style.fontSize = size
+                    (container as HTMLElement).style.fontSize = size
                 }
                 return true
             }
@@ -1374,7 +1374,7 @@ export default function Editor({
                 if (textNodes.length === 0) {
                     const container = range.commonAncestorContainer
                     if (container.nodeType === Node.ELEMENT_NODE) {
-                        (container as Element).style.fontSize = size
+                        (container as HTMLElement).style.fontSize = size
                     }
                     return true
                 }
@@ -1407,7 +1407,7 @@ export default function Editor({
                     textNode.parentNode?.insertBefore(span, textNode)
                     span.appendChild(textNode)
                 } else if (container.nodeType === Node.ELEMENT_NODE) {
-                    (container as Element).style.fontFamily = family
+                    (container as HTMLElement).style.fontFamily = family
                 }
                 return true
             }
@@ -1437,7 +1437,7 @@ export default function Editor({
                 if (textNodes.length === 0) {
                     const container = range.commonAncestorContainer
                     if (container.nodeType === Node.ELEMENT_NODE) {
-                        (container as Element).style.fontFamily = family
+                        (container as HTMLElement).style.fontFamily = family
                     }
                     return true
                 }
@@ -1671,7 +1671,7 @@ export default function Editor({
 
         saveToUndoStack(editorRef.current.innerHTML)
 
-        const cellIndex = Array.from(cellElement.parentElement!.cells).indexOf(cellElement)
+        const cellIndex = Array.from((cellElement.parentElement as HTMLTableRowElement).cells).indexOf(cellElement)
         
         // Remove cell from all rows
         const rows = table.querySelectorAll('tr')
@@ -1751,6 +1751,7 @@ export default function Editor({
                 document.removeEventListener('mouseup', handleColumnMouseUp)
             }
         }
+        return undefined
     }, [isResizingColumn, handleColumnMouseMove, handleColumnMouseUp])
 
     // Simple row resize functions
@@ -1801,6 +1802,7 @@ export default function Editor({
                 document.removeEventListener('mouseup', handleRowMouseUp)
             }
         }
+        return undefined
     }, [isResizingRow, handleRowMouseMove, handleRowMouseUp])
 
     // Handle keyboard shortcuts
@@ -2492,49 +2494,49 @@ export default function Editor({
     return (
             <div className={`flex-1 flex flex-col relative transition-all duration-300 ease-in-out`} style={{ marginRight: isAIChatOpen ? `${aiChatWidth}px` : '0px' }}>
             {/* Fixed Toolbar - Google Docs Style */}
-            <div className="h-14 editor-toolbar flex items-center px-4 gap-2">
+            <div className="h-14 editor-toolbar flex items-center px-4 gap-2 overflow-x-auto min-w-0">
                 {/* Back Button */}
                 <button 
                     onClick={() => handleNavigation("/home")}
-                    className="p-1.5 hover:bg-gray-100 rounded transition-colors mr-1"
+                    className="p-1 hover:bg-gray-100 rounded transition-colors mr-0.5"
                     title="Back to Home"
                     suppressHydrationWarning
                 >
-                    <ArrowLeft className="w-3.5 h-3.5 text-gray-600" />
+                    <ArrowLeft className="w-3 h-3 text-gray-600" />
                 </button>
                 
-                <div className="w-px h-6 bg-gray-300"></div>
+                <div className="w-px h-4 bg-gray-300"></div>
                 
                 {/* Undo/Redo */}
-                <div className="flex items-center gap-1 mr-1">
+                <div className="flex items-center gap-0.5 mr-0.5">
                     <button
                         onClick={undo}
                         disabled={undoStack.length <= 1}
-                        className="p-1.5 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="p-1 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Undo (Ctrl+Z)"
                         suppressHydrationWarning
                     >
-                        <Undo2 className="w-3.5 h-3.5 text-gray-600" />
+                        <Undo2 className="w-3 h-3 text-gray-600" />
                     </button>
                     <button
                         onClick={redo}
                         disabled={redoStack.length === 0}
-                        className="p-1.5 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="p-1 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Redo (Ctrl+Shift+Z)"
                         suppressHydrationWarning
                     >
-                        <Redo2 className="w-3.5 h-3.5 text-gray-600" />
+                        <Redo2 className="w-3 h-3 text-gray-600" />
                     </button>
                 </div>
                 
                 <div className="w-px h-6 bg-gray-300"></div>
 
                                  {/* Document Title */}
-                 <div className="flex-1 min-w-0 ml-2 mr-2" style={{ minWidth: '180px', maxWidth: '350px' }}>
+                 <div className="flex-1 min-w-0 ml-1 mr-1" style={{ minWidth: '120px', maxWidth: '250px' }}>
                      <div className="relative z-10">
 
                          {isLoading ? (
-                             <div className="w-full px-3 py-2.5 text-xl font-semibold text-gray-400 bg-gray-50 rounded animate-pulse">
+                             <div className="w-full px-2 py-1.5 text-base font-semibold text-gray-400 bg-gray-50 rounded animate-pulse">
                                  Loading...
                              </div>
                          ) : (
@@ -2577,9 +2579,9 @@ export default function Editor({
                                          e.currentTarget.blur()
                                      }
                                  }}
-                                 className={`w-full px-3 py-2.5 text-xl font-semibold text-black bg-white border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors min-w-0 ${
-                                     isSavingTitle ? 'ring-2 ring-blue-300 bg-blue-50 border-blue-300' : ''
-                                 }`}
+                                className={`w-full px-2 py-1.5 text-base font-semibold text-black bg-white border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors min-w-0 ${
+                                    isSavingTitle ? 'ring-2 ring-blue-300 bg-blue-50 border-blue-300' : ''
+                                }`}
                                  placeholder="Untitled Document"
                                  suppressHydrationWarning
                                  maxLength={100}
@@ -2601,11 +2603,11 @@ export default function Editor({
                 <div className="w-px h-6 bg-gray-300"></div>
 
                                  {/* Save Button and Status */}
-                 <div className="flex items-center gap-1 mr-2">
+                 <div className="flex items-center gap-0.5 mr-1">
                      <button
                          onClick={handleManualSave}
                          disabled={isSaving || documentId === 'new'}
-                         className={`p-1.5 rounded-lg transition-all ${
+                         className={`p-1 rounded-lg transition-all ${
                              justSaved
                                  ? 'bg-white text-blue-600 border-2 border-blue-500'
                                  : isSaving
@@ -2615,7 +2617,7 @@ export default function Editor({
                          title={documentId === 'new' ? 'Save document first' : hasUnsavedChanges ? 'Save document (Ctrl+S)' : 'All changes saved'}
                          suppressHydrationWarning
                      >
-                         <Check className="w-3.5 h-3.5" />
+                         <Check className="w-3 h-3" />
                      </button>
                     
                     {/* Save Status Indicator */}
@@ -2638,11 +2640,11 @@ export default function Editor({
                      <button
                          onClick={() => setShowDeleteConfirm(true)}
                          disabled={isDeleting}
-                         className="p-1.5 rounded-lg transition-all bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 hover:border-red-300"
+                         className="p-1 rounded-lg transition-all bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 hover:border-red-300"
                          title="Delete document"
                          suppressHydrationWarning
                      >
-                         <Trash2 className="w-3.5 h-3.5" />
+                         <Trash2 className="w-3 h-3" />
                      </button>
                  )}
 
@@ -2652,7 +2654,7 @@ export default function Editor({
                  <select
                      value={fontFamilies.find(f => f.value === formatState.fontFamily)?.value || 'Arial, sans-serif'}
                      onChange={(e) => handleFormat('fontFamily', e.target.value)}
-                     className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                     className="px-1 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                      suppressHydrationWarning
                  >
                      {fontFamilies.map((font) => (
@@ -2664,7 +2666,7 @@ export default function Editor({
                  <select
                      value={formatState.fontSize}
                      onChange={(e) => handleFormat('fontSize', e.target.value)}
-                     className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-16"
+                     className="px-1 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 w-12"
                      suppressHydrationWarning
                  >
                      {fontSizes.map((size) => (
@@ -2677,35 +2679,35 @@ export default function Editor({
                 {/* Text Formatting */}
                 <button
                     onClick={() => handleFormat('bold')}
-                    className={`p-2 rounded transition-colors ${formatState.bold ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    className={`p-1.5 rounded transition-colors ${formatState.bold ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Bold (Ctrl+B)"
                     suppressHydrationWarning
                 >
-                    <Bold className="w-4 h-4" />
+                    <Bold className="w-3.5 h-3.5" />
                 </button>
                 <button
                     onClick={() => handleFormat('italic')}
-                    className={`p-2 rounded transition-colors ${formatState.italic ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    className={`p-1.5 rounded transition-colors ${formatState.italic ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Italic (Ctrl+I)"
                     suppressHydrationWarning
                 >
-                    <Italic className="w-4 h-4" />
+                    <Italic className="w-3.5 h-3.5" />
                 </button>
                 <button
                     onClick={() => handleFormat('underline')}
-                    className={`p-2 rounded transition-colors ${formatState.underline ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    className={`p-1.5 rounded transition-colors ${formatState.underline ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Underline (Ctrl+U)"
                     suppressHydrationWarning
                 >
-                    <Underline className="w-4 h-4" />
+                    <Underline className="w-3.5 h-3.5" />
                 </button>
                 <button
                     onClick={() => handleFormat('strikeThrough')}
-                    className={`p-2 rounded transition-colors ${formatState.strikethrough ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+                    className={`p-1.5 rounded transition-colors ${formatState.strikethrough ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
                     title="Strikethrough"
                     suppressHydrationWarning
                 >
-                    <Strikethrough className="w-4 h-4" />
+                    <Strikethrough className="w-3.5 h-3.5" />
                 </button>
 
                 <div className="w-px h-6 bg-gray-300"></div>
@@ -2714,11 +2716,11 @@ export default function Editor({
                 <div className="relative" ref={colorPickerRef}>
                     <button
                         onClick={() => setShowColorPicker(!showColorPicker)}
-                        className="p-2 hover:bg-gray-100 rounded transition-colors group relative flex flex-col items-center gap-1"
+                        className="p-1.5 hover:bg-gray-100 rounded transition-colors group relative flex flex-col items-center gap-1"
                         title="Text Color"
                         suppressHydrationWarning
                     >
-                        <Palette className="w-4 h-4 transition-colors" style={{ color: formatState.color }} />
+                        <Palette className="w-3.5 h-3.5 transition-colors" style={{ color: formatState.color }} />
                     </button>
                     
                     {showColorPicker && (
@@ -2910,7 +2912,7 @@ export default function Editor({
                         setIsInsideTable(insideTable)
                         setShowTableManager(true)
                     }}
-                    className="p-2 hover:bg-gray-100 rounded transition-colors"
+                    className="p-2 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
                     title="Insert Table"
                     suppressHydrationWarning
                 >
@@ -2923,7 +2925,7 @@ export default function Editor({
                 {/* AI Chat Toggle */}
                 <button
                     onClick={() => setIsAIChatOpen(!isAIChatOpen)}
-                    className={`p-2 rounded transition-colors ${
+                    className={`p-2 rounded transition-colors flex-shrink-0 ${
                         isAIChatOpen 
                             ? 'bg-black text-white' 
                             : 'hover:bg-gray-100 text-black'

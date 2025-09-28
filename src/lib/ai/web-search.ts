@@ -45,20 +45,30 @@ export async function searchWeb(
       const duckDuckGoResults = await performDuckDuckGoSearch(query, limit)
       if (duckDuckGoResults && duckDuckGoResults.length > 0) {
         console.log(`DuckDuckGo search found ${duckDuckGoResults.length} results for: ${query}`)
-        return duckDuckGoResults
+        
+        // Check if results are meaningful (not just search page redirects)
+        const hasMeaningfulContent = duckDuckGoResults.some(result => 
+          result.snippet && 
+          result.snippet.length > 50 && 
+          !result.snippet.includes('Search results for') &&
+          !result.snippet.includes('Click to view more information') &&
+          !result.snippet.includes('No abstract available')
+        )
+        
+        if (hasMeaningfulContent) {
+          console.log('DuckDuckGo results are meaningful, using them')
+          return duckDuckGoResults
+        } else {
+          console.log('DuckDuckGo results are not meaningful, returning empty results')
+        }
       }
     } catch (duckDuckGoError) {
       console.warn('DuckDuckGo search failed, falling back to mock:', duckDuckGoError.message)
     }
 
-    // Fallback to mock implementation
-    const mockResults = generateMockSearchResults(query, limit)
-    console.log(`Using mock search results for: ${query}`)
-    
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500))
-
-    return mockResults
+    // If both APIs fail, return empty results instead of mock data
+    console.log('Both Tavily and DuckDuckGo search failed, returning empty results')
+    return []
   } catch (error) {
     console.error('Error searching web:', error)
     throw new Error('Failed to search web')
@@ -192,158 +202,6 @@ async function performDuckDuckGoSearch(query: string, limit: number): Promise<We
     console.error('DuckDuckGo search failed:', error)
     throw error
   }
-}
-
-/**
- * Generate mock search results based on query
- */
-function generateMockSearchResults(query: string, limit: number): WebSearchResult[] {
-  const queryLower = query.toLowerCase()
-  
-  // Special handling for specific queries
-  if (queryLower.includes('chamath')) {
-    return [
-      {
-        title: "Chamath Palihapitiya - Wikipedia",
-        url: "https://en.wikipedia.org/wiki/Chamath_Palihapitiya",
-        snippet: "Chamath Palihapitiya is a Sri Lankan-born Canadian-American venture capitalist, engineer, and SPAC sponsor. He is the founder and CEO of Social Capital, a technology investment firm. Palihapitiya was an early executive at Facebook, where he served as vice president of user growth.",
-        publishedDate: "2024-01-15T00:00:00Z",
-        source: "Wikipedia"
-      },
-      {
-        title: "Chamath Palihapitiya - Social Capital",
-        url: "https://www.socialcapital.com/team/chamath-palihapitiya",
-        snippet: "Chamath Palihapitiya is the Founder and CEO of Social Capital, a technology investment firm focused on solving the world's hardest problems. He was previously a senior executive at Facebook, where he built and ran several products including the growth team.",
-        publishedDate: "2024-02-01T00:00:00Z",
-        source: "Social Capital"
-      },
-      {
-        title: "Chamath Palihapitiya on All-In Podcast",
-        url: "https://www.youtube.com/@allinpod",
-        snippet: "Chamath Palihapitiya is a co-host of the All-In Podcast alongside Jason Calacanis, David Sacks, and David Friedberg. The podcast covers technology, business, and current events with a focus on Silicon Valley perspectives.",
-        publishedDate: "2024-03-01T00:00:00Z",
-        source: "YouTube"
-      }
-    ].slice(0, limit)
-  }
-
-  if (queryLower.includes('brian chesky')) {
-    return [
-      {
-        title: "Brian Chesky - Wikipedia",
-        url: "https://en.wikipedia.org/wiki/Brian_Chesky",
-        snippet: "Brian Joseph Chesky is an American businessman and co-founder and CEO of Airbnb. He co-founded Airbnb in 2008 with Nathan Blecharczyk and Joe Gebbia. Chesky has been the CEO of Airbnb since its founding and has led the company through its growth to become one of the world's largest hospitality companies.",
-        publishedDate: "2024-01-20T00:00:00Z",
-        source: "Wikipedia"
-      },
-      {
-        title: "Brian Chesky - Airbnb Leadership",
-        url: "https://www.airbnb.com/about/leadership/brian-chesky",
-        snippet: "Brian Chesky is the co-founder and CEO of Airbnb. He leads the company's mission to create a world where anyone can belong anywhere. Under his leadership, Airbnb has grown from a small startup to a global platform that has hosted over 1 billion guests in more than 220 countries and regions.",
-        publishedDate: "2024-02-15T00:00:00Z",
-        source: "Airbnb"
-      },
-      {
-        title: "Brian Chesky on Design and Leadership",
-        url: "https://www.mastersofscale.com/brian-chesky/",
-        snippet: "Brian Chesky is known for his design-focused approach to leadership and his emphasis on creating a culture of belonging. He has been featured in numerous interviews and podcasts discussing entrepreneurship, design thinking, and the future of travel and hospitality.",
-        publishedDate: "2024-03-10T00:00:00Z",
-        source: "Masters of Scale"
-      }
-    ].slice(0, limit)
-  }
-
-  if (queryLower.includes('y combinator')) {
-    return [
-      {
-        title: "Y Combinator - Wikipedia",
-        url: "https://en.wikipedia.org/wiki/Y_Combinator",
-        snippet: "Y Combinator is an American technology startup accelerator launched in March 2005. It has been used to launch over 3,000 companies, including Airbnb, Coinbase, Dropbox, Instacart, DoorDash, and Stripe. The combined valuation of the top YC companies was over $400 billion as of October 2022.",
-        publishedDate: "2024-01-15T00:00:00Z",
-        source: "Wikipedia"
-      },
-      {
-        title: "Y Combinator - Official Website",
-        url: "https://www.ycombinator.com/",
-        snippet: "Y Combinator provides seed funding for startups. We fund companies twice a year in batches. The next batch starts in January and July. We provide $500,000 in funding for 7% equity. We also provide advice, connections, and support to help startups succeed.",
-        publishedDate: "2024-02-01T00:00:00Z",
-        source: "Y Combinator"
-      },
-      {
-        title: "Paul Graham and Y Combinator",
-        url: "https://www.paulgraham.com/ycombinator.html",
-        snippet: "Paul Graham co-founded Y Combinator with Jessica Livingston, Robert Morris, and Trevor Blackwell. Graham is known for his essays on startups and technology, and Y Combinator was created to help early-stage startups get funding and guidance.",
-        publishedDate: "2024-03-01T00:00:00Z",
-        source: "Paul Graham"
-      }
-    ].slice(0, limit)
-  }
-
-  // Add specific mock data for common queries
-  if (queryLower.includes('charlie kirk') && queryLower.includes('die')) {
-    return [
-      {
-        title: "Charlie Kirk - Wikipedia",
-        url: "https://en.wikipedia.org/wiki/Charlie_Kirk",
-        snippet: "Charlie Kirk is an American conservative political activist and commentator. He is the founder and president of Turning Point USA, a conservative nonprofit organization. As of 2024, Charlie Kirk is alive and active in conservative politics.",
-        publishedDate: "2024-01-15T00:00:00Z",
-        source: "Wikipedia"
-      },
-      {
-        title: "Charlie Kirk Latest News",
-        url: "https://example.com/charlie-kirk-news",
-        snippet: "Recent news and updates about Charlie Kirk show he is currently active and has not died. He continues to be involved in political commentary and conservative activism.",
-        publishedDate: "2024-01-20T00:00:00Z",
-        source: "News"
-      }
-    ].slice(0, limit)
-  }
-
-  if (queryLower.includes('slashy') && queryLower.includes('ycs25')) {
-    return [
-      {
-        title: "YCS25 - Y Combinator Summer 2025",
-        url: "https://www.ycombinator.com/companies",
-        snippet: "YCS25 refers to Y Combinator's Summer 2025 batch. Slashy appears to be a company or project from this batch, though specific details about Slashy from YCS25 are not widely available in public sources.",
-        publishedDate: "2024-01-15T00:00:00Z",
-        source: "Y Combinator"
-      },
-      {
-        title: "Y Combinator Summer 2025 Companies",
-        url: "https://example.com/ycs25-companies",
-        snippet: "The YCS25 batch includes various startups, but specific information about a company called 'Slashy' is not readily available in public records.",
-        publishedDate: "2024-01-20T00:00:00Z",
-        source: "Startup News"
-      }
-    ].slice(0, limit)
-  }
-
-  // Generic mock results for other queries
-  const mockResults: WebSearchResult[] = [
-    {
-      title: `${query} - Comprehensive Guide`,
-      url: `https://example.com/${query.replace(/\s+/g, '-').toLowerCase()}`,
-      snippet: `Detailed information about ${query}. This comprehensive guide covers all aspects of the topic, including key concepts, important details, and practical applications.`,
-      publishedDate: new Date().toISOString(),
-      source: 'Web Search'
-    },
-    {
-      title: `What You Need to Know About ${query}`,
-      url: `https://example.com/guide/${query.replace(/\s+/g, '-').toLowerCase()}`,
-      snippet: `Learn everything about ${query} with this in-depth analysis. We cover the most important aspects, recent developments, and expert insights on the topic.`,
-      publishedDate: new Date().toISOString(),
-      source: 'Web Search'
-    },
-    {
-      title: `${query} - Latest News and Updates`,
-      url: `https://example.com/news/${query.replace(/\s+/g, '-').toLowerCase()}`,
-      snippet: `Stay updated with the latest news and developments about ${query}. Our comprehensive coverage includes breaking news, expert analysis, and community discussions.`,
-      publishedDate: new Date().toISOString(),
-      source: 'Web Search'
-    }
-  ]
-
-  return mockResults.slice(0, limit)
 }
 
 /**

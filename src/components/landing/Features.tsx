@@ -1,43 +1,43 @@
 'use client'
-import { FileText, Feather, Sparkles, Archive, Moon, Cloud } from 'lucide-react';
+import { Brain, Search, Bot, Layers, MessageSquare, Globe } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 
 const features = [
   {
-    icon: Feather,
-    title: 'Pure Writing',
-    description: 'Write without distractions. Focus on your words, not your environment.',
-    color: 'from-blue-500 to-cyan-500'
+    icon: Brain,
+    title: 'Cross-Document Sources',
+    description: 'AI fetches relevant information from all your documents to provide comprehensive answers.',
+    color: 'from-gray-800 to-gray-900'
   },
   {
-    icon: Sparkles,
-    title: 'Intelligent Assistance',
-    description: 'Thoughtful AI suggestions that enhance your writing while preserving your voice.',
-    color: 'from-purple-500 to-pink-500'
+    icon: Search,
+    title: 'Instant Discovery',
+    description: 'Find anything across all your documents with lightning-fast semantic search.',
+    color: 'from-gray-700 to-gray-800'
   },
   {
-    icon: Archive,
-    title: 'Organized Naturally',
-    description: 'Your documents and folders arranged like a personal library, always within reach.',
-    color: 'from-green-500 to-emerald-500'
+    icon: Bot,
+    title: 'Automate Writing',
+    description: 'AI types directly into your document with real-time suggestions and live editing.',
+    color: 'from-gray-900 to-black'
   },
   {
-    icon: Moon,
-    title: 'Day & Night',
-    description: 'Gentle themes that adapt to your environment and protect your eyes.',
-    color: 'from-indigo-500 to-purple-500'
+    icon: Layers,
+    title: 'Unified Workspace',
+    description: 'Write, chat with AI, and reference documents all in one seamless interface.',
+    color: 'from-gray-600 to-gray-700'
   },
   {
-    icon: Cloud,
-    title: 'Always Saved',
-    description: 'Your work automatically preserved in the cloud, accessible from anywhere.',
-    color: 'from-orange-500 to-red-500'
+    icon: MessageSquare,
+    title: 'Talk with your documents',
+    description: 'Chat with AI that understands your entire knowledge base, not just the current document.',
+    color: 'from-gray-800 to-gray-900'
   },
   {
-    icon: FileText,
-    title: 'Rich Formatting',
-    description: 'All the tools you need, presented simply and beautifully.',
-    color: 'from-teal-500 to-blue-500'
+    icon: Globe,
+    title: 'Web Intelligence',
+    description: 'Access current information from the web when you need it, seamlessly integrated.',
+    color: 'from-gray-700 to-gray-800'
   },
 ];
 
@@ -87,21 +87,21 @@ export default function Features() {
               <div
                 key={index}
                 data-index={index}
-                className={`feature-card group p-8 bg-white/80 backdrop-blur-sm rounded-2xl border border-brown-light/20 hover:shadow-2xl transition-all duration-700 hover:-translate-y-2 ${
+                className={`feature-card group p-8 bg-white rounded-2xl border-4 border-black hover:shadow-2xl transition-all duration-700 hover:-translate-y-2 ${
                   isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
                 }`}
                 style={{ transitionDelay: `${index * 100}ms` }}
               >
-                {/* Icon with gradient background */}
-                <div className={`w-14 h-14 bg-gradient-to-br ${feature.color} rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300`}>
-                  <Icon className="w-7 h-7 text-white" />
+                {/* Icon with white background and black border */}
+                <div className="w-14 h-14 bg-white border-4 border-black rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                  <Icon className="w-7 h-7 text-black" strokeWidth={2.5} />
                 </div>
                 
                 {/* Content */}
-                <h3 className="text-xl font-semibold text-ink mb-3 group-hover:text-brown-medium transition-colors duration-300">
+                <h3 className="text-xl font-semibold text-black mb-3 group-hover:text-gray-600 transition-colors duration-300">
                   {feature.title}
                 </h3>
-                <p className="text-ink/70 leading-relaxed group-hover:text-ink/80 transition-colors duration-300">
+                <p className="text-black/70 leading-relaxed group-hover:text-black/80 transition-colors duration-300">
                   {feature.description}
                 </p>
               </div>

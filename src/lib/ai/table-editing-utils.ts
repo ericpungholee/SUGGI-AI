@@ -319,7 +319,7 @@ export function applyTableEdit(
       break
       
     case 'add_column':
-      const newColIndex = editRequest.colIndex ?? content[0]?.length || 0
+      const newColIndex = editRequest.colIndex ?? (content[0]?.length || 0)
       content.forEach(row => {
         row.splice(newColIndex, 0, 'New Cell')
       })
@@ -333,7 +333,7 @@ export function applyTableEdit(
       break
       
     case 'remove_column':
-      const removeColIndex = editRequest.colIndex ?? content[0]?.length - 1 || 0
+      const removeColIndex = editRequest.colIndex ?? (content[0]?.length - 1 || 0)
       if (content[0] && content[0].length > 1) {
         content.forEach(row => {
           row.splice(removeColIndex, 1)

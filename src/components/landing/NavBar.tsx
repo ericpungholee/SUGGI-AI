@@ -1,10 +1,12 @@
 'use client'
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Feather } from "lucide-react";
 
 export default function NavBar() {
     const [scrolled, setScrolled] = useState(false);
+    const pathname = usePathname();
 
     useEffect(() => {
         const handleScroll = () => {
@@ -26,10 +28,20 @@ export default function NavBar() {
                         </Link>
                     </div>
                     <div className="hidden md:flex items-center space-x-8">
-                        <Link href="#features" className="text-ink/70 hover:text-ink transition-colors">
+                        <Link 
+                            href="#features" 
+                            className={`transition-colors ${
+                                pathname === '/' ? 'text-ink' : 'text-ink/70 hover:text-ink'
+                            }`}
+                        >
                             Features
                         </Link>
-                        <Link href="#" className="text-ink/70 hover:text-ink transition-colors">
+                        <Link 
+                            href="/about" 
+                            className={`transition-colors ${
+                                pathname === '/about' ? 'text-ink' : 'text-ink/70 hover:text-ink'
+                            }`}
+                        >
                             About
                         </Link>
                         <Link href="#" className="text-ink/70 hover:text-ink transition-colors">

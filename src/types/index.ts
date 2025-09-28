@@ -332,10 +332,27 @@ export interface ApplyEditResult {
     newContent: string;
 }
 
+// Agent Text Types
+export interface AgentTextBlock {
+    id: string;
+    content: string;
+    position: number;
+    isActive: boolean;
+    isTyping: boolean;
+    isApproved: boolean;
+    timestamp: Date;
+}
+
+export interface AgentTypingSession {
+    id: string;
+    blocks: AgentTextBlock[];
+    isActive: boolean;
+    startTime: Date;
+    endTime?: Date;
+}
 
 
-// Export new agentic editing types
-export * from './agentic-editing'
+
 
 
 
