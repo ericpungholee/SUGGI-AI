@@ -124,7 +124,7 @@ export async function searchSimilarDocuments(
         topK: limit * 3, // Get more results for better re-ranking
         threshold: Math.max(threshold, 0.1), // Lowered threshold for better recall
         includeMetadata: true,
-        searchStrategy: searchStrategy === 'hybrid' ? 'semantic' : searchStrategy,
+        searchStrategy: searchStrategy === 'hybrid' ? 'semantic' : (searchStrategy === 'adaptive' ? 'semantic' : searchStrategy),
         useHybridSearch: useHybridSearch
       })
 
@@ -646,7 +646,7 @@ function calculateFinalScore(
 /**
  * Apply diversity scoring to prefer different documents
  */
-function applyDiversityScoring(results: SearchResult[]): (SearchResult & { diversityScore: number })[] {
+function applyDiversityScoring(results: (SearchResult & { qualityScore: number })[]): (SearchResult & { qualityScore: number; diversityScore: number })[] {
   const documentCounts = new Map<string, number>()
   
   return results.map(result => {
@@ -800,7 +800,7 @@ export async function getDocumentContext(
     console.error('Error getting document context:', {
       query,
       userId,
-      documentId,
+      documentIds,
       limit,
       error: error instanceof Error ? error.message : 'Unknown error',
       stack: error instanceof Error ? error.stack : undefined
@@ -850,6 +850,7 @@ export async function vectorizeDocument(
         userId: userId,
         chunkIndex: 0, // Single document = chunk 0
         createdAt: new Date().toISOString(),
+        content: content,
         contentType: 'text',
         documentType: 'document',
         wordCount: content.split(/\s+/).length

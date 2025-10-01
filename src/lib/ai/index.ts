@@ -22,8 +22,9 @@ export {
 } from './vector-search'
 export type { SearchResult, DocumentSearchOptions } from './vector-search'
 
-// Vector database services (PostgreSQL only)
-// Pinecone removed for simplicity - using PostgreSQL for vector storage
+// Vector database services
+export { vectorDB, storeDocumentInVectorDB, searchDocumentsInVectorDB } from './vector-db'
+export type { VectorDocument, VectorSearchResult, VectorSearchOptions } from './vector-db'
 
 // Document processing services
 export { 
@@ -35,22 +36,29 @@ export {
 } from './document-processor'
 export type { DocumentProcessingOptions } from './document-processor'
 
-// AI chat services
+// Incremental vectorization services
 export { 
-  processAIChat, 
-  getConversationHistory, 
-  getUserConversations, 
-  deleteConversation 
-} from './ai-chat'
-export type { AIChatRequest, AIChatResponse, ConversationMessage } from './ai-chat'
+  vectorizeDocumentIncremental, 
+  getVectorizationStatus, 
+  batchVectorizeDocuments 
+} from './incremental-vectorization'
+export type { VectorizationResult } from './incremental-vectorization'
 
-// Web search services
-export { 
-  searchWeb, 
-  searchNews, 
-  searchAcademic, 
-  formatSearchResultsForAI, 
-  extractKeyInformation, 
-  validateSearchQuery 
-} from './web-search'
-export type { WebSearchResult, WebSearchOptions } from './web-search'
+// New RAG System
+export { ragAdapter, buildEvidenceBundle } from './rag-adapter'
+export type { RagChunk } from './rag-adapter'
+
+export { routeQuery } from './rag-router'
+export type { RouterDecision } from './rag-router'
+
+export { fillInstructionJSON, generateSystemPrompt, validateInstructionJSON, repairInstructionJSON } from './instruction-json'
+export type { InstructionJSON, ContextRef } from './instruction-json'
+
+export { verifyInstruction, validateResponse, generateVerificationReport } from './rag-verification'
+export type { VerificationResult, VerificationOptions } from './rag-verification'
+
+export { createRAGOrchestrator, processRAGQuery } from './rag-orchestrator'
+export type { RAGOrchestratorOptions, RAGResponse } from './rag-orchestrator'
+
+export { getRAGConfig } from './rag-config'
+export type { RAGConfig } from './rag-config'

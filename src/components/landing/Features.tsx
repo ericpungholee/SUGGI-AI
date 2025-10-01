@@ -87,14 +87,14 @@ export default function Features() {
               <div
                 key={index}
                 data-index={index}
-                className={`feature-card group p-8 bg-white rounded-2xl border-4 border-black hover:shadow-2xl transition-all duration-700 hover:-translate-y-2 ${
+                className={`feature-card group p-8 bg-white rounded-2xl border-2 border-black hover:shadow-2xl transition-all duration-700 hover:-translate-y-2 ${
                   isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
                 }`}
                 style={{ transitionDelay: `${index * 100}ms` }}
               >
                 {/* Icon with white background and black border */}
-                <div className="w-14 h-14 bg-white border-4 border-black rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
-                  <Icon className="w-7 h-7 text-black" strokeWidth={2.5} />
+                <div className="w-14 h-14 bg-white border-2 border-black rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                  <Icon className="w-7 h-7 text-black" strokeWidth={1.5} />
                 </div>
                 
                 {/* Content */}

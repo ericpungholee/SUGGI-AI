@@ -68,7 +68,7 @@ export function useAIChat(options: AIChatOptions = {}) {
     }))
 
     try {
-      const response = await fetch('/api/ai/chat', {
+      const response = await fetch('/api/rag/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -76,10 +76,9 @@ export function useAIChat(options: AIChatOptions = {}) {
         body: JSON.stringify({
           message,
           documentId: options.documentId,
-          conversationId: options.conversationId,
-          includeContext: options.includeContext,
+          selection: '',
           useWebSearch: options.useWebSearch,
-          operationId
+          maxTokens: 2000
         })
       })
 
@@ -94,9 +93,11 @@ export function useAIChat(options: AIChatOptions = {}) {
         role: 'assistant',
         content: data.message,
         timestamp: new Date(),
-        cancelled: data.cancelled,
-        metadata: data.editSuggestion ? {
-          editSuggestion: data.editSuggestion
+        cancelled: false,
+        metadata: data.metadata ? {
+          ragConfidence: data.metadata.ragConfidence,
+          coverage: data.metadata.coverage,
+          sourcesUsed: data.metadata.sourcesUsed
         } : undefined
       }
 
@@ -137,27 +138,13 @@ export function useAIChat(options: AIChatOptions = {}) {
     setState(prev => ({ ...prev, isCancelling: true }))
 
     try {
-      const response = await fetch('/api/ai/chat/cancel', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          operationId: state.currentOperationId
-        })
-      })
-
-      if (response.ok) {
-        setState(prev => ({
-          ...prev,
-          isLoading: false,
-          isCancelling: false,
-          currentOperationId: null
-        }))
-      } else {
-        console.error('Failed to cancel operation')
-        setState(prev => ({ ...prev, isCancelling: false }))
-      }
+      // For now, just cancel locally since we don't have a cancel endpoint
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        isCancelling: false,
+        currentOperationId: null
+      }))
     } catch (error) {
       console.error('Error cancelling operation:', error)
       setState(prev => ({ ...prev, isCancelling: false }))

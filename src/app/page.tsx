@@ -5,7 +5,7 @@ import Footer from "@/components/landing/Footer";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-gradient-to-b from-paper to-white">
+    <main className="min-h-screen bg-gradient-to-b from-paper to-white hide-scrollbar">
       {/* Navigation */}
       <NavBar />
 

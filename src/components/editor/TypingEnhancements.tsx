@@ -132,11 +132,13 @@ export default function TypingEnhancements({ editorRef }: TypingEnhancementsProp
                         // Style cells
                         const cells = table.querySelectorAll('td, th')
                         cells.forEach(cell => {
-                            cell.style.cssText = `
-                                border: 1px solid #ddd;
-                                padding: 8px;
-                                text-align: left;
-                            `
+                            if (cell instanceof HTMLElement) {
+                                cell.style.cssText = `
+                                    border: 1px solid #ddd;
+                                    padding: 8px;
+                                    text-align: left;
+                                `
+                            }
                         })
                         
                         range.insertNode(table)
@@ -193,7 +195,7 @@ export default function TypingEnhancements({ editorRef }: TypingEnhancementsProp
                 if (selection && selection.rangeCount > 0) {
                     const range = selection.getRangeAt(0)
                     const container = range.commonAncestorContainer
-                    const listItem = container.closest?.('li')
+                    const listItem = container instanceof Element ? container.closest('li') : null
                     
                     if (listItem) {
                         const list = listItem.closest('ul, ol')

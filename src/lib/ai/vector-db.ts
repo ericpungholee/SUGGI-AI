@@ -9,6 +9,7 @@ export interface VectorDocument {
     userId: string
     chunkIndex: number
     createdAt: string
+    content: string
     contentType?: string
     documentType?: string
     tags?: string[]
@@ -26,6 +27,7 @@ export interface VectorSearchResult {
     userId: string
     chunkIndex: number
     createdAt: string
+    content: string
   }
 }
 
@@ -52,8 +54,7 @@ class VectorDatabase {
       const apiKey = process.env.PINECONE_API_KEY
       const indexName = process.env.PINECONE_INDEX_NAME || 'suggi-ai-documents'
 
-      console.log('Initializing Pinecone with API key:', apiKey ? 'Present' : 'Missing')
-      console.log('Index name:', indexName)
+      // Initialize Pinecone
 
       if (!apiKey) {
         throw new Error('PINECONE_API_KEY environment variable is required')
@@ -65,12 +66,10 @@ class VectorDatabase {
 
       // Get or create index
       const indexList = await this.pinecone.listIndexes()
-      console.log('Available indexes:', indexList.indexes?.map(idx => idx.name))
       
       const existingIndex = indexList.indexes?.find(idx => idx.name === indexName)
 
       if (!existingIndex) {
-        console.log(`Creating Pinecone index: ${indexName}`)
         await this.pinecone.createIndex({
           name: indexName,
           dimension: 3072, // OpenAI text-embedding-3-large dimension
@@ -86,18 +85,13 @@ class VectorDatabase {
         // Check if existing index has correct dimensions
         const indexStats = await this.pinecone.describeIndex(indexName)
         const currentDimensions = indexStats.dimension
-        console.log(`Existing index dimensions: ${currentDimensions}`)
         
         if (currentDimensions !== 3072) {
-          console.log(`Index has wrong dimensions (${currentDimensions}), need to recreate with 3072`)
-          console.log(`Deleting old index: ${indexName}`)
           await this.pinecone.deleteIndex(indexName)
           
           // Wait for deletion to complete
-          console.log('Waiting for index deletion to complete...')
           await new Promise(resolve => setTimeout(resolve, 5000))
           
-          console.log(`Creating new Pinecone index: ${indexName}`)
           await this.pinecone.createIndex({
             name: indexName,
             dimension: 3072, // OpenAI text-embedding-3-large dimension
@@ -112,17 +106,13 @@ class VectorDatabase {
         }
       }
       
-      console.log(`Pinecone index ${indexName} ready, waiting for it to be available...`)
-      
       // Wait for index to be ready
       await this.waitForIndexReady(indexName)
-      console.log(`Using existing Pinecone index: ${indexName}`)
 
       this.index = this.pinecone.index(indexName)
       this.isInitialized = true
       this.currentIndexName = indexName
 
-      console.log(`Pinecone initialized with index: ${indexName}`)
     } catch (error) {
       console.error('Failed to initialize Pinecone:', error)
       throw new Error('Vector database initialization failed')
@@ -136,13 +126,10 @@ class VectorDatabase {
       try {
         const indexDescription = await this.pinecone!.describeIndex(indexName)
         if (indexDescription.status?.ready) {
-          console.log(`Index ${indexName} is ready`)
           return
         }
-        console.log(`Waiting for index ${indexName} to be ready...`)
         await new Promise(resolve => setTimeout(resolve, 5000))
       } catch (error) {
-        console.log(`Waiting for index ${indexName}...`)
         await new Promise(resolve => setTimeout(resolve, 5000))
       }
     }
@@ -156,8 +143,6 @@ class VectorDatabase {
     }
 
     try {
-      console.log(`Upserting ${documents.length} documents to vector database`)
-      
       // Generate embeddings for all documents
       const { createEmbeddings } = await import('./embeddings')
       const embeddings = await createEmbeddings(documents.map(doc => doc.content))
@@ -184,11 +169,7 @@ class VectorDatabase {
         metadata: doc.metadata
       }))
 
-      console.log(`Records prepared for upsert:`, records.length)
-      console.log(`First record embedding length:`, records[0]?.values?.length)
-
       await this.index.upsert(records)
-      console.log(`Successfully upserted ${documents.length} documents to vector database`)
     } catch (error) {
       console.error('Error upserting documents to vector database:', error)
       throw new Error(`Failed to upsert documents to vector database: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -214,12 +195,7 @@ class VectorDatabase {
       if (!this.pinecone) {
         throw new Error('Pinecone client is not initialized')
       }
-    } catch (initError) {
-      console.error('Failed to initialize vector database:', initError)
-      throw new Error(`Vector database initialization failed: ${initError instanceof Error ? initError.message : 'Unknown error'}`)
-    }
 
-    try {
       const { 
         topK = 10, 
         filter = {}, 
@@ -251,29 +227,14 @@ class VectorDatabase {
         throw new Error('Query embedding contains invalid values')
       }
 
-      console.log('Query embedding generated, length:', queryEmbedding.embedding.length)
-      console.log('First few values:', queryEmbedding.embedding.slice(0, 5))
-
       // Use higher topK for hybrid search to allow for re-ranking
       const searchTopK = useHybridSearch ? topK * 2 : topK
-
-      console.log('Executing Pinecone query with:', {
-        vectorLength: queryEmbedding.embedding.length,
-        topK: searchTopK,
-        filter: searchFilter,
-        includeMetadata
-      })
 
       const searchResponse = await this.index.query({
         vector: queryEmbedding.embedding,
         topK: searchTopK,
         filter: searchFilter,
         includeMetadata
-      })
-
-      console.log('Pinecone query response:', {
-        matchesCount: searchResponse.matches?.length || 0,
-        hasMatches: !!searchResponse.matches
       })
 
       let results = searchResponse.matches?.map(match => ({
@@ -286,7 +247,6 @@ class VectorDatabase {
       // Apply threshold filtering
       results = results.filter(result => result.score >= threshold)
 
-      console.log(`Filtered results after threshold ${threshold}:`, results.length)
 
       // For hybrid search, implement keyword matching and re-ranking
       if (useHybridSearch && searchStrategy === 'hybrid') {
@@ -295,6 +255,12 @@ class VectorDatabase {
 
       return results.slice(0, topK)
     } catch (error) {
+      // Check if it's an initialization error
+      if (error instanceof Error && error.message.includes('initialization failed')) {
+        console.error('Failed to initialize vector database:', error)
+        throw error
+      }
+      
       console.error('Error searching vector database:', {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
@@ -395,7 +361,6 @@ class VectorDatabase {
 
     try {
       await this.index.deleteMany(documentIds)
-      console.log(`Deleted ${documentIds.length} documents from vector database`)
     } catch (error) {
       console.error('Error deleting documents from vector database:', error)
       throw new Error('Failed to delete documents from vector database')
@@ -414,11 +379,9 @@ class VectorDatabase {
           documentId: { $eq: documentId }
         }
       })
-      console.log(`Deleted chunks for document ${documentId} from vector database`)
     } catch (error) {
       // Don't throw error for 404 - document chunks might not exist yet
       if (error.message?.includes('404') || error.message?.includes('not found')) {
-        console.log(`No chunks found for document ${documentId} in vector database (this is normal for new documents)`)
         return
       }
       console.error('Error deleting document chunks from vector database:', error)
@@ -444,7 +407,6 @@ class VectorDatabase {
         } : {}
       )
 
-      console.log('Pinecone stats response:', statsResponse)
 
       return {
         totalChunks: statsResponse.totalVectorCount || 0,
@@ -485,7 +447,8 @@ export async function storeDocumentInVectorDB(
         documentTitle,
         userId,
         chunkIndex: chunk.chunkIndex,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        content: chunk.content
       }
     }))
 

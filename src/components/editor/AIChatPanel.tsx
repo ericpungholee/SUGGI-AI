@@ -1,7 +1,9 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
-import { X, Send, Bot, User, GripVertical, Feather, Paperclip, Search, Loader2, Globe, Sparkles, Check } from 'lucide-react'
+import { X, Send, User, GripVertical, Feather, Paperclip, Loader2, Globe, Check, XCircle } from 'lucide-react'
+import { PreviewOps } from '@/lib/ai/writer-agent-v2'
+import { AIEditorAgent } from '@/lib/ai/editor-agent'
 
 interface AIChatPanelProps {
   isOpen: boolean
@@ -9,9 +11,24 @@ interface AIChatPanelProps {
   width: number
   onWidthChange: (width: number) => void
   documentId?: string
-  onContentChange?: (content: string) => void
-  onStartAgentTyping?: () => void
-  onStopAgentTyping?: () => void
+  editorAgent?: AIEditorAgent // AI Editor Agent for direct manipulation
+  editorRef?: React.RefObject<HTMLDivElement | null> // Editor reference for Writer Agent
+  onLiveTypingChange?: (isTyping: boolean) => void // Callback for live typing state changes
+}
+
+interface ChatMessage {
+  id: string
+  type: 'user' | 'assistant' | 'preview' | 'approval'
+  content: string
+  timestamp: Date
+  previewOps?: PreviewOps
+  approvalData?: {
+    pendingChangeId: string
+    summary: string
+    sources: string[]
+    canApprove: boolean
+    canDeny: boolean
+  }
 }
 
 export default function AIChatPanel({ 
@@ -20,52 +37,157 @@ export default function AIChatPanel({
   width, 
   onWidthChange,
   documentId,
-  onContentChange,
-  onStartAgentTyping,
-  onStopAgentTyping
+  editorAgent,
+  editorRef,
+  onLiveTypingChange
 }: AIChatPanelProps) {
-  const { data: session, status } = useSession()
+  const { data: session } = useSession()
   
-  const [messages, setMessages] = useState<Array<{id: string, type: 'user' | 'assistant', content: string, timestamp: Date, needsApproval?: boolean, pendingContent?: string}>>([
-    {
-      id: '1',
-      type: 'assistant',
-      content: 'Hello! I\'m your AI writing assistant. I can help you write, edit, and format your document. I can also create and edit tables, improve your writing, and answer questions about your content.\n\nTry asking me to:\n• "Create a 3x4 comparison table"\n• "Make a budget table with headers"\n• "Add a row to the table"\n• "Remove column 2 from the table"\n• "Edit cell in row 1, column 3"\n• "Delete the table"\n• "Edit this paragraph to be more concise"',
-      timestamp: new Date()
-    }
-  ])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isResizing, setIsResizing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [useWebSearch, setUseWebSearch] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
-  const [isLoadingHistory, setIsLoadingHistory] = useState(true)
   const [connectedDocuments, setConnectedDocuments] = useState<Array<{id: string, title: string}>>([])
   const [showDocumentSelector, setShowDocumentSelector] = useState(false)
   const [availableDocuments, setAvailableDocuments] = useState<Array<{id: string, title: string}>>([])
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false)
+  const [chatMode, setChatMode] = useState<'regular' | 'writer'>('regular')
+  const [pendingChange, setPendingChange] = useState<PreviewOps | null>(null)
+  const [isApproving, setIsApproving] = useState(false)
+  const [isDenying, setIsDenying] = useState(false)
+  const [isLiveTyping, setIsLiveTyping] = useState(false)
+  const [linkedDocuments, setLinkedDocuments] = useState<string[]>([])
   const panelRef = useRef<HTMLDivElement>(null)
   const resizeRef = useRef<HTMLDivElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  
 
-  // Load chat history when component mounts or documentId changes
+
+  // Load conversation history when component mounts or documentId changes
+  const loadConversationHistory = useCallback(async () => {
+    if (!documentId || !session?.user?.id) return
+
+    try {
+      console.log('📚 Loading conversation history for document:', documentId)
+      
+      const response = await fetch(`/api/conversations?documentId=${documentId}`)
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ API Error Response:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText
+        })
+        
+        // If it's a 500 error, try to parse the error details
+        if (response.status === 500) {
+          try {
+            const errorData = JSON.parse(errorText)
+            console.error('❌ Parsed error details:', errorData)
+          } catch (parseError) {
+            console.error('❌ Could not parse error response as JSON:', parseError)
+          }
+        }
+        
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      
+      if (data.conversationId && data.messages && data.messages.length > 0) {
+        console.log('📚 Loaded conversation history:', {
+          conversationId: data.conversationId,
+          messageCount: data.messages.length
+        })
+        
+        // Convert timestamp strings back to Date objects
+        const messagesWithDates = data.messages.map((msg: any) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        }))
+        
+        setConversationId(data.conversationId)
+        setMessages(messagesWithDates)
+      } else {
+        console.log('📚 No conversation history found')
+        setConversationId(null)
+        setMessages([])
+      }
+    } catch (error) {
+      console.error('❌ Error loading conversation history:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        documentId,
+        userId: session?.user?.id
+      })
+      setConversationId(null)
+      setMessages([])
+    }
+  }, [documentId, session?.user?.id])
+
+  // Save conversation history
+  const saveConversationHistory = useCallback(async (messagesToSave: ChatMessage[]) => {
+    if (!documentId || !session?.user?.id || messagesToSave.length === 0) return
+
+    try {
+      console.log('💾 Saving conversation history:', {
+        documentId,
+        messageCount: messagesToSave.length
+      })
+      
+      const response = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          documentId,
+          messages: messagesToSave
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      
+      if (data.conversationId) {
+        setConversationId(data.conversationId)
+        console.log('✅ Conversation saved:', data.conversationId)
+      }
+    } catch (error) {
+      console.error('❌ Error saving conversation history:', error)
+    }
+  }, [documentId, session?.user?.id])
+
+  // Load available documents when component mounts or documentId changes
   useEffect(() => {
     if (documentId && isOpen) {
-      loadChatHistory()
       loadAvailableDocuments()
+      loadConversationHistory()
     }
-  }, [documentId, isOpen])
+  }, [documentId, isOpen, loadConversationHistory])
 
-  // Save chat history whenever messages change (but not on initial load)
+  // Debug editor agent availability
   useEffect(() => {
-    if (conversationId && messages.length > 1) { // Don't save the initial welcome message
-      saveChatHistory(messages)
+    console.log('🔍 AIChatPanel editor agent status:', {
+      hasEditorAgent: !!editorAgent,
+      hasWriteContent: typeof editorAgent?.writeContent === 'function',
+      hasEditorRef: !!editorRef?.current,
+      isOpen
+    })
+  }, [editorAgent, editorRef?.current, isOpen])
+
+
+  // Auto-scroll to bottom when new messages are added
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [messages, conversationId])
-
-  
-  
-
-
+  }, [messages, isLoading])
 
   // Handle resizing
   useEffect(() => {
@@ -92,468 +214,163 @@ export default function AIChatPanel({
     }
   }, [isResizing, onWidthChange])
 
-
-  // Generate content for edit requests
-  const generateEditContent = async (userMessage: string, editRequest: any) => {
+  // Handle approval workflow - now just saves already-written content
+  const handleApprove = async (pendingChangeId: string) => {
+    if (isApproving) return
+    
+    setIsApproving(true)
     try {
-      // Create an AbortController for timeout
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+      // Find the pending change
+      const pendingChange = messages.find(msg => 
+        msg.type === 'approval' && msg.approvalData?.pendingChangeId === pendingChangeId
+      )
       
-    try {
-      // Call the AI to generate actual content based on the edit request
-      const response = await fetch('/api/ai/generate-content', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: userMessage,
-          documentId,
-          editRequest,
-          isMultiStepWorkflow: editRequest?.isMultiStepWorkflow || false,
-          requiresWebSearch: editRequest?.requiresWebSearch || false
-          }),
-          signal: controller.signal
-        })
-
-        clearTimeout(timeoutId)
-
-      if (response.ok) {
-        const data = await response.json()
-          
-        let content = data.content || ''
-        
-        
-        // Clean up any meta-commentary that might have slipped through
-        content = content
-          .replace(/^(Here's|I've|This document|I'll|Let me|I'm going to|I can|I will).*?[.!?]\s*/gmi, '')
-          .replace(/^(I apologize|Sorry|Unfortunately|I'm sorry).*?[.!?]\s*/gmi, '')
-          .replace(/^(I've generated|I've created|I've written|I've added).*?[.!?]\s*/gmi, '')
-          .replace(/^(The content|The document|This content).*?[.!?]\s*/gmi, '')
-          .replace(/^(Draft cleared|Content cleared|Document cleared).*?[.!?]\s*/gmi, '')
-          .replace(/^(What would you like|Here are|Please share|If you prefer).*?[.!?]\s*/gmi, '')
-          .replace(/^(I can|I will|I'll help|I'm here).*?[.!?]\s*/gmi, '')
-          .replace(/\|+/g, '') // Remove pipe characters that cause blue line artifacts
-          .replace(/\s+/g, ' ') // Normalize whitespace
-          .trim()
-        
-        // Special handling for delete/clear requests
-          if (userMessage.toLowerCase().includes('delete') || userMessage.toLowerCase().includes('clear') || userMessage.toLowerCase().includes('get rid of')) {
-          return '' // Return empty content for delete/clear requests
-        }
-        
-        return content || ''
-      } else {
-          const errorText = await response.text()
-          throw new Error(`API error: ${response.status} ${response.statusText}`)
-        }
-      } catch (fetchError) {
-        clearTimeout(timeoutId)
-        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-          throw new Error('Request timed out. Please try again.')
-        }
-        throw fetchError
+      if (!pendingChange?.previewOps) {
+        throw new Error('Pending change not found')
       }
+      
+      console.log('🔍 Saving approved content to document:', {
+        pendingChangeId,
+        hasEditorAgent: !!editorAgent,
+        hasEditorRef: !!editorRef?.current
+      })
+      
+      // Content is already written to the editor, so we just need to save it
+      // The editor's auto-save or manual save will handle persisting the content
+      
+      // Remove the approval message and update UI
+      setMessages(prev => prev.filter(msg => 
+        !(msg.type === 'approval' && msg.approvalData?.pendingChangeId === pendingChangeId)
+      ))
+      setPendingChange(null)
+      
+      // Add success message
+      const successMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant',
+        content: '✅ Content has been saved to your document!',
+        timestamp: new Date()
+      }
+      setMessages(prev => {
+        const newMessages = [...prev, successMessage]
+        // Save conversation history after adding success message
+        saveConversationHistory(newMessages)
+        return newMessages
+      })
     } catch (error) {
-      throw error // Re-throw to be handled by the calling function
+      console.error('Approval error:', error)
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant',
+        content: `Failed to save content: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: new Date()
+      }
+      setMessages(prev => {
+        const newMessages = [...prev, errorMessage]
+        // Save conversation history after adding error message
+        saveConversationHistory(newMessages)
+        return newMessages
+      })
+    } finally {
+      setIsApproving(false)
     }
   }
 
-  // Replace the entire editor content (for table editing)
-  const replaceEditorContent = async (content: string, userMessage: string = '') => {
+  const handleDeny = async (pendingChangeId: string) => {
+    if (isDenying) return
+    
+    setIsDenying(true)
     try {
-      // Get the editor element
-      const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement
-      if (!editorElement) {
-        return
-      }
-
-      // Start agent typing mode to prevent auto-save
-      onStartAgentTyping?.()
-
-      // Store the original content to preserve existing content and images
-      const originalContent = editorElement.innerHTML
+      // Find the pending change to get the content that was written
+      const pendingChange = messages.find(msg => 
+        msg.type === 'approval' && msg.approvalData?.pendingChangeId === pendingChangeId
+      )
       
-      // Focus the editor
-      editorElement.focus()
-
-      // Check if this is a delete/clear request
-      const isDeleteRequest = userMessage.toLowerCase().includes('delete') || 
-                             userMessage.toLowerCase().includes('clear') || 
-                             userMessage.toLowerCase().includes('get rid of')
-
-      if (isDeleteRequest) {
-        // For delete requests, clear the content but preserve the structure
-        editorElement.innerHTML = '<p><br></p>'
+      if (pendingChange?.previewOps) {
+        // Get the content that was written so we can remove it
+        const contentToRemove = pendingChange.previewOps.ops
+          .filter(op => op.op === 'insert' && op.text)
+          .map(op => op.text)
+          .join('\n')
         
-        // Store the pending content for later approval/rejection
-        ;(window as any).pendingAIContent = {
-          content: '',
-          originalContent: originalContent
-        }
-        
-        // Show approval UI in chat
-        showApprovalUI('', userMessage)
-        return
-      }
-
-      // For content replacement, replace the entire content
-      editorElement.innerHTML = content
-      
-      // Store the pending content for later approval/rejection
-      ;(window as any).pendingAIContent = {
-        content: content,
-        originalContent: originalContent
-      }
-      
-      // Show approval UI in chat
-      showApprovalUI(content, userMessage)
-
-    } catch (error) {
-      // Stop agent typing on error
-      onStopAgentTyping?.()
-      
-      // Final cleanup to ensure no pipe characters remain
-      cleanupPipeCharacters()
-    }
-  }
-
-  // Type content directly into the editor with live typing effect
-  const typeContentIntoEditor = async (content: string, userMessage: string = '') => {
-    try {
-      // Get the editor element
-      const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement
-      if (!editorElement) {
-        return
-      }
-
-      // Start agent typing mode to prevent auto-save
-      onStartAgentTyping?.()
-
-      // Store the original content to preserve existing content and images
-      const originalContent = editorElement.innerHTML
-      
-      
-      // Focus the editor
-      editorElement.focus()
-
-      // Check if this is a delete/clear request
-      const isDeleteRequest = userMessage.toLowerCase().includes('delete') || 
-                             userMessage.toLowerCase().includes('clear') || 
-                             userMessage.toLowerCase().includes('get rid of')
-
-      if (isDeleteRequest) {
-        // For delete requests, clear the content but preserve the structure
-        editorElement.innerHTML = '<p><br></p>'
-        
-        // Store the pending content for later approval/rejection
-        ;(window as any).pendingAIContent = {
-          content: '',
-          originalContent: originalContent
-        }
-        
-        // Show approval UI in chat
-        showApprovalUI('', userMessage)
-        return
-      }
-
-      // For content generation, append to existing content
-      // Move cursor to the end of the document
-      const selection = window.getSelection()
-      if (selection) {
-        const range = document.createRange()
-        range.selectNodeContents(editorElement)
-        range.collapse(false) // Collapse to end
-        selection.removeAllRanges()
-        selection.addRange(range)
-      }
-
-      // Split content into paragraphs first, then words within each paragraph
-      const paragraphs = content.split('\n\n').filter(p => p.trim())
-      let currentContent = ''
-
-      // Type each paragraph
-      for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
-        const paragraph = paragraphs[pIndex].trim()
-        const words = paragraph.split(' ')
-        
-        // Type each word in the current paragraph
-        for (let wIndex = 0; wIndex < words.length; wIndex++) {
-          const word = words[wIndex]
-          currentContent += (wIndex > 0 ? ' ' : '') + word
+        if (contentToRemove && editorRef?.current) {
+          // Remove the content from the editor
+          const currentContent = editorRef.current.innerHTML
+          const newContent = currentContent.replace(contentToRemove, '').replace(/\n\n$/, '')
+          editorRef.current.innerHTML = newContent
           
-          // Convert current content to HTML with proper paragraph formatting
-          const htmlContent = currentContent.split('\n\n').map((p, index) => {
-            const para = p.trim()
-            if (para) {
-              return `<p>${para}</p>`
-            }
-            return ''
-          }).join('')
-        
-        
-        // Append content to existing content with gray styling for pending approval
-        const pendingContent = `<div class="pending-ai-content">${htmlContent}</div><span class="typing-cursor">|</span>`
-        
-        // Remove any existing typing cursor first
-        const existingCursor = editorElement.querySelector('.typing-cursor')
-        if (existingCursor) {
-          existingCursor.remove()
-        }
-        
-        // Remove any elements with typing class that might have CSS-generated pipe characters
-        const typingElements = editorElement.querySelectorAll('.typing')
-        typingElements.forEach(el => {
-          el.classList.remove('typing')
-        })
-        
-        // Replace only the pending content area, preserving existing content
-        const existingPendingContent = editorElement.querySelector('.pending-ai-content')
-        if (existingPendingContent) {
-          // Replace existing pending content
-          existingPendingContent.outerHTML = pendingContent
-        } else {
-          // Insert new pending content at the end
-          editorElement.insertAdjacentHTML('beforeend', pendingContent)
-        }
-        
-        // Wait before typing the next word
-        await new Promise(resolve => setTimeout(resolve, 100))
-      }
-
-        // Add paragraph break after each paragraph (except the last one)
-        if (pIndex < paragraphs.length - 1) {
-          currentContent += '\n\n'
-          
-          // Update with paragraph break
-          const htmlContent = currentContent.split('\n\n').map((p, index) => {
-            const para = p.trim()
-            if (para) {
-              return `<p>${para}</p>`
-            }
-            return ''
-          }).join('')
-          
-          const pendingContent = `<div class="pending-ai-content">${htmlContent}</div><span class="typing-cursor">|</span>`
-          
-          // Remove any existing typing cursor first
-          const existingCursor = editorElement.querySelector('.typing-cursor')
-          if (existingCursor) {
-            existingCursor.remove()
-          }
-          
-          // Remove any elements with typing class that might have CSS-generated pipe characters
-          const typingElements = editorElement.querySelectorAll('.typing')
-          typingElements.forEach(el => {
-            el.classList.remove('typing')
+          // Ensure content remains editable after removal
+          editorRef.current.setAttribute('contenteditable', 'true')
+          const allElements = editorRef.current.querySelectorAll('*')
+          allElements.forEach(element => {
+            element.removeAttribute('readonly')
+            element.removeAttribute('disabled')
+            element.setAttribute('contenteditable', 'true')
           })
           
-          // Replace only the pending content area
-          const existingPendingContent = editorElement.querySelector('.pending-ai-content')
-          if (existingPendingContent) {
-            existingPendingContent.outerHTML = pendingContent
-          } else {
-            // Insert new pending content at the end
-            editorElement.insertAdjacentHTML('beforeend', pendingContent)
-          }
+          // Trigger input event to notify React of the change
+          const inputEvent = new Event('input', { bubbles: true })
+          editorRef.current.dispatchEvent(inputEvent)
           
-          // Pause between paragraphs
-          await new Promise(resolve => setTimeout(resolve, 200))
+          console.log('✅ Content removed from editor')
         }
       }
-
-      // Convert final content to HTML with proper paragraph formatting
-      const finalHtmlContent = currentContent.split('\n\n').map(paragraph => {
-        const para = paragraph.trim()
-        if (para) {
-          return `<p>${para}</p>`
-        }
-        return ''
-      }).join('')
-
-      // Remove the typing cursor and keep content in pending state with proper formatting
-      const finalPendingContent = `<div class="pending-ai-content">${finalHtmlContent}</div>`
       
-      // Remove any existing typing cursor first
-      const existingCursor = editorElement.querySelector('.typing-cursor')
-      if (existingCursor) {
-        existingCursor.remove()
+      // Remove the approval message
+      setMessages(prev => prev.filter(msg => 
+        !(msg.type === 'approval' && msg.approvalData?.pendingChangeId === pendingChangeId)
+      ))
+      setPendingChange(null)
+      
+      // Add denial message
+      const denialMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant',
+        content: '❌ Content removed. What would you like me to do instead?',
+        timestamp: new Date()
       }
-      
-      // Remove any elements with typing class that might have CSS-generated pipe characters
-      const typingElements = editorElement.querySelectorAll('.typing')
-      typingElements.forEach(el => {
-        el.classList.remove('typing')
+      setMessages(prev => {
+        const newMessages = [...prev, denialMessage]
+        // Save conversation history after adding denial message
+        saveConversationHistory(newMessages)
+        return newMessages
       })
-      
-      // Replace the pending content
-      const existingPendingContent = editorElement.querySelector('.pending-ai-content')
-      if (existingPendingContent) {
-        existingPendingContent.outerHTML = finalPendingContent
-      }
-      
-      // Store the pending content for later approval/rejection
-      ;(window as any).pendingAIContent = {
-        content: currentContent,
-        originalContent: originalContent
-      }
-      
-      
-      // Show approval UI in chat
-      showApprovalUI(content, userMessage)
-
     } catch (error) {
-      // Stop agent typing on error
-      onStopAgentTyping?.()
-      
-      // Final cleanup to ensure no pipe characters remain
-      cleanupPipeCharacters()
-    }
-  }
-
-  // Show approval UI in chat
-  const showApprovalUI = (content: string, userMessage: string) => {
-    // Determine the appropriate message based on the user's request
-    const isDeleteRequest = userMessage.toLowerCase().includes('delete') || userMessage.toLowerCase().includes('clear')
-    const messageContent = isDeleteRequest 
-      ? 'I\'ve cleared the content from your document. Please review and approve or reject this change.'
-      : 'I\'ve typed the content into your document. Please review and approve or reject it.'
-    
-    const approvalMessage = {
-      id: (Date.now() + 1).toString(),
-      type: 'assistant' as const,
-      content: messageContent,
-      timestamp: new Date(),
-      needsApproval: true,
-      pendingContent: content
-    }
-    setMessages(prev => [...prev, approvalMessage])
-  }
-
-  // Comprehensive cleanup function to remove all pipe character sources
-  const cleanupPipeCharacters = () => {
-    const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement
-    if (!editorElement) return
-    
-    // 1. Remove all typing cursors
-    const typingCursors = editorElement.querySelectorAll('.typing-cursor')
-    typingCursors.forEach(cursor => cursor.remove())
-    
-    // 2. Remove typing classes that generate CSS pipe characters
-    const typingElements = editorElement.querySelectorAll('.typing')
-    typingElements.forEach(el => {
-      el.classList.remove('typing')
-    })
-    
-    // 3. Remove any literal pipe characters from content
-    const currentContent = editorElement.innerHTML
-    const cleanedContent = currentContent.replace(/\|+/g, '')
-    if (currentContent !== cleanedContent) {
-      editorElement.innerHTML = cleanedContent
-    }
-    
-    // 4. Remove any agent typing indicators
-    const typingIndicators = editorElement.querySelectorAll('.agent-typing-indicator')
-    typingIndicators.forEach(indicator => indicator.remove())
-  }
-
-  // Save content directly to database
-  const saveContentToDatabase = async (htmlContent: string) => {
-    try {
-      // Final cleanup: remove any pipe characters and typing classes before saving
-      let cleanHtmlContent = htmlContent.replace(/\|+/g, '')
-      
-      // Remove any remaining typing classes that might generate CSS pipe characters
-      const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement
-      if (editorElement) {
-        const typingElements = editorElement.querySelectorAll('.typing')
-        typingElements.forEach(el => {
-          el.classList.remove('typing')
-        })
-        // Update the content after removing typing classes
-        cleanHtmlContent = editorElement.innerHTML.replace(/\|+/g, '')
+      console.error('Denial error:', error)
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant',
+        content: '❌ Failed to remove content. Please try again.',
+        timestamp: new Date()
       }
-      
-      const cleanPlainText = cleanHtmlContent.replace(/<[^>]*>/g, '')
-      
-      const response = await fetch(`/api/documents/${documentId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          content: {
-            html: cleanHtmlContent,
-            plainText: cleanPlainText,
-            wordCount: cleanPlainText.split(/\s+/).filter(Boolean).length
-          },
-          plainText: cleanPlainText,
-          wordCount: cleanPlainText.split(/\s+/).filter(Boolean).length
-        })
+      setMessages(prev => {
+        const newMessages = [...prev, errorMessage]
+        // Save conversation history after adding error message
+        saveConversationHistory(newMessages)
+        return newMessages
       })
-
-      if (!response.ok) {
-        console.error('Failed to save content to database:', response.status)
-      }
-    } catch (error) {
-      console.error('Error saving content to database:', error)
-    }
-  }
-
-  // Load chat history for this document
-  const loadChatHistory = async () => {
-    if (!documentId) return
-
-    try {
-      setIsLoadingHistory(true)
-
-      const response = await fetch(`/api/ai/chat-history?documentId=${documentId}`)
-      
-      if (response.ok) {
-        const data = await response.json()
-        
-        if (data.messages && data.messages.length > 0) {
-          // Convert stored messages to the correct format
-          const loadedMessages = data.messages.map((msg: any) => ({
-            ...msg,
-            timestamp: new Date(msg.timestamp)
-          }))
-          setMessages(loadedMessages)
-        }
-        
-        setConversationId(data.conversationId)
-      }
-    } catch (error) {
-      console.error('Error loading chat history:', error)
     } finally {
-      setIsLoadingHistory(false)
+      setIsDenying(false)
     }
   }
 
-  // Save chat history for this document
-  const saveChatHistory = async (messagesToSave: typeof messages) => {
-    if (!documentId || !conversationId) return
-
-    try {
-      
-      const response = await fetch('/api/ai/chat-history', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          documentId,
-          messages: messagesToSave
-        })
-      })
-
-      if (!response.ok) {
-        console.error('Failed to save chat history:', response.status)
-      }
-    } catch (error) {
-      console.error('Error saving chat history:', error)
+  // Link a document for RAG retrieval (up to 5 documents max)
+  const linkDocument = (documentId: string) => {
+    if (linkedDocuments.length >= 5) {
+      alert('Maximum of 5 documents can be linked for RAG retrieval.')
+      return false
     }
+    
+    if (!linkedDocuments.includes(documentId)) {
+      setLinkedDocuments(prev => [...prev, documentId])
+      return true
+    }
+    return false
+  }
+
+  // Unlink a document
+  const unlinkDocument = (documentId: string) => {
+    setLinkedDocuments(prev => prev.filter(id => id !== documentId))
   }
 
   // Load available documents for selection
@@ -582,8 +399,6 @@ export default function AIChatPanel({
           }))
         
         setAvailableDocuments(available)
-      } else {
-        console.error('Failed to fetch documents:', response.status, response.statusText)
       }
     } catch (error) {
       console.error('Error loading available documents:', error)
@@ -612,218 +427,301 @@ export default function AIChatPanel({
     }
   }
 
-  // Handle content approval
-  const handleApproveContent = async () => {
-    try {
-      // Get the editor element
-      const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement
-      if (!editorElement) {
-        console.error('Editor element not found')
-        return
-      }
-
-      // Get the pending content
-      const pendingData = (window as any).pendingAIContent
-      if (!pendingData) {
-        console.error('No pending content found')
-        return
-      }
-
-      // Store the user message for determining the action
-      const userMessage = (window as any).lastUserMessage || ''
-
-      // Comprehensive cleanup to remove all pipe character sources
-      cleanupPipeCharacters()
-
-      // Remove pending styling and make content normal
-      const pendingContent = editorElement.querySelector('.pending-ai-content')
-      if (pendingContent) {
-        // Get the HTML content directly, not textContent
-        const htmlContent = pendingContent.innerHTML || ''
-        
-        // If the content is empty or just whitespace, use empty paragraph
-        const finalHtmlContent = htmlContent.trim() || '<p><br></p>'
-        
-        // Replace only the pending content with the final content, preserving existing content
-        pendingContent.outerHTML = finalHtmlContent
-        
-        // Get the complete editor content after the replacement
-        let completeContent = editorElement.innerHTML
-        
-        // Final cleanup: remove any remaining pipe characters from the complete content
-        completeContent = completeContent.replace(/\|+/g, '')
-        
-        // Update the editor with the cleaned content
-        editorElement.innerHTML = completeContent
-        
-        // Trigger the onContentChange callback to save the content
-        if (onContentChange) {
-          onContentChange(completeContent)
-        }
-        
-        // Also trigger input event to notify the editor of changes
-        const inputEvent = new Event('input', { bubbles: true })
-        editorElement.dispatchEvent(inputEvent)
-        
-        // Directly save the content to the database to ensure it persists
-        await saveContentToDatabase(completeContent)
-      }
-
-      // Clear pending content
-      delete (window as any).pendingAIContent
-
-      // Stop agent typing mode and trigger save
-      onStopAgentTyping?.()
-
-      // Remove approval UI from messages
-      setMessages(prev => prev.filter(msg => !msg.needsApproval))
-
-      // Add approved message based on what was actually done
-      const isDeleteRequest = userMessage.toLowerCase().includes('delete') || 
-                             userMessage.toLowerCase().includes('clear') ||
-                             pendingData.content === ''
-      
-      const approvedMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant' as const,
-        content: isDeleteRequest ? 'Content cleared from your document.' : 'Content added to your document.',
-        timestamp: new Date()
-      }
-      setMessages(prev => [...prev, approvedMessage])
-
-    } catch (error) {
-      console.error('Error approving content:', error)
-    }
-  }
-
-  // Handle content rejection
-  const handleRejectContent = async () => {
-    try {
-      // Get the editor element
-      const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement
-      if (!editorElement) {
-        console.error('Editor element not found')
-        return
-      }
-
-      // Comprehensive cleanup to remove all pipe character sources
-      cleanupPipeCharacters()
-
-      // Get the pending content and restore original
-      const pendingData = (window as any).pendingAIContent
-      if (pendingData) {
-        // Restore original content
-        editorElement.innerHTML = pendingData.originalContent
-      } else {
-        // Fallback: remove the pending content
-        const pendingContent = editorElement.querySelector('.pending-ai-content')
-        if (pendingContent) {
-          pendingContent.remove()
-        }
-      }
-
-      // Clear pending content
-      delete (window as any).pendingAIContent
-
-      // Stop agent typing mode (no save triggered)
-      onStopAgentTyping?.()
-
-      // Remove approval UI from messages
-      setMessages(prev => prev.filter(msg => !msg.needsApproval))
-
-      // Get the original user message for context
-      const originalUserMessage = (window as any).lastUserMessage || ''
-      
-      // Add rejected message with retry option
-      const rejectedMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant' as const,
-        content: 'Content rejected and removed from your document. I can try again - what would you like me to change about the content?',
-        timestamp: new Date()
-      }
-      setMessages(prev => [...prev, rejectedMessage])
-
-      // Store the original request for potential retry
-      ;(window as any).lastRejectedRequest = originalUserMessage
-
-    } catch (error) {
-      console.error('Error rejecting content:', error)
-    }
-  }
-
-  // Handle slash commands
-  const handleSlashInput = (value: string) => {
-    if (value.startsWith('/')) {
-      const [command, ...args] = value.slice(1).split(' ')
-      if (command) {
-        // Handle slash commands here if needed
-        console.log('Slash command:', command, args)
-        setInputValue('')
-      }
-    }
-  }
-
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) {
       return
     }
 
     const message = inputValue.trim()
-    
-    // Handle slash commands
-    if (message.startsWith('/')) {
-      handleSlashInput(message)
-      return
-    }
-
-    // Check if this is feedback on a rejected request
-    const lastRejectedRequest = (window as any).lastRejectedRequest
-    const isFeedbackOnRejection = lastRejectedRequest && (
-      message.toLowerCase().includes('paragraph') ||
-      message.toLowerCase().includes('separate') ||
-      message.toLowerCase().includes('different') ||
-      message.toLowerCase().includes('change') ||
-      message.toLowerCase().includes('fix') ||
-      message.toLowerCase().includes('again') ||
-      message.toLowerCase().includes('retry')
-    )
-
-    // Combine original request with feedback if this is feedback on rejection
-    const finalMessage = isFeedbackOnRejection 
-      ? `${lastRejectedRequest} (${message})`
-      : message
-
-
-    // Clear rejected request if this is a new request (not feedback)
-    if (!isFeedbackOnRejection) {
-      delete (window as any).lastRejectedRequest
-    }
 
     // Add user message to chat
-    const userMessage = {
+    const userMessage: ChatMessage = {
       id: Date.now().toString(),
-      type: 'user' as const,
-      content: message, // Show original message to user
+      type: 'user',
+      content: message,
       timestamp: new Date()
     }
 
-    setMessages(prev => [...prev, userMessage])
+    setMessages(prev => {
+      const newMessages = [...prev, userMessage]
+      // Save conversation history after adding user message
+      saveConversationHistory(newMessages)
+      return newMessages
+    })
     setInputValue('')
     setIsLoading(true)
 
     try {
-      // Send message to AI chat API
-      const response = await fetch('/api/ai/chat', {
+      // Auto-detect if this should use Writer Agent mode
+      const shouldUseWriterAgent = (
+        message.toLowerCase().includes('rewrite') ||
+        message.toLowerCase().includes('edit') ||
+        message.toLowerCase().includes('format') ||
+        message.toLowerCase().includes('change') ||
+        message.toLowerCase().includes('modify') ||
+        message.toLowerCase().includes('improve') ||
+        message.toLowerCase().includes('fix') ||
+        message.toLowerCase().includes('correct') ||
+        message.toLowerCase().includes('make this') ||
+        message.toLowerCase().includes('turn this into') ||
+        message.toLowerCase().includes('convert this') ||
+        message.toLowerCase().includes('transform') ||
+        message.toLowerCase().includes('restructure') ||
+        message.toLowerCase().includes('reorganize') ||
+        (window.getSelection() && window.getSelection()!.toString().trim().length > 0)
+      )
+
+      if (shouldUseWriterAgent) {
+        // Writer Agent V2 mode
+        const selection = window.getSelection()
+        const selectionText = selection ? selection.toString() : ''
+
+        console.log('🔍 Writer Agent V2: Sending request with web search:', useWebSearch)
+        
+        // Call the new Writer Agent V2 API
+        const conversationHistory = messages.slice(-10).map(msg => ({
+          role: msg.type === 'user' ? 'user' : 'assistant',
+          content: msg.content
+        }))
+        
+        const response = await fetch('/api/writer-agent', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userAsk: message,
+            selectionText,
+            filePath: documentId || '',
+            recentTopics: [],
+            documentId,
+            action: 'process',
+            useWebSearch,
+            conversationHistory,
+            linkedDocuments
+          }),
+        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const result = await response.json()
+
+        if (result.type === 'immediate_write') {
+          const { content, previewOps, pending_change_id } = result.data
+          
+          // For live edit content, don't write immediately - show approval for live typing
+          console.log('🔍 Live edit content detected, showing approval for live typing instead of immediate write')
+          
+          // Create a preview operation for live typing
+          const liveEditOps: PreviewOps = {
+            pending_change_id: `live_edit_${Date.now()}`,
+            summary: `Add ${content.length} characters of content to the document`,
+            notes: 'AI generated content for live editing',
+            citations: [],
+            ops: [{
+              op: 'insert',
+              text: content,
+              anchor: 'end'
+            }]
+          }
+          
+          setPendingChange(liveEditOps)
+          
+          // Create approval message for live typing
+          const approvalMessage: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            type: 'approval',
+            content: result.message || 'I have prepared content to add to your document. Please review and approve or deny.',
+            timestamp: new Date(),
+            previewOps: liveEditOps,
+            approvalData: {
+              pendingChangeId: liveEditOps.pending_change_id,
+              summary: liveEditOps.summary,
+              sources: ['AI Generated Content'],
+              canApprove: true,
+              canDeny: true
+            }
+          }
+          setMessages(prev => {
+            const newMessages = [...prev, approvalMessage]
+            // Save conversation history after adding approval message
+            saveConversationHistory(newMessages)
+            return newMessages
+          })
+        } else if (result.type === 'preview') {
+          const previewOps = result.data as PreviewOps
+          setPendingChange(previewOps)
+          
+          // Create approval message with action buttons
+          const approvalMessage: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            type: 'approval',
+            content: result.message || previewOps.summary,
+            timestamp: new Date(),
+            previewOps,
+            approvalData: {
+              pendingChangeId: previewOps.pending_change_id,
+              summary: previewOps.summary,
+              sources: previewOps.citations.map((c: any) => c.url || c.anchor || 'Document').filter(Boolean),
+              canApprove: true,
+              canDeny: true
+            }
+          }
+          setMessages(prev => {
+            const newMessages = [...prev, approvalMessage]
+            // Save conversation history after adding approval message
+            saveConversationHistory(newMessages)
+            return newMessages
+          })
+        } else {
+          const aiMessage: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            type: 'assistant',
+            content: result.message || 'Processing completed',
+            timestamp: new Date()
+          }
+          setMessages(prev => {
+            const newMessages = [...prev, aiMessage]
+            // Save conversation history after adding AI message
+            saveConversationHistory(newMessages)
+            return newMessages
+          })
+        }
+      } else {
+        // Regular chat mode
+        const conversationHistory = messages.slice(-10).map(msg => ({
+          role: msg.type === 'user' ? 'user' : 'assistant',
+          content: msg.content
+        }))
+        
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message,
+            documentId,
+            connectedDocumentIds: connectedDocuments.map(doc => doc.id),
+            includeContext: true,
+            useWebSearch,
+            conversationHistory
+          }),
+        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const data = await response.json()
+        
+        console.log('🔍 Chat API Response:', {
+          hasLiveEditContent: !!data.liveEditContent,
+          liveEditContentLength: data.liveEditContent?.length || 0,
+          shouldTriggerLiveEdit: data.metadata?.shouldTriggerLiveEdit,
+          message: data.message?.substring(0, 100) + '...',
+          fullResponse: data
+        })
+
+        // Handle live editing - show approval/deny buttons for content to be written
+        if (data.liveEditContent) {
+          console.log('🔍 Live editing content detected:', {
+            contentLength: data.liveEditContent.length,
+            shouldTriggerLiveEdit: data.metadata?.shouldTriggerLiveEdit
+          })
+          
+          // Create a preview operation for the content
+          const previewOps: PreviewOps = {
+            pending_change_id: `live_edit_${Date.now()}`,
+            summary: `Add ${data.liveEditContent.length} characters of content to the document`,
+            notes: 'AI generated content for live editing',
+            citations: [],
+            ops: [{
+              op: 'insert',
+              text: data.liveEditContent,
+              anchor: 'end'
+            }]
+          }
+          
+          setPendingChange(previewOps)
+          
+          // Create approval message with action buttons
+          const approvalMessage: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            type: 'approval',
+            content: data.message || 'I have prepared content to add to your document. Please review and approve or deny.',
+            timestamp: new Date(),
+            previewOps,
+            approvalData: {
+              pendingChangeId: previewOps.pending_change_id,
+              summary: previewOps.summary,
+              sources: ['AI Generated Content'],
+              canApprove: true,
+              canDeny: true
+            }
+          }
+          setMessages(prev => {
+            const newMessages = [...prev, approvalMessage]
+            // Save conversation history after adding approval message
+            saveConversationHistory(newMessages)
+            return newMessages
+          })
+        } else {
+          const aiMessage: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            type: 'assistant',
+            content: data.message || 'No response received',
+            timestamp: new Date()
+          }
+          setMessages(prev => {
+            const newMessages = [...prev, aiMessage]
+            // Save conversation history after adding AI message
+            saveConversationHistory(newMessages)
+            return newMessages
+          })
+        }
+      }
+
+    } catch (error) {
+      console.error('Error sending message:', error)
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant',
+        content: 'Sorry, I encountered an error. Please try again.',
+        timestamp: new Date()
+      }
+      setMessages(prev => {
+        const newMessages = [...prev, errorMessage]
+        // Save conversation history after adding error message
+        saveConversationHistory(newMessages)
+        return newMessages
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleApproveChange = async () => {
+    if (!pendingChange) return
+
+    console.log('🔍 Approve button clicked, starting live typing:', {
+      pendingChangeId: pendingChange.pending_change_id,
+      opsCount: pendingChange.ops.length,
+      firstOp: pendingChange.ops[0]
+    })
+
+    try {
+      // Call the new Writer Agent V2 API to apply changes
+      const response = await fetch('/api/writer-agent', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          message: finalMessage, // Use the combined message for AI processing
-          documentId,
-          connectedDocumentIds: connectedDocuments.map(doc => doc.id),
-          includeContext: true,
-          useWebSearch
+          action: 'apply',
+          pending_change_id: pendingChange.pending_change_id
         }),
       })
 
@@ -831,83 +729,183 @@ export default function AIChatPanel({
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      const data = await response.json()
-
-      // Handle edit requests by typing content directly into the editor
-      if (data.editRequest) {
-        
-        // Store the user message for later use in approval
-        ;(window as any).lastUserMessage = userMessage.content
-        
-        try {
-          // Generate content and type it directly into the editor
-          const editContent = await generateEditContent(finalMessage, data.editRequest)
-          
-          // Check if this is a table editing request
-          const isTableEdit = finalMessage.toLowerCase().includes('table') && 
-                             (finalMessage.toLowerCase().includes('edit') || 
-                              finalMessage.toLowerCase().includes('change') || 
-                              finalMessage.toLowerCase().includes('modify'))
-          
-          if (isTableEdit) {
-            // For table editing, replace the entire editor content
-            await replaceEditorContent(editContent, userMessage.content)
-          } else {
-            // For regular editing, type content into the editor
-            await typeContentIntoEditor(editContent, userMessage.content)
-          }
-        } catch (error) {
-          
-          // For delete/clear requests, try to clear the content directly
-          const isDeleteRequest = finalMessage.toLowerCase().includes('delete') || 
-                                 finalMessage.toLowerCase().includes('clear') || 
-                                 finalMessage.toLowerCase().includes('get rid of')
-          
-          if (isDeleteRequest) {
-            try {
-              // Try to clear content directly
-              await typeContentIntoEditor('', userMessage.content)
-            } catch (clearError) {
-              console.error('Direct clear failed:', clearError)
+      const result = await response.json()
+      
+      if (result.success) {
+        // Apply the changes to the editor directly
+        if (pendingChange && editorAgent) {
+          try {
+            // Apply each operation from the preview ops
+            for (const op of pendingChange.ops) {
+              switch (op.op) {
+                case 'insert':
+                  if (op.text && editorAgent) {
+                    // Start live typing the content character by character
+                    console.log('🤖 Starting live typing for live edit content:', { textLength: op.text.length })
+                    
+                    // Move cursor to end of document
+                    if (editorRef && editorRef.current) {
+                      const range = document.createRange()
+                      const sel = window.getSelection()
+                      range.selectNodeContents(editorRef.current)
+                      range.collapse(false)
+                      sel?.removeAllRanges()
+                      sel?.addRange(range)
+                    }
+                    
+                    // Temporarily disable live typing to test normal typing
+                    try {
+                      setIsLiveTyping(true)
+                      onLiveTypingChange?.(true)
+                      
+                      // Use simple text insertion instead of live typing
+                      editorAgent.appendContent(op.text)
+                      console.log('✅ Content inserted (live typing disabled for testing)')
+                    } catch (error) {
+                      console.error('❌ Content insertion failed:', error)
+                      // Fallback to instant insertion if live typing fails
+                      editorAgent.appendContent(op.text)
+                    } finally {
+                      setIsLiveTyping(false)
+                      onLiveTypingChange?.(false)
+                      
+                      // Ensure editor remains editable after content insertion
+                      if (editorAgent) {
+                        editorAgent.ensureEditable()
+                      }
+                      
+                      // Focus the editor to ensure it's active and editable
+                      if (editorRef && editorRef.current) {
+                        editorRef.current.focus()
+                        
+                        // Ensure the editor is properly editable
+                        editorRef.current.setAttribute('contenteditable', 'true')
+                        editorRef.current.removeAttribute('readonly')
+                        editorRef.current.removeAttribute('disabled')
+                        
+                        // Ensure all child elements are editable
+                        const allElements = editorRef.current.querySelectorAll('*')
+                        allElements.forEach(element => {
+                          element.removeAttribute('readonly')
+                          element.removeAttribute('disabled')
+                          element.setAttribute('contenteditable', 'true')
+                        })
+                      }
+                    }
+                  } else if (op.text) {
+                    console.error('❌ No editor agent available for content insertion')
+                  }
+                  break
+                case 'insert_after':
+                  if (op.anchor && op.text) {
+                    // Insert text after the specified anchor
+                    editorAgent.appendContent(op.text)
+                  }
+                  break
+                case 'replace_range':
+                  if (op.range && op.text) {
+                    // Replace text in the specified range
+                    editorAgent.selectText(op.range.start.offset, op.range.end.offset)
+                    editorAgent.replaceContent(op.text, op.text)
+                  }
+                  break
+                case 'delete_range':
+                  if (op.range) {
+                    // Delete text in the specified range
+                    editorAgent.selectText(op.range.start.offset, op.range.end.offset)
+                    editorAgent.deleteSelection()
+                  }
+                  break
+                case 'format':
+                  if (op.range && op.style) {
+                    // Apply formatting to the specified range
+                    editorAgent.selectText(op.range.start.offset, op.range.end.offset)
+                    editorAgent.applyFormat(op.style)
+                  }
+                  break
+                default:
+                  console.log('Unsupported operation:', op.op)
+              }
             }
+          } catch (error) {
+            console.error('Error applying editor operations:', error)
           }
-          
-          // Add error message to chat
-          const errorMessage = {
-          id: (Date.now() + 1).toString(),
-          type: 'assistant' as const,
-            content: (error instanceof Error && error.message?.includes('timeout')) 
-              ? 'The request timed out. Please try again with a shorter request.'
-              : 'Sorry, I encountered an error while processing your request. Please try again.',
-          timestamp: new Date()
-          }
-          setMessages(prev => [...prev, errorMessage])
         }
+        
+        setPendingChange(null)
+        
+        const successMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant',
+          content: `✅ Applied changes: ${pendingChange.summary}`,
+          timestamp: new Date()
+        }
+        setMessages(prev => {
+        const newMessages = [...prev, successMessage]
+        // Save conversation history after adding success message
+        saveConversationHistory(newMessages)
+        return newMessages
+      })
       } else {
-        // Regular chat response
-        const aiMessage = {
-          id: (Date.now() + 1).toString(),
-          type: 'assistant' as const,
-          content: data.message || 'No response received',
-          timestamp: new Date()
-        }
-        setMessages(prev => [...prev, aiMessage])
+        throw new Error(result.message || 'Failed to apply changes')
       }
-
     } catch (error) {
-      console.error('Error sending message:', error)
-      const errorMessage = {
+      console.error('Error applying changes:', error)
+      
+      const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        type: 'assistant' as const,
-        content: 'Sorry, I encountered an error. Please try again.',
+        type: 'assistant',
+        content: 'Failed to apply changes. Please try again.',
         timestamp: new Date()
       }
-      setMessages(prev => [...prev, errorMessage])
-    } finally {
-      setIsLoading(false)
+      setMessages(prev => {
+        const newMessages = [...prev, errorMessage]
+        // Save conversation history after adding error message
+        saveConversationHistory(newMessages)
+        return newMessages
+      })
     }
   }
 
+  const handleRejectChange = async () => {
+    if (!pendingChange) return
+
+    try {
+      // Call the new Writer Agent V2 API to revert changes
+      const response = await fetch('/api/writer-agent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'revert',
+          pending_change_id: pendingChange.pending_change_id
+        }),
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('Changes reverted:', result.message)
+      }
+    } catch (error) {
+      console.error('Error reverting changes:', error)
+    }
+
+    setPendingChange(null)
+    
+    const rejectMessage: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      type: 'assistant',
+      content: 'Changes rejected. What would you like me to do instead?',
+      timestamp: new Date()
+    }
+    setMessages(prev => {
+      const newMessages = [...prev, rejectMessage]
+      // Save conversation history after adding reject message
+      saveConversationHistory(newMessages)
+      return newMessages
+    })
+  }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -916,10 +914,23 @@ export default function AIChatPanel({
     }
   }
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const formatTime = (date: Date | string | number) => {
+    try {
+      // Convert to Date object if it's not already
+      const dateObj = date instanceof Date ? date : new Date(date)
+      
+      // Check if the date is valid
+      if (isNaN(dateObj.getTime())) {
+        console.warn('Invalid date provided to formatTime:', date)
+        return 'Invalid time'
+      }
+      
+      return dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    } catch (error) {
+      console.error('Error formatting time:', error, 'Input:', date)
+      return 'Invalid time'
+    }
   }
-
 
   if (!isOpen) return null
 
@@ -927,14 +938,10 @@ export default function AIChatPanel({
     <div 
       ref={panelRef}
       className="fixed right-0 top-0 h-full bg-white border-l border-gray-200 shadow-2xl flex flex-col transition-all duration-300 ease-in-out z-40"
-      style={{ 
-        width: `${width}px`,
-        transform: isOpen ? 'translateX(0)' : 'translateX(100%)'
-      }}
+      style={{ width: `${width}px` }}
     >
       {/* Header */}
       <div className="border-b border-gray-200 bg-white">
-        {/* Title Row */}
         <div className="flex items-center justify-between p-4 pb-2">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center shadow-sm">
@@ -942,6 +949,7 @@ export default function AIChatPanel({
             </div>
             <div>
               <h3 className="font-semibold text-gray-900 text-lg">Suggi AI</h3>
+              <p className="text-xs text-gray-600">AI writing assistant with document editing</p>
             </div>
           </div>
           
@@ -954,11 +962,13 @@ export default function AIChatPanel({
           </button>
         </div>
         
-        {/* Status and Controls Row */}
         <div className="px-4 pb-3">
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-600">
-              {documentId ? 'Document context enabled' : 'Writing helper'}
+              {chatMode === 'writer' 
+                ? (documentId ? 'Document editing mode' : 'Writer Agent ready')
+                : (documentId ? 'Document context enabled' : 'Writing helper')
+              }
               {useWebSearch && ' • Web search enabled'}
               {connectedDocuments.length > 0 && ` • ${connectedDocuments.length} additional docs`}
             </p>
@@ -1005,7 +1015,6 @@ export default function AIChatPanel({
             </button>
           </div>
           
-          {/* Connected Documents */}
           {connectedDocuments.length > 0 && (
             <div className="mb-3">
               <p className="text-xs text-gray-600 mb-2">Connected documents:</p>
@@ -1025,7 +1034,6 @@ export default function AIChatPanel({
             </div>
           )}
 
-          {/* Available Documents */}
           <div>
             <p className="text-xs text-gray-600 mb-2">
               Available documents ({availableDocuments.length}):
@@ -1069,19 +1077,54 @@ export default function AIChatPanel({
         </div>
       </div>
 
+      {/* Linked Documents for RAG */}
+      {linkedDocuments.length > 0 && (
+        <div className="border-b border-gray-200 bg-blue-50 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-medium text-blue-900">RAG Documents ({linkedDocuments.length}/5)</h4>
+            <span className="text-xs text-blue-600">Current + {linkedDocuments.length} linked</span>
+          </div>
+          <div className="space-y-1">
+            {linkedDocuments.map((docId) => {
+              const doc = availableDocuments.find(d => d.id === docId)
+              return (
+                <div key={docId} className="flex items-center justify-between bg-white rounded px-2 py-1 text-xs">
+                  <span className="text-gray-900 truncate">{doc?.title || `Document ${docId}`}</span>
+                  <button
+                    onClick={() => unlinkDocument(docId)}
+                    className="text-red-500 hover:text-red-700 ml-2"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/30">
-          {isLoadingHistory ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-              <span className="ml-2 text-sm text-gray-500">Loading chat history...</span>
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/30">
+        {messages.length === 0 ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="text-center">
+              <Feather className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                {chatMode === 'writer' ? 'Writer Agent Ready' : 'Welcome to Suggi AI'}
+              </h3>
+              <p className="text-sm text-gray-600 max-w-sm">
+                {chatMode === 'writer' 
+                  ? 'I can help you edit your document with precision. Select text and ask me to rewrite, summarize, extend, or format it. I\'ll show you preview changes before applying them.'
+                  : 'I\'m your AI writing assistant. I can help you write, edit, and improve your documents. Ask me anything or request content to be written directly into your document.'
+                }
+              </p>
             </div>
-          ) : (
-            messages.map((message) => (
+          </div>
+        ) : (
+          messages.map((message) => (
             <div
               key={message.id}
-              className={`flex gap-3 animate-in slide-in-from-bottom-2 duration-300 ${
+              className={`flex gap-3 ${
                 message.type === 'user' ? 'justify-end' : 'justify-start'
               }`}
             >
@@ -1092,46 +1135,110 @@ export default function AIChatPanel({
               )}
               
               <div
-                className={`max-w-[85%] rounded-xl px-5 py-4 shadow-sm ${
+                className={`max-w-[85%] rounded-xl px-4 py-3 shadow-sm ${
                   message.type === 'user'
                     ? 'bg-gray-900 text-white'
+                    : message.type === 'preview'
+                    ? 'bg-blue-50 text-blue-900 border border-blue-200'
+                    : message.type === 'approval'
+                    ? 'bg-green-50 text-green-900 border border-green-200'
                     : 'bg-white text-gray-900 border border-gray-200'
                 }`}
               >
-                <p className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere">{message.content}</p>
+                <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
                 
-                {/* Approval UI for pending content */}
-                {message.needsApproval && (
-                  <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-xs text-blue-800 mb-3">Review the content in your document and decide:</p>
+                {message.type === 'preview' && message.previewOps && (
+                  <div className="mt-3 pt-3 border-t border-blue-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-medium text-blue-800">Preview Changes:</span>
+                      <span className="text-xs text-blue-600">{message.previewOps.ops.length} operations</span>
+                    </div>
+                    
+                    {message.previewOps.citations.length > 0 && (
+                      <div className="mb-2">
+                        <span className="text-xs text-blue-700">Sources: </span>
+                        {message.previewOps.citations.map((citation, index) => (
+                          <span key={index} className="text-xs text-blue-600">
+                            {citation.type === 'doc' ? 'Your docs' : new URL(citation.url || '').hostname}
+                            {index < message.previewOps!.citations.length - 1 && ', '}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    
                     <div className="flex gap-2">
                       <button
-                        onClick={handleApproveContent}
-                        className="px-3 py-1.5 bg-black text-white text-xs rounded hover:bg-gray-800 transition-colors flex items-center gap-1"
+                        onClick={handleApproveChange}
+                        className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
                       >
                         <Check className="w-3 h-3" />
                         Approve
                       </button>
                       <button
-                        onClick={handleRejectContent}
-                        className="px-3 py-1.5 bg-white text-black text-xs rounded hover:bg-gray-100 transition-colors flex items-center gap-1 border border-gray-300"
+                        onClick={handleRejectChange}
+                        className="flex items-center gap-1 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
                       >
-                        <X className="w-3 h-3" />
-                        Reject
+                        <XCircle className="w-3 h-3" />
+                        Deny
                       </button>
                     </div>
                   </div>
                 )}
                 
-                <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-                  <p className={`text-xs ${
-                    message.type === 'user' 
-                      ? 'text-white/70' 
-                      : 'text-gray-600'
-                  }`}>
-                    {formatTime(message.timestamp)}
-                  </p>
-                </div>
+                {message.type === 'approval' && message.approvalData && (
+                  <div className="mt-3 pt-3 border-t border-green-200">
+                    <div className="text-sm font-medium text-green-700 mb-2">
+                      {message.approvalData.summary}
+                    </div>
+                    
+                    {message.approvalData.sources.length > 0 && (
+                      <div className="text-xs text-green-600 mb-3">
+                        <div className="font-medium mb-1">Sources:</div>
+                        <div className="space-y-1">
+                          {message.approvalData.sources.map((source, index) => (
+                            <div key={index} className="truncate">• {source}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleApprove(message.approvalData!.pendingChangeId)}
+                        disabled={isApproving || !message.approvalData!.canApprove}
+                        className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isApproving ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Check className="w-3 h-3" />
+                        )}
+                        Approve
+                      </button>
+                      
+                      <button
+                        onClick={() => handleDeny(message.approvalData!.pendingChangeId)}
+                        disabled={isDenying || !message.approvalData!.canDeny}
+                        className="flex items-center gap-1 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isDenying ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <XCircle className="w-3 h-3" />
+                        )}
+                        Deny
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                <p className={`text-xs mt-2 ${
+                  message.type === 'user' 
+                    ? 'text-white/70' 
+                    : 'text-gray-500'
+                }`}>
+                  {formatTime(message.timestamp)}
+                </p>
               </div>
 
               {message.type === 'user' && (
@@ -1140,8 +1247,8 @@ export default function AIChatPanel({
                 </div>
               )}
             </div>
-            ))
-          )}
+          ))
+        )}
 
         {/* Loading indicator */}
         {isLoading && (
@@ -1149,18 +1256,65 @@ export default function AIChatPanel({
             <div className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
               <Feather className="w-4 h-4 text-white" />
             </div>
-            <div className="bg-white text-gray-900 border border-gray-200 rounded-lg px-4 py-2 shadow-sm">
+            <div className="bg-white text-gray-900 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
               <div className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-gray-900" />
-                <span className="text-sm">
-                  Thinking...
-                </span>
+                <span className="text-sm">Thinking...</span>
               </div>
             </div>
           </div>
         )}
-      </div>
 
+        {/* Live typing indicator */}
+        {isLiveTyping && (
+          <div className="flex gap-3 justify-start">
+            <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
+              <Feather className="w-4 h-4 text-white" />
+            </div>
+            <div className="bg-green-50 text-green-900 border border-green-200 rounded-xl px-4 py-3 shadow-sm">
+              <div className="flex items-center gap-2">
+                <div className="flex space-x-1">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                </div>
+                <span className="text-sm font-medium">Writing to document...</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Test live typing button - remove this after testing */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="flex gap-3 justify-start">
+            <button
+              onClick={async () => {
+                if (editorAgent) {
+                  // Disabled live typing for testing
+                  editorAgent.appendContent('This is a test of content insertion (live typing disabled).')
+                }
+              }}
+              className="px-3 py-2 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+            >
+              Test Content Insertion
+            </button>
+            <button
+              onClick={() => {
+                if (editorRef && editorRef.current) {
+                  const isEditable = editorRef.current.getAttribute('contenteditable') === 'true'
+                  const hasFocus = document.activeElement === editorRef.current
+                  alert(`Editor editable: ${isEditable}, Has focus: ${hasFocus}`)
+                }
+              }}
+              className="px-3 py-2 bg-green-500 text-white text-sm rounded hover:bg-green-600"
+            >
+              Check Editor State
+            </button>
+          </div>
+        )}
+        
+        <div ref={messagesEndRef} />
+      </div>
 
       {/* Input Area */}
       <div className="border-t border-gray-200 p-4 bg-white">
@@ -1169,35 +1323,37 @@ export default function AIChatPanel({
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Ask me anything about your document or request edits..."
+            placeholder={chatMode === 'writer' ? 'Ask me to edit your document...' : 'Ask me anything or request content to be written...'}
             className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all text-gray-900"
             rows={2}
           />
-            <button
-              onClick={handleSendMessage}
+          <button
+            onClick={handleSendMessage}
             disabled={!inputValue.trim() || isLoading}
             className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-sm"
-            >
+          >
             {isLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <Send className="w-4 h-4" />
             )}
-            </button>
+          </button>
         </div>
         <p className="text-xs text-gray-600 mt-2">
-          Press Enter to send, Shift+Enter for new line.
+          {chatMode === 'writer' 
+            ? 'Press Enter to send, Shift+Enter for new line. Select text to edit specific parts.'
+            : 'Press Enter to send, Shift+Enter for new line.'
+          }
         </p>
         
-        {/* Status indicators */}
         {useWebSearch && (
           <div className="mt-3 px-3 py-2 bg-blue-50 text-blue-800 text-sm flex items-center gap-2 rounded-lg">
             <Globe className="w-4 h-4" />
             Web search enabled
           </div>
         )}
-        
       </div>
+
     </div>
   )
 }

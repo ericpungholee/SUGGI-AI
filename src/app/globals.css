@@ -8,6 +8,32 @@
   body {
     @apply antialiased;
   }
+  
+  /* Global scrollbar styling for better visibility */
+  *::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  
+  *::-webkit-scrollbar-track {
+    background: #f1f3f4;
+    border-radius: 6px;
+  }
+  
+  *::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #6b7280 0%, #4b5563 100%);
+    border-radius: 6px;
+    border: 2px solid #f1f3f4;
+    transition: all 0.2s ease;
+  }
+  
+  *::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #4b5563 0%, #374151 100%);
+  }
+  
+  *::-webkit-scrollbar-corner {
+    background: #f1f3f4;
+  }
 }
 
 @layer components {
@@ -45,23 +71,23 @@
   }
 
   .editor-content p {
-    @apply mb-4 leading-relaxed;
+    /* Line height set dynamically via inline styles */
   }
 
   .editor-content h1 {
-    @apply text-3xl font-bold mb-4 text-gray-900;
+    @apply text-3xl font-bold text-gray-900;
   }
 
   .editor-content h2 {
-    @apply text-2xl font-semibold mb-3 text-gray-900;
+    @apply text-2xl font-semibold text-gray-900;
   }
 
   .editor-content h3 {
-    @apply text-xl font-semibold mb-2 text-gray-900;
+    @apply text-xl font-semibold text-gray-900;
   }
 
   .editor-content ul, .editor-content ol {
-    @apply mb-4 pl-6;
+    @apply pl-6;
     list-style-position: outside;
   }
 
@@ -76,10 +102,6 @@
 
   .editor-content li {
     list-style: inherit;
-  }
-
-  .editor-content li {
-    @apply mb-2;
   }
 
   .editor-content blockquote {
@@ -246,6 +268,98 @@
   background: #A68B5B;
 }
 
+/* Enhanced scrollbar for main editor content */
+.editor-content::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar {
+  width: 14px;
+}
+
+.editor-content::-webkit-scrollbar-track,
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: #f1f3f4;
+  border-radius: 7px;
+  border: 1px solid #dadce0;
+}
+
+.editor-content::-webkit-scrollbar-thumb,
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #6b7280 0%, #4b5563 100%);
+  border-radius: 7px;
+  border: 2px solid #f1f3f4;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.editor-content::-webkit-scrollbar-thumb:hover,
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #4b5563 0%, #374151 100%);
+  border: 2px solid #f3f4f6;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.editor-content::-webkit-scrollbar-thumb:active,
+.overflow-y-auto::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, #374151 0%, #1f2937 100%);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.editor-content::-webkit-scrollbar-corner,
+.overflow-y-auto::-webkit-scrollbar-corner {
+  background: #f1f3f4;
+}
+
+/* Firefox scrollbar styling */
+.editor-content,
+.overflow-y-auto {
+  scrollbar-width: thin;
+  scrollbar-color: #6b7280 #f1f3f4;
+}
+
+/* Smooth scrolling for editor content */
+.editor-content,
+.overflow-y-auto {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for AI chat panel - more specific */
+div.overflow-y-auto:not(.editor-content)::-webkit-scrollbar {
+  width: 8px;
+}
+
+div.overflow-y-auto:not(.editor-content)::-webkit-scrollbar-track {
+  background: #f1f3f4;
+  border-radius: 4px;
+}
+
+div.overflow-y-auto:not(.editor-content)::-webkit-scrollbar-thumb {
+  background: #c1c8cd;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+div.overflow-y-auto:not(.editor-content)::-webkit-scrollbar-thumb:hover {
+  background: #a8b0b6;
+}
+
+/* Custom scrollbar for toolbar */
+.editor-toolbar::-webkit-scrollbar {
+  height: 6px;
+}
+
+.editor-toolbar::-webkit-scrollbar-track {
+  background: #f8f9fa;
+  border-radius: 3px;
+}
+
+.editor-toolbar::-webkit-scrollbar-thumb {
+  background: #dee2e6;
+  border-radius: 3px;
+}
+
+.editor-toolbar::-webkit-scrollbar-thumb:hover {
+  background: #adb5bd;
+}
+
 /* Enhanced text styling support */
 .prose strong, .prose b {
   font-weight: 700;
@@ -311,28 +425,7 @@
 .prose .bg-blue-light { background-color: #eff6ff; }
 .prose .bg-yellow-light { background-color: #fefce8; }
 
-/* Typing cursor animation */
-.typing-cursor {
-  animation: blink 1s infinite;
-  color: #3b82f6;
-  font-weight: bold;
-}
-
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}
-
-/* Pending AI content styling */
-.pending-ai-content {
-  color: #6b7280;
-  background: rgba(107, 114, 128, 0.1);
-  border-bottom: 2px dashed #d1d5db;
-  padding: 2px 4px;
-  border-radius: 3px;
-  font-style: italic;
-  transition: all 0.3s ease;
-}
+/* Removed old typing cursor and pending content styles */
 .prose .bg-purple-light { background-color: #faf5ff; }
 .prose .bg-pink-light { background-color: #fdf2f8; }
 .prose .bg-orange-light { background-color: #fff7ed; }
@@ -497,4 +590,38 @@
 .prose *::-moz-selection {
   background: #FEF3C7;
   color: #92400E;
+}
+
+/* Hide scrollbar for landing page */
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;  /* Safari and Chrome */
+}
+
+/* Hide scrollbar for landing page body and html */
+body:has(.hide-scrollbar),
+html:has(.hide-scrollbar) {
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+  scrollbar-width: none;  /* Firefox */
+}
+
+body:has(.hide-scrollbar)::-webkit-scrollbar,
+html:has(.hide-scrollbar)::-webkit-scrollbar {
+  display: none;  /* Safari and Chrome */
+}
+
+/* Typing cursor animation */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.typing-cursor {
+  animation: blink 1s infinite;
+  font-weight: normal;
+  margin-left: 2px;
 }

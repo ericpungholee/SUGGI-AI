@@ -1,9 +1,20 @@
 import OpenAI from 'openai'
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+// Lazy initialization of OpenAI client
+let openai: OpenAI | null = null
+
+function getOpenAI(): OpenAI {
+  if (!openai) {
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY environment variable is required')
+    }
+    openai = new OpenAI({
+      apiKey,
+    })
+  }
+  return openai
+}
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -17,6 +28,8 @@ export interface ChatCompletionOptions {
   stream?: boolean
   abortSignal?: AbortSignal
   useWebSearch?: boolean
+  tools?: Array<{ type: string; [key: string]: any }>
+  tool_choice?: 'auto' | { type: string }
 }
 
 export interface EmbeddingOptions {
@@ -32,12 +45,14 @@ export async function generateChatCompletion(
   options: ChatCompletionOptions = {}
 ) {
   const {
-    model = process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo',
+    model = process.env.OPENAI_CHAT_MODEL || 'gpt-5-2025-08-07',
     temperature = 0.7,
     max_tokens = 2000,
     stream = false,
     abortSignal,
-    useWebSearch = false
+    useWebSearch = false,
+    tools = [],
+    tool_choice = 'auto'
   } = options
 
   try {
@@ -71,32 +86,34 @@ export async function generateChatCompletion(
     // Use Responses API for newer models that require it
     if (model.includes('gpt-5')) {
       try {
-        // Combine messages into a single input string preserving roles
-        const combinedInput = messages
-          .map(m => `${m.role.toUpperCase()}: ${m.content}`)
-          .join('\n\n')
+        // Convert messages to the format expected by Responses API
+        const input = messages.map(m => ({
+          role: m.role,
+          content: m.content
+        }))
 
-        // GPT-5 nano has 400k context window and up to 128k output tokens
+        // GPT-5 has 400k context window and up to 128k output tokens
         // Reserve headroom for web search results (~6-8k tokens)
         const gpt5MaxTokens = Math.max(max_tokens, 12000)
 
         const responsesPayload: any = {
           model,
-          input: combinedInput,
-          max_output_tokens: gpt5MaxTokens,
-          stream: stream ? true : false
+          input,
+          max_output_tokens: gpt5MaxTokens
         }
 
-        // Enable GPT-5's native web search using the official Responses API
-        if (useWebSearch) {
-          responsesPayload.tools = [{ 
-            type: "web_search_preview",
-            search_context_size: "high"
-          }]
+        // Enable GPT-5's native web search and other tools
+        if (useWebSearch || tools.length > 0) {
+          const toolsList = [...tools]
+          if (useWebSearch) {
+            toolsList.push({ type: "web_search" })
+          }
+          responsesPayload.tools = toolsList
+          responsesPayload.tool_choice = tool_choice
         }
 
         // GPT-5 Responses API may not support temperature; omit to avoid 400
-        let resp = await openai.responses.create(
+        let resp = await getOpenAI().responses.create(
           responsesPayload,
           { signal: abortSignal }
         )
@@ -108,7 +125,7 @@ export async function generateChatCompletion(
           await new Promise(resolve => setTimeout(resolve, 100)) // Much faster polling
           
           try {
-            resp = await openai.responses.retrieve(resp.id, { signal: abortSignal })
+            resp = await getOpenAI().responses.retrieve(resp.id, {}, { signal: abortSignal })
           } catch (pollError) {
             console.warn('Error polling for completion:', pollError)
             break
@@ -175,7 +192,7 @@ export async function generateChatCompletion(
         // Note: web_search tool is only available in GPT-5 Responses API, not Chat Completions
         // The fallback will use general knowledge without web search
 
-        const fallbackResponse = await openai.chat.completions.create(fallbackParams, { signal: abortSignal })
+        const fallbackResponse = await getOpenAI().chat.completions.create(fallbackParams, { signal: abortSignal })
         
         return fallbackResponse
       }
@@ -185,7 +202,7 @@ export async function generateChatCompletion(
     // For other models, web search is handled at the application level
 
     // Fallback to Chat Completions API
-    const response = await openai.chat.completions.create(requestParams, {
+    const response = await getOpenAI().chat.completions.create(requestParams, {
       signal: abortSignal
     })
 
@@ -223,7 +240,7 @@ export async function generateEmbedding(
     // Use the best available embedding model
     const { model = (process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small') } = options
 
-    const response = await openai.embeddings.create({
+    const response = await getOpenAI().embeddings.create({
       model,
       input: text
     })
@@ -245,7 +262,7 @@ export async function generateEmbeddings(
   try {
     const { model = (process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small') } = options
 
-    const response = await openai.embeddings.create({
+    const response = await getOpenAI().embeddings.create({
       model,
       input: texts
     })
@@ -257,4 +274,4 @@ export async function generateEmbeddings(
   }
 }
 
-export default openai
+export default getOpenAI

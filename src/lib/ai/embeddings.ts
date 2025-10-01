@@ -1,4 +1,5 @@
 import { generateEmbedding, generateEmbeddings } from './openai'
+import { SearchResult, DocumentSearchOptions } from './vector-search'
 
 export interface DocumentChunk {
   id: string
@@ -286,8 +287,6 @@ export async function createEmbedding(text: string): Promise<EmbeddingResult> {
  */
 export async function createEmbeddings(texts: string[]): Promise<EmbeddingResult[]> {
   try {
-    console.log('Creating embeddings for', texts.length, 'texts')
-    
     // Validate input
     if (!Array.isArray(texts)) {
       throw new Error('Texts must be an array')
@@ -307,7 +306,6 @@ export async function createEmbeddings(texts: string[]): Promise<EmbeddingResult
     }
     
     const embeddings = await generateEmbeddings(validTexts, { model: process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-large' })
-    console.log('Generated embeddings:', embeddings.length, 'embeddings')
     
     // Validate embeddings
     const expectedDimension = 3072 // Updated for text-embedding-3-large
@@ -323,8 +321,6 @@ export async function createEmbeddings(texts: string[]): Promise<EmbeddingResult
         throw new Error(`Embedding ${i} contains invalid values`)
       }
     }
-    
-    console.log('First embedding length:', embeddings[0]?.length)
     
     if (embeddings.length !== validTexts.length) {
       throw new Error(`Mismatch: ${validTexts.length} texts but ${embeddings.length} embeddings`)
@@ -352,13 +348,7 @@ export async function processDocumentContent(
   content: string,
   documentId: string
 ): Promise<DocumentChunk[]> {
-  console.log('=== ENTERING processDocumentContent ===')
-  console.log('Parameters:', { documentId, contentType: typeof content, contentLength: content?.length })
-  
   try {
-    console.log('Starting document processing for:', documentId)
-    console.log('Content length:', content.length)
-    console.log('Content preview:', content.substring(0, 100) + '...')
     
     // Clean and prepare text, excluding image data
     const cleanText = content
@@ -367,16 +357,11 @@ export async function processDocumentContent(
       .replace(/\s+/g, ' ') // Normalize whitespace
       .trim()
 
-    console.log('Clean text length:', cleanText.length)
-    console.log('Clean text preview:', cleanText.substring(0, 100) + '...')
-
     if (!cleanText) {
-      console.log('No clean text found, returning empty array')
       return []
     }
 
     // Chunk the text using adaptive strategy
-    console.log('Starting adaptive text chunking...')
     let textChunks: string[]
     try {
       textChunks = chunkTextAdaptive(cleanText, {
@@ -386,9 +371,6 @@ export async function processDocumentContent(
         maxChunkSize: 1200,
         preserveStructure: true
       })
-      console.log('Text chunks created:', textChunks.length)
-      console.log('First chunk length:', textChunks[0]?.length)
-      console.log('First chunk preview:', textChunks[0]?.substring(0, 100) + '...')
     } catch (chunkError) {
       console.error('Error in chunking:', chunkError)
       throw new Error(`Chunking failed: ${chunkError instanceof Error ? chunkError.message : 'Unknown error'}`)
@@ -396,21 +378,13 @@ export async function processDocumentContent(
     
     // Generate embeddings for all chunks
     const embeddingResults = await createEmbeddings(textChunks)
-    console.log('Embedding results:', embeddingResults.length)
-    console.log('First embedding result:', embeddingResults[0])
     
     // Create document chunks
-    console.log('Creating document chunks...')
     const documentChunks: DocumentChunk[] = []
     
     try {
       for (let index = 0; index < textChunks.length; index++) {
         const chunk = textChunks[index]
-        console.log(`Processing chunk ${index}:`, {
-          chunkLength: chunk.length,
-          hasEmbedding: !!embeddingResults[index],
-          embeddingLength: embeddingResults[index]?.embedding?.length
-        })
         
         if (!embeddingResults[index]) {
           throw new Error(`Missing embedding for chunk ${index}`)
@@ -429,7 +403,6 @@ export async function processDocumentContent(
         }
         
         documentChunks.push(documentChunk)
-        console.log(`Created chunk ${index} successfully`)
       }
     } catch (chunkError) {
       console.error('Error creating document chunks:', chunkError)
@@ -911,7 +884,6 @@ export async function adaptiveRetrieval(
     let intent: QueryIntent
     try {
       intent = await classifyQueryIntent(query)
-      console.log('Query intent classified:', intent)
     } catch (classificationError) {
       console.warn('Query classification failed, using default settings:', classificationError)
       // Use default intent if classification fails

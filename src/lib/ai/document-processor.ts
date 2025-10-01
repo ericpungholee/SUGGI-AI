@@ -43,7 +43,6 @@ export async function processDocument(
     const content = document.plainText || extractTextFromContent(document.content)
 
     if (!content || content.trim().length === 0) {
-      console.log(`Document ${documentId} has no content to process`)
       return
     }
 
@@ -55,21 +54,11 @@ export async function processDocument(
         console.error(`Incremental vectorization failed for document ${documentId}:`, result.errors)
         // Fallback to full vectorization
         await vectorizeDocument(documentId, content, userId)
-      } else {
-        console.log(`Document ${documentId} processed incrementally:`, {
-          chunksProcessed: result.chunksProcessed,
-          chunksAdded: result.chunksAdded,
-          chunksUpdated: result.chunksUpdated,
-          chunksDeleted: result.chunksDeleted,
-          processingTime: result.processingTime
-        })
       }
     } else {
       // Use traditional full vectorization
       await vectorizeDocument(documentId, content, userId)
     }
-
-    console.log(`Document ${documentId} processed successfully`)
   } catch (error) {
     console.error(`Error processing document ${documentId}:`, error)
     throw new Error(`Failed to process document: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -249,7 +238,6 @@ export async function cleanupOrphanedChunks(): Promise<number> {
       }
     })
 
-    console.log(`Cleaned up ${result.count} orphaned chunks`)
     return result.count
   } catch (error) {
     console.error('Error cleaning up orphaned chunks:', error)
