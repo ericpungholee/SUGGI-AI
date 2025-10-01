@@ -634,9 +634,7 @@ export default function Editor({
     }
 
     return (
-        <div className="flex-1 flex flex-col relative">
-            <div className={`flex-1 flex flex-col relative transition-all duration-300 ease-in-out`} style={{ marginRight: isAIChatOpen ? `${aiChatWidth}px` : '0px' }}>
-            
+        <div className="flex-1 flex flex-col h-full">
             {/* Toolbar */}
             <EditorToolbar
                 onNavigate={handleNavigation}
@@ -663,42 +661,82 @@ export default function Editor({
                 onToggleAIChat={() => setIsAIChatOpen(!isAIChatOpen)}
             />
 
-            {/* Writing Area */}
-            <div 
-                className="flex-1 overflow-y-auto editor-content transition-all duration-300 ease-in-out"
-                style={{ 
-                    marginRight: isAIChatOpen ? `${aiChatWidth}px` : '0px',
-                    height: 'calc(100vh - 56px)',
-                    maxHeight: 'calc(100vh - 56px)'
-                }}
-            >
-                <div className="relative">
-                    <div className="p-8 max-w-4xl mx-auto">
-                        <div
-                            ref={editorRef}
-                            contentEditable
-                            className="min-h-[600px] focus:outline-none max-w-none relative"
-                            style={{
-                                color: '#000000',
-                                lineHeight: '1.6',
-                                fontFamily: 'Arial, sans-serif',
-                                fontSize: '16px',
-                                margin: 0,
-                                padding: 0,
-                                minHeight: '0px'
-                            }}
-                            onInput={handleContentChange}
-                            onKeyDown={handleKeyDown}
-                            onPaste={handlePaste}
-                            onDrop={handleDrop}
-                            onDragOver={handleDragOver}
-                            suppressContentEditableWarning={true}
-                            role="textbox"
-                            aria-label="Rich text editor"
-                            aria-multiline="true"
-                        />
+            {/* Main Content Area */}
+            <div className="flex-1 flex flex-row overflow-hidden">
+                {/* Editor Content */}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    {/* Writing Area */}
+                    <div className="flex-1 overflow-y-auto editor-content">
+                        <div className="relative">
+                            <div className="p-8 max-w-4xl mx-auto">
+                                <div
+                                    ref={editorRef}
+                                    contentEditable
+                                    className="min-h-[600px] focus:outline-none max-w-none relative"
+                                    style={{
+                                        color: '#000000',
+                                        lineHeight: '1.6',
+                                        fontFamily: 'Arial, sans-serif',
+                                        fontSize: '16px',
+                                        margin: 0,
+                                        padding: 0,
+                                        minHeight: '0px'
+                                    }}
+                                    onInput={handleContentChange}
+                                    onKeyDown={handleKeyDown}
+                                    onPaste={handlePaste}
+                                    onDrop={handleDrop}
+                                    onDragOver={handleDragOver}
+                                    suppressContentEditableWarning={true}
+                                    role="textbox"
+                                    aria-label="Rich text editor"
+                                    aria-multiline="true"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Bottom Status Bar */}
+                    <div className="h-8 border-t border-gray-200 bg-gray-50 px-4 flex items-center justify-between text-xs text-gray-600">
+                        <div className="flex items-center gap-4">
+                            <span>{getWordCount()} words</span>
+                            <span>{getCharCount()} characters</span>
+                            {isSaving && <span className="text-blue-600">Saving...</span>}
+                            {isLiveTyping && (
+                                <span className="text-green-600 flex items-center gap-1">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                    AI Writing...
+                                </span>
+                            )}
+                            {saveError && (
+                                <span className="text-red-600">Save failed</span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400">
+                                Document ID: {documentId}
+                            </span>
+                        </div>
                     </div>
                 </div>
+
+                {/* AI Chat Panel */}
+                {isAIChatOpen && (
+                    <div 
+                        className="border-l border-gray-200 bg-white flex flex-col transition-all duration-300 ease-in-out"
+                        style={{ width: `${aiChatWidth}px` }}
+                    >
+                        <AIChatPanel
+                            isOpen={isAIChatOpen}
+                            onClose={() => setIsAIChatOpen(false)}
+                            width={aiChatWidth}
+                            documentId={documentId}
+                            onApplyChanges={onContentChange}
+                            onRevertChanges={() => {}}
+                            connectedDocuments={[]}
+                        />
+                    </div>
+                )}
             </div>
 
             {/* Delete Confirmation Modal */}
@@ -749,49 +787,6 @@ export default function Editor({
                 onInsertTable={insertTable}
             />
 
-            {/* AI Chat Panel */}
-            {isAIChatOpen && (
-                <div 
-                    className="fixed right-0 top-0 h-full bg-white border-l border-gray-200 shadow-2xl flex flex-col transition-all duration-300 ease-in-out z-40"
-                    style={{ width: `${aiChatWidth}px` }}
-                >
-                    <AIChatPanel
-                        isOpen={isAIChatOpen}
-                        onClose={() => setIsAIChatOpen(false)}
-                        width={aiChatWidth}
-                        onWidthChange={setAiChatWidth}
-                        documentId={documentId}
-                        editorAgent={editorAgent || undefined}
-                        editorRef={editorRef}
-                        onLiveTypingChange={setIsLiveTyping}
-                    />
-                </div>
-            )}
-
-            {/* Bottom Status Bar */}
-            <div className="h-8 border-t border-gray-200 bg-gray-50 px-4 flex items-center justify-between text-xs text-gray-600">
-                <div className="flex items-center gap-4">
-                    <span>{getWordCount()} words</span>
-                    <span>{getCharCount()} characters</span>
-                    {isSaving && <span className="text-blue-600">Saving...</span>}
-                    {isLiveTyping && (
-                        <span className="text-green-600 flex items-center gap-1">
-                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                            AI Writing...
-                        </span>
-                    )}
-                    {saveError && (
-                        <span className="text-red-600">Save failed</span>
-                    )}
-                </div>
-                <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400">
-                        Document ID: {documentId}
-                    </span>
-                </div>
-            </div>
-
-            </div>
         </div>
     )
 }

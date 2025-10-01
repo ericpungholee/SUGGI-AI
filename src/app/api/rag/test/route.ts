@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { ragAdapter } from '@/lib/ai/rag-adapter'
-import { routeQuery } from '@/lib/ai/rag-router'
+import { routerService } from '@/lib/ai/router-service'
 import { createRAGOrchestrator } from '@/lib/ai/rag-orchestrator'
 
 export async function GET(request: NextRequest) {
@@ -63,24 +63,38 @@ export async function GET(request: NextRequest) {
       console.error('❌ RAG Adapter test failed:', error)
     }
 
-    // Test 2: Routing
+    // Test 2: Hybrid Learned Router
     try {
-      console.log('Testing Routing...')
-      const route = await routeQuery(testQuery, undefined, session)
+      console.log('Testing Hybrid Learned Router...')
+      const routerContext = {
+        has_attached_docs: false,
+        doc_ids: [],
+        is_selection_present: false,
+        selection_length: 0,
+        recent_tools: [],
+        conversation_length: 0,
+        user_id: session.user.id
+      }
+      
+      const routerResult = await routerService.classifyIntent(testQuery, routerContext)
       
       results.tests.routing = {
         success: true,
-        task: route.task,
-        needs: route.needs,
-        constraints: route.constraints
+        intent: routerResult.classification.intent,
+        confidence: routerResult.classification.confidence,
+        method: (routerResult as any).explanation?.method || 'unknown',
+        reasoning: (routerResult as any).explanation?.reasoning,
+        processingTime: routerResult.processing_time,
+        fallbackUsed: routerResult.fallback_used,
+        slots: routerResult.classification.slots
       }
-      console.log('✅ Routing test passed')
+      console.log('✅ Hybrid Learned Router test passed')
     } catch (error) {
       results.tests.routing = {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
       }
-      console.error('❌ Routing test failed:', error)
+      console.error('❌ Hybrid Learned Router test failed:', error)
     }
 
     // Test 3: Full Orchestrator (simplified)

@@ -1,5 +1,4 @@
 import { generateChatCompletion } from './openai'
-import { RouterDecision } from './rag-router'
 import { RagChunk } from './rag-adapter'
 
 export interface ContextRef {
@@ -30,10 +29,10 @@ export interface InstructionJSON {
 }
 
 /**
- * Fill instruction JSON based on route decision and evidence
+ * Fill instruction JSON based on router result and evidence
  */
 export async function fillInstructionJSON(
-  route: RouterDecision,
+  routerResult: any,
   ask: string,
   selection?: string,
   ragChunks: RagChunk[] = [],
@@ -50,7 +49,7 @@ export async function fillInstructionJSON(
         type: 'doc',
         id: chunk.id,
         anchor: chunk.anchor,
-        why: getChunkReason(chunk, route.task),
+        why: getChunkReason(chunk, routerResult.classification.intent),
         score: chunk.score
       })
     })
@@ -60,31 +59,31 @@ export async function fillInstructionJSON(
       contextRefs.push({
         type: 'web',
         id: result.url || `web-${index}`,
-        why: getWebReason(result, route.task),
+        why: getWebReason(result, routerResult.classification.intent),
         score: result.score || 0.8,
         content: result.snippet || result.title || 'Web search result'
       })
     })
 
     // Determine task-specific inputs
-    const inputs = getTaskInputs(route, ask, selection)
+    const inputs = getTaskInputs(routerResult, ask, selection)
 
     // Determine policies based on task and evidence quality
-    const policies = getTaskPolicies(route, ragConf, coverage)
+    const policies = getTaskPolicies(routerResult, ragConf, coverage)
 
     // Calculate telemetry
     const totalTokens = ragChunks.reduce((sum, chunk) => sum + chunk.tokens, 0) +
                        webResults.reduce((sum, result) => sum + (result.tokens || 100), 0)
 
     return {
-      task: route.task,
+      task: routerResult.classification.intent,
       inputs,
       context_refs: contextRefs,
       policies: {
-        cite_every_claim: route.needs.precision === 'high',
-        no_external_sources: route.needs.web_context === 'no',
-        max_tokens: route.constraints.max_tokens,
-        format: route.constraints.format
+        cite_every_claim: routerResult.classification.slots.outputs === 'answer',
+        no_external_sources: routerResult.classification.intent === 'rag_query',
+        max_tokens: 2000,
+        format: 'markdown'
       },
       telemetry: {
         route_conf: 0.8, // Default confidence for routing
@@ -136,26 +135,26 @@ function getWebReason(result: any, task: string): string {
 /**
  * Get task-specific inputs
  */
-function getTaskInputs(route: RouterDecision, ask: string, selection?: string): Record<string, any> {
+function getTaskInputs(routerResult: any, ask: string, selection?: string): Record<string, any> {
   const baseInputs = {
     query: ask,
-    style: route.needs.creativity,
-    precision: route.needs.precision
+    style: 'medium',
+    precision: 'medium'
   }
 
-  switch (route.task) {
+  switch (routerResult.classification.intent) {
     case 'rewrite':
       return {
         ...baseInputs,
         original_text: selection || '',
-        style: route.needs.creativity,
+        style: 'medium',
         preserve_meaning: true
       }
     
     case 'summarize':
       return {
         ...baseInputs,
-        max_words: route.constraints.max_tokens ? Math.floor(route.constraints.max_tokens / 4) : 200,
+        max_words: 200,
         style: 'bullets',
         include_key_points: true
       }
@@ -181,7 +180,7 @@ function getTaskInputs(route: RouterDecision, ask: string, selection?: string): 
         ...baseInputs,
         table_type: 'data',
         include_headers: true,
-        format: route.constraints.format || 'markdown'
+        format: 'markdown'
       }
     
     case 'refs':
@@ -200,12 +199,12 @@ function getTaskInputs(route: RouterDecision, ask: string, selection?: string): 
 /**
  * Get task-specific policies
  */
-function getTaskPolicies(route: RouterDecision, ragConf: number, coverage: number): InstructionJSON['policies'] {
+function getTaskPolicies(routerResult: any, ragConf: number, coverage: number): InstructionJSON['policies'] {
   return {
-    cite_every_claim: route.needs.precision === 'high' || route.task === 'fact_check',
-    no_external_sources: route.needs.web_context === 'no',
-    max_tokens: route.constraints.max_tokens,
-    format: route.constraints.format
+    cite_every_claim: routerResult.classification.slots.outputs === 'answer',
+    no_external_sources: routerResult.classification.intent === 'rag_query',
+    max_tokens: 2000,
+    format: 'markdown'
   }
 }
 

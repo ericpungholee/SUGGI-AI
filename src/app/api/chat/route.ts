@@ -3,40 +3,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { generateChatCompletion } from '@/lib/ai/openai'
 import { createRAGOrchestrator } from '@/lib/ai/rag-orchestrator'
-
-/**
- * Pattern configuration for better maintainability and scalability
- */
-const MESSAGE_PATTERNS = {
-  documentContext: [
-    'based on my documents', 'from my files', 'using my data', 
-    'from my documents', 'based on my files', 'using my documents'
-  ],
-  analytical: ['analyze', 'summarize', 'compare'],
-  timeBased: ['current', 'latest', 'recent', 'today'],
-  contentCreation: ['write', 'create', 'generate', 'report', 'analysis'],
-  documentReference: ['document', 'my', 'this'],
-  contextCombination: ['based on', 'using my', 'from my', 'combine my', 'merge my'],
-  followUp: [
-    'this stock', 'the stock', 'this company', 'the company', 'its ',
-    'pe ratio', 'market cap', 'stock price', 'what is', 'how much', 'current price'
-  ]
-} as const
-
-/**
- * Helper function to check if message contains any of the specified patterns
- */
-function hasPatterns(message: string, patterns: readonly string[]): boolean {
-  const messageLower = message.toLowerCase()
-  return patterns.some(pattern => messageLower.includes(pattern))
-}
-
-/**
- * Helper function to check if message has multiple pattern requirements
- */
-function hasMultiplePatterns(message: string, primaryPatterns: readonly string[], secondaryPatterns: readonly string[]): boolean {
-  return hasPatterns(message, primaryPatterns) && hasPatterns(message, secondaryPatterns)
-}
+import { routerService } from '@/lib/ai/router-service'
+import { RouterContext } from '@/lib/ai/intent-schema'
 
 // Helper function to extract content for live editing
 function extractContentForLiveEdit(content: string): string {
@@ -138,9 +106,9 @@ export async function POST(request: NextRequest) {
       message, 
       documentId, 
       selection,
-      useWebSearch = false,
       maxTokens = 2000,
-      conversationHistory = []
+      conversationHistory = [],
+      forceWebSearch = false
     } = body
 
     if (!message) {
@@ -154,35 +122,52 @@ export async function POST(request: NextRequest) {
       userId: session.user.id,
       documentId,
       messageLength: message.length,
-      useWebSearch,
       conversationLength: conversationHistory.length
     })
 
-    // Convert message to lowercase for pattern matching
-    const messageLower = message.toLowerCase()
+    // Use hybrid router for intent classification
+    const routerContext: RouterContext = {
+      has_attached_docs: !!documentId,
+      doc_ids: documentId ? [documentId] : [],
+      is_selection_present: !!selection && selection.length > 0,
+      selection_length: selection?.length || 0,
+      recent_tools: [], // Could be enhanced with session tracking
+      conversation_length: conversationHistory.length,
+      user_id: session.user.id,
+      document_id: documentId
+    }
 
-    // Use pattern configuration for better maintainability
-    const hasDocumentContext = hasPatterns(message, MESSAGE_PATTERNS.documentContext)
-    const hasAnalyticalIntent = hasMultiplePatterns(message, MESSAGE_PATTERNS.analytical, MESSAGE_PATTERNS.documentReference)
-    const hasTimeBasedQuery = hasPatterns(message, MESSAGE_PATTERNS.timeBased)
-    const hasContentCreationIntent = hasPatterns(message, MESSAGE_PATTERNS.contentCreation)
-    const hasContextCombination = hasPatterns(message, MESSAGE_PATTERNS.contextCombination)
+    const routerResult = await routerService.classifyIntent(message, routerContext)
     
-    const shouldTriggerRAG = hasDocumentContext || 
-      (documentId && hasAnalyticalIntent) ||
-      (useWebSearch && documentId && hasContextCombination) ||
-      hasTimeBasedQuery
-
-    console.log('🔍 RAG Trigger Check:', {
-      message: messageLower,
-      hasDocumentContext,
-      hasAnalyticalIntent: hasAnalyticalIntent && documentId,
-      hasTimeBasedQuery,
-      hasContentCreationIntent: hasContentCreationIntent,
-      hasContextCombination: useWebSearch && documentId && hasContextCombination,
-      useWebSearch,
-      shouldTriggerRAG
+    console.log('🔍 Router Classification:', {
+      intent: routerResult.classification.intent,
+      confidence: routerResult.classification.confidence,
+      needs_recency: routerResult.classification.slots.needs_recency,
+      edit_target: routerResult.classification.slots.edit_target,
+      outputs: routerResult.classification.slots.outputs,
+      processing_time: routerResult.processing_time,
+      fallback_used: routerResult.fallback_used
     })
+
+    // Determine routing based on intent
+    const shouldTriggerRAG = routerResult.classification.intent === 'rag_query'
+    
+    // Use pure model detection for web search - let the router decide, but override if forceWebSearch is true
+    const shouldUseWebSearch = forceWebSearch || 
+                               routerResult.classification.intent === 'web_search' || 
+                               (routerResult.classification.intent === 'ask' && routerResult.classification.slots.needs_recency)
+
+    console.log('🔍 Web Search Decision:', {
+      intent: routerResult.classification.intent,
+      needsRecency: routerResult.classification.slots.needs_recency,
+      forceWebSearch,
+      shouldUseWebSearch,
+      reason: forceWebSearch ? 'User forced web search' : 
+              shouldUseWebSearch ? 'Router detected web search needed' : 'Router suggests general knowledge'
+    })
+    
+    const isEditRequest = routerResult.classification.intent === 'edit_request'
+    const isEditorWrite = routerResult.classification.intent === 'editor_write'
 
     // Build conversation context
     const messages = [
@@ -193,12 +178,13 @@ export async function POST(request: NextRequest) {
 Key behaviors:
 - When asked to write reports, research, or content, ALWAYS start your response with phrases like "I'll write:", "I'm writing:", "Let me write:", "Here's the content:", "I'll create:", "I'm creating:", "I'll add:", "I'm adding:", "I'll insert:", "I'm inserting:", "Writing:", "Creating:", or "Adding:"
 - Don't ask for confirmation - just start writing immediately
-- Use web search when enabled for current information
+- Use current information when available through web search
 - Be helpful and direct
 - Format content properly with markdown when appropriate
 - Remember conversation context and build upon previous messages
 - If user says "go ahead" or similar, proceed with the previous request
 - ALWAYS include the actual content to be written after your introductory phrase
+- For editor_write intents, focus on creating comprehensive, well-structured content
 
 CRITICAL: Use ONLY real, current data in your responses. Never use placeholder values like "XYZ", "ABC", or generic examples. Use actual stock symbols, real company names, and current financial data.
 
@@ -235,7 +221,8 @@ Current conversation context: ${conversationHistory.length > 0 ? 'Previous messa
 
     // Check if this is a follow-up question that needs context from previous conversation
     const needsConversationContext = conversationHistory.length > 0 && 
-      hasPatterns(message, MESSAGE_PATTERNS.followUp)
+      conversationHistory.some(msg => msg.role === 'assistant' && 
+        (msg.content.includes('stock') || msg.content.includes('company') || msg.content.includes('price')))
 
     if (shouldTriggerRAG) {
       console.log('🔄 Using RAG orchestrator...')
@@ -245,8 +232,8 @@ Current conversation context: ${conversationHistory.length > 0 ? 'Previous messa
         userId: session.user.id,
         documentId,
         maxTokens,
-        enableWebSearch: useWebSearch,
-        webSearchTimeout: 5000,
+        enableWebSearch: shouldUseWebSearch,
+        webSearchTimeout: 15000,
         conversationHistory
       })
 
@@ -276,36 +263,68 @@ Current conversation context: ${conversationHistory.length > 0 ? 'Previous messa
         })
       }
       
-      // Perform web search if enabled
+      // Perform web search using GPT-5 native web search
       let webSearchResults: any[] = []
-      if (useWebSearch) {
+      let webSearchText = ''
+      let webSearchCitations: any[] = []
+      
+      if (shouldUseWebSearch) {
         try {
-          console.log('🔍 Performing web search for:', message)
-          const webResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/web-search`, {
+          console.log('🔍 Performing GPT-5 web search for:', message)
+          
+          const webResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/web-search-gpt5`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
+              'Cookie': request.headers.get('cookie') || '', // Pass session cookies
             },
-            body: JSON.stringify({ query: message })
+            body: JSON.stringify({ 
+              query: message,
+              context: {
+                has_attached_docs: !!documentId,
+                doc_ids: documentId ? [documentId] : [],
+                is_selection_present: !!selection && selection.length > 0,
+                selection_length: selection?.length || 0,
+                recent_tools: [],
+                conversation_length: conversationHistory.length,
+                user_id: session.user.id,
+                document_id: documentId
+              }
+            })
           })
           
           if (webResponse.ok) {
             const webData = await webResponse.json()
-            webSearchResults = webData.results || []
-            console.log('✅ Web search results:', webSearchResults.length, 'results found')
+            webSearchText = webData.text || ''
+            webSearchCitations = webData.citations || []
+            webSearchResults = webData.citations || []
+            console.log('✅ GPT-5 web search results:', {
+              textLength: webSearchText.length,
+              citationsCount: webSearchCitations.length,
+              usage: webData.usage
+            })
           }
         } catch (error) {
           console.error('❌ Web search failed:', error)
+          // Add a note to the system message that web search failed
+          messages.push({
+            role: 'system',
+            content: 'Note: Real-time web search is currently unavailable. Please provide helpful general information and suggest where users can find current data.'
+          })
         }
       }
 
       // Add web search context to the message if we have results
-      if (webSearchResults.length > 0) {
-        const webContext = webSearchResults.map((result, index) => 
-          `[Web Source ${index + 1}]: ${result.snippet}`
-        ).join('\n\n')
+      if (webSearchText && webSearchCitations.length > 0) {
+        // Use the GPT-5 generated text directly
+        messages[messages.length - 1].content += `\n\n[Current Web Information - Use this real data in your response]:\n${webSearchText}`
         
-        messages[messages.length - 1].content += `\n\n[Current Web Information - Use this real data in your response]:\n${webContext}`
+        // Add citations information
+        const citationsText = webSearchCitations.map((citation, index) => 
+          `${index + 1}. ${citation.title || citation.domain || 'Source'}: ${citation.url}`
+        ).join('\n')
+        
+        messages[messages.length - 1].content += `\n\n[Sources]:\n${citationsText}`
         
         // Add specific instruction to use the web data
         messages.push({
@@ -319,6 +338,7 @@ REQUIREMENTS:
 - If the web data contains specific stock prices, use those exact numbers
 - If the web data contains recent news or developments, reference them specifically
 - Structure your response as a comprehensive report using the real data provided
+- Include the source links in your response when referencing specific information
 
 The web data above contains current, factual information - use it directly in your response.`
         })
@@ -336,15 +356,25 @@ The web data above contains current, factual information - use it directly in yo
 
     console.log('✅ Chat Response:', {
       contentLength: content.length,
-      useWebSearch
+      shouldUseWebSearch
     })
 
     // Check if the response should trigger live editing
     let shouldTriggerLiveEdit = false
     let extractedContent = ''
 
+    // Use router decision for edit requests
+    if (isEditRequest) {
+      shouldTriggerLiveEdit = true
+      extractedContent = extractContentForLiveEdit(content)
+    }
+    // Use router decision for editor write requests
+    else if (isEditorWrite) {
+      shouldTriggerLiveEdit = true
+      extractedContent = extractContentForLiveEdit(content)
+    }
     // If RAG orchestrator was used and it determined live editing should trigger, use its decision
-    if (metadata.shouldTriggerLiveEdit !== undefined) {
+    else if (metadata.shouldTriggerLiveEdit !== undefined) {
       shouldTriggerLiveEdit = metadata.shouldTriggerLiveEdit
       // Use the liveEditContent from RAG orchestrator if available, otherwise extract from content
       extractedContent = ragResponse?.liveEditContent || extractContentForLiveEdit(content)
@@ -355,51 +385,54 @@ The web data above contains current, factual information - use it directly in yo
         extractedContent = content
       }
     } else {
-      // Fallback to basic detection for non-RAG responses
-      const isWritingRequest = message.toLowerCase().includes('write') || 
-                             message.toLowerCase().includes('create') || 
-                             message.toLowerCase().includes('generate') ||
-                             message.toLowerCase().includes('compose') ||
-                             message.toLowerCase().includes('draft') ||
-                             message.toLowerCase().includes('report') ||
-                             message.toLowerCase().includes('document') ||
-                             message.toLowerCase().includes('analysis') ||
-                             message.toLowerCase().includes('summary')
+      // Only use fallback detection for non-web-search intents
+      // Web search questions should never trigger live editing
+      if (routerResult.classification.intent !== 'web_search' && routerResult.classification.intent !== 'ask') {
+        const isWritingRequest = message.toLowerCase().includes('write') || 
+                               message.toLowerCase().includes('create') || 
+                               message.toLowerCase().includes('generate') ||
+                               message.toLowerCase().includes('compose') ||
+                               message.toLowerCase().includes('draft') ||
+                               message.toLowerCase().includes('report') ||
+                               message.toLowerCase().includes('document') ||
+                               message.toLowerCase().includes('analysis') ||
+                               message.toLowerCase().includes('summary')
 
-      const hasTriggerPhrase = content.includes('I\'ll write') || 
-                              content.includes('I\'m writing') || 
-                              content.includes('Let me write') ||
-                              content.includes('Here\'s the') ||
-                              content.includes('Here is the') ||
-                              content.includes('I\'ll create') ||
-                              content.includes('I\'m creating') ||
-                              content.includes('I\'ll add') ||
-                              content.includes('I\'m adding') ||
-                              content.includes('I\'ll insert') ||
-                              content.includes('I\'m inserting') ||
-                              content.includes('Writing:') ||
-                              content.includes('Creating:') ||
-                              content.includes('Adding:') ||
-                              content.includes('I\'ll provide') ||
-                              content.includes('I\'m providing') ||
-                              content.includes('Let me provide')
+        const hasTriggerPhrase = content.includes('I\'ll write') || 
+                                content.includes('I\'m writing') || 
+                                content.includes('Let me write') ||
+                                content.includes('Here\'s the') ||
+                                content.includes('Here is the') ||
+                                content.includes('I\'ll create') ||
+                                content.includes('I\'m creating') ||
+                                content.includes('I\'ll add') ||
+                                content.includes('I\'m adding') ||
+                                content.includes('I\'ll insert') ||
+                                content.includes('I\'m inserting') ||
+                                content.includes('Writing:') ||
+                                content.includes('Creating:') ||
+                                content.includes('Adding:') ||
+                                content.includes('I\'ll provide') ||
+                                content.includes('I\'m providing') ||
+                                content.includes('Let me provide')
 
-      // Check if content looks like a report or document (long structured content)
-      const isStructuredContent = content.length > 500 && (
-        content.includes('#') || // Has headers
-        content.includes('##') || // Has subheaders
-        content.includes('**') || // Has bold text
-        content.includes('1.') || // Has numbered lists
-        content.includes('- ') || // Has bullet points
-        content.includes('|') // Has tables
-      )
+        // Check if content looks like a report or document (long structured content)
+        const isStructuredContent = content.length > 500 && (
+          content.includes('#') || // Has headers
+          content.includes('##') || // Has subheaders
+          content.includes('**') || // Has bold text
+          content.includes('1.') || // Has numbered lists
+          content.includes('- ') || // Has bullet points
+          content.includes('|') // Has tables
+        )
 
-      // Extract content to check if it's substantial enough for live editing
-      extractedContent = extractContentForLiveEdit(content)
-      const hasSubstantialContent = extractedContent.length > 50
+        // Extract content to check if it's substantial enough for live editing
+        extractedContent = extractContentForLiveEdit(content)
+        const hasSubstantialContent = extractedContent.length > 50
 
-      // Only trigger live editing if we have both a writing request AND substantial content
-      shouldTriggerLiveEdit = (isWritingRequest || hasTriggerPhrase || isStructuredContent) && hasSubstantialContent
+        // Only trigger live editing if we have both a writing request AND substantial content
+        shouldTriggerLiveEdit = (isWritingRequest || hasTriggerPhrase || isStructuredContent) && hasSubstantialContent
+      }
     }
 
     console.log('🔍 Live Editing Detection:', {
@@ -426,9 +459,15 @@ The web data above contains current, factual information - use it directly in yo
       message: shouldTriggerLiveEdit ? 'Content will be written to the document.' : content,
       metadata: {
         task: metadata.task || 'chat',
-        useWebSearch,
+        useWebSearch: shouldUseWebSearch,
         processingTime: metadata.processingTime || Date.now(),
         shouldTriggerLiveEdit,
+        // Include router metadata
+        intent: routerResult.classification.intent,
+        confidence: routerResult.classification.confidence,
+        routerProcessingTime: routerResult.processing_time,
+        fallbackUsed: routerResult.fallback_used,
+        forceWebSearch,
         // Include RAG metadata if available
         ...(metadata.ragConfidence !== undefined && { ragConfidence: metadata.ragConfidence }),
         ...(metadata.coverage !== undefined && { coverage: metadata.coverage }),

@@ -43,3 +43,4 @@ Thumbs.db
 
 # Documentation (excluded from upload)
 README.md
+.env.backup

@@ -1,8 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { routerService } from '@/lib/ai/router-service'
+import { RouterContext } from '@/lib/ai/intent-schema'
 
 export async function POST(request: NextRequest) {
   try {
-    const { query } = await request.json()
+    const session = await getServerSession(authOptions)
+    
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const { query, context } = await request.json()
 
     if (!query) {
       return NextResponse.json(
@@ -11,7 +24,32 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('🔍 Web Search Request:', query)
+    console.log('🔍 Web Search Request:', {
+      userId: session.user.id,
+      query,
+      hasContext: !!context
+    })
+
+    // Use hybrid router to classify the query
+    const routerContext: RouterContext = {
+      has_attached_docs: context?.has_attached_docs || false,
+      doc_ids: context?.doc_ids || [],
+      is_selection_present: context?.is_selection_present || false,
+      selection_length: context?.selection_length || 0,
+      recent_tools: context?.recent_tools || [],
+      conversation_length: context?.conversation_length || 0,
+      user_id: session.user.id,
+      document_id: context?.document_id
+    }
+
+    const routerResult = await routerService.classifyIntent(query, routerContext)
+    
+    console.log('🔍 Web Search Router Classification:', {
+      intent: routerResult.classification.intent,
+      confidence: routerResult.classification.confidence,
+      method: (routerResult as any).explanation?.method || 'unknown',
+      needsRecency: routerResult.classification.slots.needs_recency
+    })
 
     // Use the web search tool to get real current information
     const searchResults = await performWebSearch(query)
@@ -19,7 +57,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       results: searchResults,
       query,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      router: {
+        intent: routerResult.classification.intent,
+        confidence: routerResult.classification.confidence,
+        method: (routerResult as any).explanation?.method || 'unknown',
+        reasoning: (routerResult as any).explanation?.reasoning,
+        processingTime: routerResult.processing_time,
+        fallbackUsed: routerResult.fallback_used
+      }
     })
 
   } catch (error) {

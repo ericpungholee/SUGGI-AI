@@ -1,5 +1,6 @@
 import { ragAdapter, RagChunk, buildEvidenceBundle } from './rag-adapter'
-import { routeQuery, RouterDecision } from './rag-router'
+import { routerService } from './router-service'
+import { RouterContext } from './intent-schema'
 import { fillInstructionJSON, InstructionJSON, generateSystemPrompt } from './instruction-json'
 import { verifyInstruction, VerificationResult, validateResponse } from './rag-verification'
 import { generateChatCompletion } from './openai'
@@ -55,11 +56,31 @@ export class RAGOrchestrator {
     const startTime = Date.now()
     
     try {
-      // 1. Route the query
-      const route = await routeQuery(ask, selection, session)
+      // 1. Use hybrid router for intent classification
+      const routerContext: RouterContext = {
+        has_attached_docs: !!this.options.documentId,
+        doc_ids: this.options.documentId ? [this.options.documentId] : [],
+        is_selection_present: !!selection && selection.length > 0,
+        selection_length: selection?.length || 0,
+        recent_tools: [],
+        conversation_length: this.options.conversationHistory?.length || 0,
+        user_id: this.options.userId,
+        document_id: this.options.documentId
+      }
 
+      const routerResult = await routerService.classifyIntent(ask, routerContext)
+      
       // 2. Check if query is relevant to user's documents
-      const isRelevantToDocuments = await this.isQueryRelevantToDocuments(ask, route)
+      const isRelevantToDocuments = routerResult.classification.intent === 'rag_query'
+      
+      // Log router decision with explanation
+      console.log('🔍 RAG Router Decision:', {
+        intent: routerResult.classification.intent,
+        confidence: routerResult.classification.confidence,
+        method: (routerResult as any).explanation?.method || 'unknown',
+        reasoning: (routerResult as any).explanation?.reasoning,
+        isRelevantToDocuments
+      })
       
       let ragHits: RagChunk[] = []
       let ragCtx: RagChunk[] = []
@@ -84,7 +105,7 @@ export class RAGOrchestrator {
       }
 
       // 4. Decide if web search is needed
-      const useWeb = this.shouldUseWeb(route, ragConf, coverage, isRelevantToDocuments)
+      const useWeb = this.shouldUseWeb(routerResult, ragConf, coverage, isRelevantToDocuments)
       let webResults: any[] = []
 
       if (useWeb && this.options.enableWebSearch) {
@@ -97,11 +118,11 @@ export class RAGOrchestrator {
       const evidence = buildEvidenceBundle(ragCtx, webResults)
       
       // 6. Calculate improved coverage including web results
-      const improvedCoverage = this.calculateImprovedCoverage(ragCtx, webResults, route)
+      const improvedCoverage = this.calculateImprovedCoverage(ragCtx, webResults, routerResult)
       
       // 7. Create instruction JSON
       const instruction = await fillInstructionJSON(
-        route,
+        routerResult,
         ask,
         selection,
         ragCtx,
@@ -165,15 +186,13 @@ export class RAGOrchestrator {
   /**
    * Determine if web search should be used
    */
-  private shouldUseWeb(route: RouterDecision, ragConf: number, coverage: number, isRelevantToDocuments: boolean): boolean {
+  private shouldUseWeb(routerResult: any, ragConf: number, coverage: number, isRelevantToDocuments: boolean): boolean {
     // Don't use web if explicitly disabled
     if (!this.options.enableWebSearch) return false
 
-    // Don't use web if route says no
-    if (route.needs.web_context === 'no') return false
-
-    // Use web if required
-    if (route.needs.web_context === 'required') return true
+    // Use web search based on router decision
+    if (routerResult.classification.intent === 'web_search') return true
+    if (routerResult.classification.intent === 'ask' && routerResult.classification.slots.needs_recency) return true
 
     // If query is not relevant to documents, use web search for current information
     if (!isRelevantToDocuments) return true
@@ -181,9 +200,8 @@ export class RAGOrchestrator {
     // Use web if RAG confidence is low or coverage is poor
     const lowConfidence = ragConf < 0.7
     const poorCoverage = coverage < 0.5
-    const highPrecision = route.needs.precision === 'high'
 
-    return lowConfidence || poorCoverage || highPrecision
+    return lowConfidence || poorCoverage
   }
 
   /**
@@ -512,10 +530,10 @@ Format as search results with titles and summaries using real data.`
   /**
    * Check if query is relevant to user's documents using LLM
    */
-  private async isQueryRelevantToDocuments(query: string, route: RouterDecision): Promise<boolean> {
+  private async isQueryRelevantToDocuments(query: string, routerResult: any): Promise<boolean> {
     try {
       // Skip relevance check for certain task types that should always use web search
-      if (route.needs.web_context === 'required') {
+      if (routerResult.classification.intent === 'web_search') {
         return false
       }
 
@@ -586,7 +604,7 @@ Examples:
   /**
    * Calculate improved coverage including web results and task-specific adjustments
    */
-  private calculateImprovedCoverage(ragChunks: RagChunk[], webResults: any[], route: RouterDecision): number {
+  private calculateImprovedCoverage(ragChunks: RagChunk[], webResults: any[], routerResult: any): number {
     // Base coverage from RAG chunks
     const ragCoverage = this.calculateCoverage(ragChunks)
     

@@ -48,8 +48,13 @@ export type { VectorizationResult } from './incremental-vectorization'
 export { ragAdapter, buildEvidenceBundle } from './rag-adapter'
 export type { RagChunk } from './rag-adapter'
 
-export { routeQuery } from './rag-router'
-export type { RouterDecision } from './rag-router'
+// Hybrid Learned Router System
+export { hybridLearnedRouter } from './hybrid-learned-router'
+export { embeddingService } from './embedding-service'
+export { learnedClassifier } from './learned-classifier'
+export { llmMetaClassifier } from './llm-meta-classifier'
+export { routerService } from './router-service'
+export type { IntentClassification, RouterContext, RouterFeatures, RouterResponse } from './intent-schema'
 
 export { fillInstructionJSON, generateSystemPrompt, validateInstructionJSON, repairInstructionJSON } from './instruction-json'
 export type { InstructionJSON, ContextRef } from './instruction-json'

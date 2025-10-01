@@ -190,8 +190,7 @@ export default function Editor({
     }
 
     return (
-        <div className="flex-1 flex flex-col relative">
-            <div className={`flex-1 flex flex-col relative transition-all duration-300 ease-in-out`} style={{ marginRight: isAIChatOpen ? `${aiChatWidth}px` : '0px' }}>
+        <div className="flex-1 flex flex-col h-full">
                 {/* Fixed Toolbar */}
                 <EditorToolbar
                     formatState={editorState.formatState}
@@ -220,13 +219,12 @@ export default function Editor({
                     saveError={editorState.saveError}
                 />
 
-                {/* Writing Area */}
-                <div 
-                    className="flex-1 overflow-y-auto editor-content transition-all duration-300 ease-in-out"
-                    style={{ 
-                        marginRight: isAIChatOpen ? `${aiChatWidth}px` : '0px'
-                    }}
-                >
+                {/* Main Content Area */}
+                <div className="flex-1 flex flex-row overflow-hidden">
+                    {/* Editor Content */}
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        {/* Writing Area */}
+                        <div className="flex-1 overflow-y-auto editor-content">
                     <EditorContent
                         editorRef={editorState.editorRef}
                         formatState={editorState.formatState}
@@ -354,14 +352,34 @@ export default function Editor({
                 onDeleteTable={tableOps.deleteTable}
             />
 
-            {/* Bottom Status Bar */}
-            <EditorStatusBar
-                wordCount={editorState.getWordCount()}
-                charCount={editorState.getCharCount()}
-                isSaving={editorState.isSaving}
-                saveError={editorState.saveError}
-                documentId={documentId}
-            />
+                        {/* Bottom Status Bar */}
+                        <EditorStatusBar
+                            wordCount={editorState.getWordCount()}
+                            charCount={editorState.getCharCount()}
+                            isSaving={editorState.isSaving}
+                            saveError={editorState.saveError}
+                            documentId={documentId}
+                        />
+                    </div>
+
+                    {/* AI Chat Panel */}
+                    {isAIChatOpen && (
+                        <div 
+                            className="border-l border-gray-200 bg-white flex flex-col transition-all duration-300 ease-in-out"
+                            style={{ width: `${aiChatWidth}px` }}
+                        >
+                            <AIChatPanel
+                                isOpen={isAIChatOpen}
+                                onClose={() => setIsAIChatOpen(false)}
+                                width={aiChatWidth}
+                                documentId={documentId}
+                                onApplyChanges={onContentChange}
+                                onRevertChanges={() => {}}
+                                connectedDocuments={[]}
+                            />
+                        </div>
+                    )}
+                </div>
         </div>
     );
 }

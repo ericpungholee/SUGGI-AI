@@ -1,10 +1,10 @@
 /**
- * MCP Tools Implementation for Writer Agent V2
- * Provides the exact tool interfaces specified in the system instruction
+ * MCP Tools Implementation
+ * Provides tool interfaces for document operations
  */
 
 import { createRAGOrchestrator } from './rag-orchestrator'
-import { RagChunk } from './writer-agent-v2'
+import { RagChunk } from './rag-adapter'
 
 export interface MCPTools {
   search_docs: (query: string, k?: number) => Promise<{ chunks: RagChunk[] }>

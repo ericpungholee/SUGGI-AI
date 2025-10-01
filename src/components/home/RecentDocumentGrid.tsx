@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useState, useEffect, useCallback } from "react"
 import { useSession } from "next-auth/react"
 
-interface Document {
+interface DocumentData {
     id: string
     title: string
     preview: string
@@ -14,7 +14,7 @@ interface Document {
 }
 
 export default function RecentDocumentGrid() {
-    const [documents, setDocuments] = useState<Document[]>([])
+    const [documents, setDocuments] = useState<DocumentData[]>([])
     const [loading, setLoading] = useState(true)
     const [starredDocs, setStarredDocs] = useState<Set<string>>(new Set())
     const { data: session } = useSession()
@@ -27,7 +27,7 @@ export default function RecentDocumentGrid() {
                 const data = await response.json()
                 setDocuments(data)
                 // Initialize starred state from fetched data
-                const starredIds = new Set(data.filter((doc: Document) => doc.starred).map((doc: Document) => doc.id))
+                const starredIds = new Set<string>(data.filter((doc: DocumentData) => doc.starred).map((doc: DocumentData) => doc.id))
                 setStarredDocs(starredIds)
             } else {
                 console.error('Failed to fetch recent documents')

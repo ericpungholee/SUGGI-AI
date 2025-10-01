@@ -178,3 +178,59 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions)
+    
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const body = await request.json()
+    const { documentId } = body
+
+    if (!documentId) {
+      return NextResponse.json(
+        { error: 'Document ID is required' },
+        { status: 400 }
+      )
+    }
+
+    console.log('🗑️ Deleting conversation history:', {
+      userId: session.user.id,
+      documentId
+    })
+
+    // Delete all conversations for this document and user
+    const result = await prisma.aIConversation.deleteMany({
+      where: {
+        userId: session.user.id,
+        documentId: documentId
+      }
+    })
+
+    console.log('✅ Conversation history deleted:', {
+      deletedCount: result.count
+    })
+
+    return NextResponse.json({
+      success: true,
+      deletedCount: result.count
+    })
+
+  } catch (error) {
+    console.error('❌ Error deleting conversation history:', error)
+    
+    return NextResponse.json(
+      { 
+        error: 'Failed to delete conversation history',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    )
+  }
+}

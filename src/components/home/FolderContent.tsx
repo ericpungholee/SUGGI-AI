@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { FileText, Plus, Bookmark, Clock, MoreVertical, X } from 'lucide-react'
 import AddDocumentsModal from './AddDocumentsModal'
 
-interface Document {
+interface DocumentData {
     id: string
     title: string
     preview: string
@@ -19,7 +19,7 @@ interface FolderContentProps {
 }
 
 export default function FolderContent({ folderId }: FolderContentProps) {
-    const [documents, setDocuments] = useState<Document[]>([])
+    const [documents, setDocuments] = useState<DocumentData[]>([])
     const [loading, setLoading] = useState(true)
     const [showAddModal, setShowAddModal] = useState(false)
     const [starredDocs, setStarredDocs] = useState<Set<string>>(new Set())
@@ -39,7 +39,7 @@ export default function FolderContent({ folderId }: FolderContentProps) {
                 const docsData = await docsResponse.json()
                 setDocuments(docsData)
                 // Initialize starred state from fetched data
-                const starredIds = new Set(docsData.filter((doc: Document) => doc.starred).map((doc: Document) => doc.id))
+                const starredIds = new Set<string>(docsData.filter((doc: DocumentData) => doc.starred).map((doc: DocumentData) => doc.id))
                 setStarredDocs(starredIds)
             }
         } catch (error) {
