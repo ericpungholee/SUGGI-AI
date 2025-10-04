@@ -2,7 +2,8 @@
 import { useRouter } from "next/navigation";
 import { useState, useCallback, useEffect } from "react";
 import AIChatPanel from './AIChatPanel';
-import TableManager, { TableContextMenu } from './TableManager';
+import TableManager from './TableManager';
+import TableContextMenu from './TableContextMenu';
 import AgentTextManager from './AgentTextManager';
 import EditorToolbar from './EditorToolbar';
 import EditorContent from './EditorContent';
@@ -43,12 +44,11 @@ export default function Editor({
         setContent: editorState.setContent
     });
     
-    const tableOps = useTableOperations({
-        editorRef: editorState.editorRef,
-        saveToUndoStack: editorState.saveToUndoStack,
-        setContent: editorState.setContent,
-        updateFormatState: formatting.updateFormatState
-    });
+    const tableOps = useTableOperations(
+        editorState.editorRef,
+        editorState.saveToUndoStack,
+        formatting.updateFormatState
+    );
     
     const keyboard = useEditorKeyboard({
         onFormat: formatting.handleFormat,
@@ -66,10 +66,10 @@ export default function Editor({
         documentId
     });
     
-    const imageOps = useImageOperations({
-        editorRef: editorState.editorRef,
-        saveToUndoStack: editorState.saveToUndoStack
-    });
+    const imageOps = useImageOperations(
+        editorState.editorRef,
+        editorState.saveToUndoStack
+    );
     
     const agentOps = useAgentOperations({
         editorRef: editorState.editorRef,
@@ -191,48 +191,48 @@ export default function Editor({
 
     return (
         <div className="flex-1 flex flex-col h-full">
-                {/* Fixed Toolbar */}
-                <EditorToolbar
-                    formatState={editorState.formatState}
-                    onFormat={formatting.handleFormat}
-                    onUndo={editorState.undo}
-                    onRedo={editorState.redo}
-                    canUndo={editorState.undoStack.length > 1}
-                    canRedo={editorState.redoStack.length > 0}
-                    onBack={() => handleNavigation("/home")}
-                    onSave={editorState.handleManualSave}
-                    onDelete={() => setShowDeleteConfirm(true)}
-                    onAIToggle={() => setIsAIChatOpen(!isAIChatOpen)}
-                    onTableClick={() => {
-                        const insideTable = tableOps.checkIfInsideTable();
-                        tableOps.setIsInsideTable(insideTable);
-                        tableOps.setShowTableManager(true);
-                    }}
-                    documentTitle={editorState.documentTitle}
-                    onTitleChange={editorState.setDocumentTitle}
-                    onTitleBlur={handleTitleBlur}
-                    isSaving={editorState.isSaving}
-                    justSaved={editorState.justSaved}
-                    hasUnsavedChanges={editorState.hasUnsavedChanges}
-                    documentId={documentId}
-                    isSavingTitle={editorState.isSavingTitle}
-                    saveError={editorState.saveError}
-                />
+            {/* Fixed Toolbar */}
+            <EditorToolbar
+                formatState={editorState.formatState}
+                onFormat={formatting.handleFormat}
+                onUndo={editorState.undo}
+                onRedo={editorState.redo}
+                canUndo={editorState.undoStack.length > 1}
+                canRedo={editorState.redoStack.length > 0}
+                onNavigate={() => handleNavigation("/home")}
+                onSave={editorState.handleManualSave}
+                onDelete={() => setShowDeleteConfirm(true)}
+                onAIToggle={() => setIsAIChatOpen(!isAIChatOpen)}
+                onTableClick={() => {
+                    const insideTable = tableOps.checkIfInsideTable();
+                    tableOps.setIsInsideTable(insideTable);
+                    tableOps.setShowTableManager(true);
+                }}
+                documentTitle={editorState.documentTitle}
+                onTitleChange={editorState.setDocumentTitle}
+                onTitleBlur={handleTitleBlur}
+                isSaving={editorState.isSaving}
+                justSaved={editorState.justSaved}
+                hasUnsavedChanges={editorState.hasUnsavedChanges}
+                documentId={documentId}
+                isSavingTitle={editorState.isSavingTitle}
+                saveError={editorState.saveError}
+            />
 
-                {/* Main Content Area */}
-                <div className="flex-1 flex flex-row overflow-hidden">
-                    {/* Editor Content */}
-                    <div className="flex-1 flex flex-col overflow-hidden">
-                        {/* Writing Area */}
-                        <div className="flex-1 overflow-y-auto editor-content">
-                    <EditorContent
-                        editorRef={editorState.editorRef}
-                        formatState={editorState.formatState}
-                        onContentChange={editorState.handleContentChange}
-                        onKeyDown={keyboard.handleKeyDown}
-                        onPaste={imageOps.handlePaste}
-                        onDrop={imageOps.handleDrop}
-                        onDragOver={imageOps.handleDragOver}
+            {/* Main Content Area */}
+            <div className="flex-1 flex flex-row overflow-hidden">
+                {/* Editor Content */}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    {/* Writing Area */}
+                    <div className="flex-1 overflow-y-auto editor-content">
+                        <EditorContent
+                            editorRef={editorState.editorRef}
+                            formatState={editorState.formatState}
+                            onContentChange={editorState.handleContentChange}
+                            onKeyDown={keyboard.handleKeyDown}
+                            onPaste={imageOps.handlePaste}
+                            onDrop={imageOps.handleDrop}
+                            onDragOver={imageOps.handleDragOver}
                         onMouseDown={(e) => {
                             const target = e.target as HTMLElement;
                             
@@ -380,6 +380,7 @@ export default function Editor({
                         </div>
                     )}
                 </div>
+            </div>
         </div>
     );
 }

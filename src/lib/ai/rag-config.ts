@@ -1,3 +1,5 @@
+import { GPT_MODELS } from './core/models'
+
 export interface RAGConfig {
   retrieval: {
     rag_topk: number
@@ -46,9 +48,9 @@ export const defaultRAGConfig: RAGConfig = {
     check_chunk_hash: true
   },
   models: {
-    chat: 'gpt-5-nano-2025-08-07',
-    embedding: 'text-embedding-3-large',
-    routing: 'gpt-4o-mini'
+    chat: GPT_MODELS.GPT5,
+    embedding: GPT_MODELS.EMBEDDING,
+    routing: GPT_MODELS.GPT5_NANO
   }
 }
 

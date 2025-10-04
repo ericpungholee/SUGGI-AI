@@ -247,6 +247,7 @@ export async function autoExpandWeb(
 async function performNativeGPTSearch(query: string): Promise<ContextRef[]> {
   try {
     const { generateChatCompletion } = await import('./openai')
+    const { getRoutingModel } = await import('./core/models')
     
     const searchPrompt = `Search for current information about: "${query}"
 
@@ -255,7 +256,7 @@ Provide a comprehensive response with current facts, recent developments, and ke
     const response = await generateChatCompletion([
       { role: 'user', content: searchPrompt }
     ], {
-      model: 'gpt-4o-mini',
+      model: getRoutingModel(),
       temperature: 0.3,
       max_tokens: 500
     })

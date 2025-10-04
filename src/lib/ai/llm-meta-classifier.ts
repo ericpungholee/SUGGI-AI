@@ -4,6 +4,7 @@
  */
 
 import { generateChatCompletion } from './openai'
+import { getRoutingModel } from './core/models'
 import { embeddingService } from './embedding-service'
 import { IntentClassification } from './intent-schema'
 
@@ -51,7 +52,7 @@ export class LLMMetaClassifier {
         ...prompt.examples,
         { role: 'user', content: prompt.query }
       ], {
-        model: 'gpt-4o-mini',
+        model: getRoutingModel(),
         temperature: 0.1,
         max_tokens: 500
       })

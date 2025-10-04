@@ -190,6 +190,38 @@ export default function AIChatPanel({
 
       const result = await response.json()
       
+      // Handle one-shot compose approval card
+      if (result.approval?.draft && result.approval?.markdown) {
+        const approvalMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'approval',
+          content: result.message || 'Draft ready. Review sources and approve to insert.',
+          timestamp: new Date(),
+          approvalData: {
+            pendingChangeId: `draft_${Date.now()}`,
+            summary: result.approval.summary || 'AI draft prepared',
+            sources: (result.approval.sources || []).map((s: any) => s.url || s.title || s.docId),
+            canApprove: true,
+            canDeny: true
+          },
+          previewOps: {
+            pending_change_id: `draft_${Date.now()}`,
+            summary: 'Insert AI draft markdown into the editor',
+            notes: 'AI generated draft with citations',
+            citations: (result.approval.sources || []).map((s: any) => s.url || s.title || s.docId),
+            ops: [{ op: 'insert', text: result.approval.markdown, anchor: 'end' }]
+          }
+        }
+        setPendingChange(approvalMessage.previewOps)
+        setMessages(prev => {
+          const newMessages = [...prev, approvalMessage]
+          saveConversationHistory(newMessages)
+          return newMessages
+        })
+        setIsLoading(false)
+        return
+      }
+
       // Handle live edit content
       if (result.liveEditContent) {
         const liveEditOps = {
@@ -350,48 +382,47 @@ export default function AIChatPanel({
       style={{ width: `${width}px` }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
-            <Feather className="h-4 w-4 text-white" />
+      <div className="flex items-center justify-between p-3 border-b border-gray-200 bg-gray-50">
+        <div className="flex items-center space-x-2">
+          <div className="w-7 h-7 bg-gray-900 rounded-md flex items-center justify-center">
+            <Feather className="h-3.5 w-3.5 text-white" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">AI Assistant</h2>
-            <p className="text-xs text-gray-500">Powered by GPT-5 Nano</p>
+            <h2 className="text-sm font-semibold text-gray-900">AI Assistant</h2>
           </div>
         </div>
         <div className="flex items-center space-x-1">
           <button
             onClick={clearChat}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200"
+            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-all duration-200"
             title="Clear chat"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200"
+            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-all duration-200"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 bg-gray-50">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-3 bg-gray-50">
         {messages.length === 0 ? (
-          <div className="text-center text-gray-500 py-12">
-            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <Feather className="h-8 w-8 text-gray-400" />
+          <div className="text-center text-gray-500 py-8">
+            <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+              <Feather className="h-6 w-6 text-gray-400" />
             </div>
-            <h3 className="text-lg font-medium text-gray-700 mb-2">Welcome to AI Assistant</h3>
-            <p className="text-sm text-gray-500">Start a conversation to get help with your document</p>
-            <div className="mt-6 space-y-2">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">Welcome to AI Assistant</h3>
+            <p className="text-xs text-gray-500">Start a conversation to get help with your document</p>
+            <div className="mt-4 space-y-1">
               <div className="text-xs text-gray-400">Try asking:</div>
               <div className="space-y-1">
-                <div className="text-xs bg-white rounded-lg px-3 py-2 text-gray-600 border border-gray-200">"Help me write a summary"</div>
-                <div className="text-xs bg-white rounded-lg px-3 py-2 text-gray-600 border border-gray-200">"Improve this paragraph"</div>
-                <div className="text-xs bg-white rounded-lg px-3 py-2 text-gray-600 border border-gray-200">"Add more details here"</div>
+                <div className="text-xs bg-white rounded-md px-2 py-1.5 text-gray-600 border border-gray-200">"Help me write a summary"</div>
+                <div className="text-xs bg-white rounded-md px-2 py-1.5 text-gray-600 border border-gray-200">"Improve this paragraph"</div>
+                <div className="text-xs bg-white rounded-md px-2 py-1.5 text-gray-600 border border-gray-200">"Add more details here"</div>
               </div>
             </div>
           </div>
@@ -399,78 +430,66 @@ export default function AIChatPanel({
           messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2 duration-300 w-full`}
+              className="animate-in slide-in-from-bottom-2 duration-300 w-full"
             >
               <div
-                className={`max-w-[85%] min-w-0 rounded-lg px-4 py-3 ${
+                className={`w-full rounded-lg px-3 py-2.5 ${
                   message.type === 'user'
                     ? 'bg-gray-900 text-white'
                     : message.type === 'approval'
                     ? 'bg-yellow-50 border border-yellow-200 text-yellow-800'
-                    : 'bg-white text-gray-900 border border-gray-200'
+                    : 'bg-white text-gray-900'
                 }`}
               >
-                <div className="flex items-start space-x-3">
-                  {message.type !== 'user' && (
-                    <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <User className="h-3 w-3 text-gray-500" />
+                <div className="text-sm whitespace-pre-wrap leading-relaxed break-words hyphens-auto [word-break:break-word]">
+                  {message.content}
+                </div>
+                {message.type === 'approval' && message.approvalData && (
+                  <div className="mt-3 space-y-2">
+                    <div className="bg-white rounded-md p-2 border border-gray-200">
+                      <div className="text-xs font-medium text-gray-700 mb-1">Summary</div>
+                      <div className="text-xs text-gray-600 break-words">{message.approvalData.summary}</div>
                     </div>
-                  )}
-                  <div className="flex-1 min-w-0 overflow-hidden">
-                    <div className="text-sm whitespace-pre-wrap leading-relaxed break-words hyphens-auto [word-break:break-word]">
-                      {message.content}
-                    </div>
-                    {message.type === 'approval' && message.approvalData && (
-                      <div className="mt-4 space-y-3">
-                        <div className="bg-white rounded-lg p-3 border border-gray-200">
-                          <div className="text-xs font-medium text-gray-700 mb-1">Summary</div>
-                          <div className="text-xs text-gray-600 break-words">{message.approvalData.summary}</div>
-                        </div>
-                        {message.approvalData.sources.length > 0 && (
-                          <div className="bg-white rounded-lg p-3 border border-gray-200">
-                            <div className="text-xs font-medium text-gray-700 mb-1">Sources</div>
-                            <div className="text-xs text-gray-600 break-words">{message.approvalData.sources.join(', ')}</div>
-                          </div>
-                        )}
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={handleApprove}
-                            disabled={!message.approvalData.canApprove}
-                            className="px-4 py-2 bg-gray-900 text-white text-xs rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-all duration-200"
-                          >
-                            <Check className="h-3 w-3" />
-                            <span>Approve</span>
-                          </button>
-                          <button
-                            onClick={handleDeny}
-                            disabled={!message.approvalData.canDeny}
-                            className="px-4 py-2 bg-gray-500 text-white text-xs rounded-lg hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-all duration-200"
-                          >
-                            <XCircle className="h-3 w-3" />
-                            <span>Deny</span>
-                          </button>
-                        </div>
+                    {message.approvalData.sources.length > 0 && (
+                      <div className="bg-white rounded-md p-2 border border-gray-200">
+                        <div className="text-xs font-medium text-gray-700 mb-1">Sources</div>
+                        <div className="text-xs text-gray-600 break-words">{message.approvalData.sources.join(', ')}</div>
                       </div>
                     )}
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={handleApprove}
+                        disabled={!message.approvalData.canApprove}
+                        className="px-3 py-1.5 bg-gray-900 text-white text-xs rounded-md hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1.5 transition-all duration-200"
+                      >
+                        <Check className="h-2.5 w-2.5" />
+                        <span>Approve</span>
+                      </button>
+                      <button
+                        onClick={handleDeny}
+                        disabled={!message.approvalData.canDeny}
+                        className="px-3 py-1.5 bg-gray-500 text-white text-xs rounded-md hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1.5 transition-all duration-200"
+                      >
+                        <XCircle className="h-2.5 w-2.5" />
+                        <span>Deny</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           ))
         )}
         {isLoading && (
-          <div className="flex justify-start animate-in slide-in-from-bottom-2 duration-300 w-full">
-            <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center space-x-3 max-w-[85%] min-w-0">
-              <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <User className="h-3 w-3 text-gray-500" />
-              </div>
+          <div className="animate-in slide-in-from-bottom-2 duration-300 w-full">
+            <div className="w-full bg-gray-100 rounded-lg px-3 py-2.5 flex items-center space-x-2">
               <div className="flex items-center space-x-2 min-w-0">
                 <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                 </div>
-                <span className="text-sm text-gray-600 whitespace-nowrap">Thinking...</span>
+                <span className="text-sm text-gray-700 whitespace-nowrap">Thinking...</span>
               </div>
             </div>
           </div>
@@ -479,48 +498,43 @@ export default function AIChatPanel({
       </div>
 
       {/* Input */}
-      <div className="border-t border-gray-200 p-4 bg-white">
-        <div className="flex items-end space-x-3">
-          <div className="flex-1 relative">
+      <div className="border-t border-gray-200 p-3 bg-white">
+        <div className="relative">
             <textarea
               ref={inputRef}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Ask me anything about your document..."
-              className="w-full resize-none border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white transition-all duration-200"
-              rows={2}
+              className="w-full resize-none border border-gray-300 rounded-md px-3 py-2 pr-16 text-sm focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white transition-all duration-200"
+              rows={4}
               disabled={isLoading}
             />
-            <div className="absolute bottom-2 right-2 text-xs text-gray-400">
-              {inputValue.length}/500
-            </div>
-          </div>
-          <div className="flex items-end space-x-2">
+          <div className="absolute top-2 right-2 flex items-center space-x-1">
             <button
               onClick={() => setForceWebSearch(!forceWebSearch)}
-              className={`px-3 py-3 rounded-lg flex items-center justify-center transition-all duration-200 ${
+              className={`w-6 h-6 rounded flex items-center justify-center transition-all duration-200 ${
                 forceWebSearch 
                   ? 'bg-gray-900 text-white' 
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
               title={forceWebSearch ? "Web search enabled - click to disable" : "Force web search - click to enable"}
             >
-              <Globe className="h-4 w-4" />
+              <Globe className="h-2.5 w-2.5" />
             </button>
             <button
               onClick={sendMessage}
               disabled={!inputValue.trim() || isLoading}
-              className="px-4 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200"
+              className="w-6 h-6 bg-gray-900 text-white rounded hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200"
             >
-              <Send className="h-4 w-4" />
+              <Send className="h-2.5 w-2.5" />
             </button>
           </div>
         </div>
         {forceWebSearch && (
-          <div className="mt-2 text-xs text-gray-500 flex items-center space-x-1">
+          <div className="mt-1.5 text-xs text-gray-500 flex items-center space-x-1">
             <Globe className="h-3 w-3" />
-            <span>Web search enabled for this query</span>
+            <span>Web search enabled - will get real-time data and generate content directly</span>
           </div>
         )}
       </div>

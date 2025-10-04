@@ -4,6 +4,7 @@ import { RouterContext } from './intent-schema'
 import { fillInstructionJSON, InstructionJSON, generateSystemPrompt } from './instruction-json'
 import { verifyInstruction, VerificationResult, validateResponse } from './rag-verification'
 import { generateChatCompletion } from './openai'
+import { getChatModel, getRoutingModel } from './core/models'
 
 export interface RAGOrchestratorOptions {
   userId: string
@@ -43,6 +44,24 @@ export class RAGOrchestrator {
       webSearchTimeout: 3500,
       ...options
     }
+  }
+
+  /**
+   * Infer a simple task label from the router result and query text
+   */
+  private inferTask(routerResult: any, ask: string): string {
+    const intent: string = routerResult?.classification?.intent || 'ask'
+    const lowerAsk = (ask || '').toLowerCase()
+
+    // Writing-like cues in either intent or natural language
+    const writingKeywords = ['write', 'create', 'generate', 'compose', 'draft', 'report', 'document', 'analysis', 'summary', 'add', 'insert']
+    const isWritingByText = writingKeywords.some((kw) => lowerAsk.includes(kw))
+
+    if (intent === 'editor_write' || (intent === 'rag_query' && isWritingByText)) return 'write'
+    if (intent === 'edit_request') return 'edit'
+    if (intent === 'web_search') return 'web_search'
+    if (intent === 'rag_query') return 'rag'
+    return 'ask'
   }
 
   /**
@@ -89,7 +108,7 @@ export class RAGOrchestrator {
 
       // 3. Only search RAG if query is relevant to documents
       if (isRelevantToDocuments) {
-        ragHits = await ragAdapter.search(route.query.semantic, {
+        ragHits = await ragAdapter.search(ask, {
           topK: 30,
           projectId: this.options.userId
         })
@@ -118,7 +137,8 @@ export class RAGOrchestrator {
       const evidence = buildEvidenceBundle(ragCtx, webResults)
       
       // 6. Calculate improved coverage including web results
-      const improvedCoverage = this.calculateImprovedCoverage(ragCtx, webResults, routerResult)
+      const task = this.inferTask(routerResult, ask)
+      const improvedCoverage = this.calculateImprovedCoverage(ragCtx, webResults, task)
       
       // 7. Create instruction JSON
       const instruction = await fillInstructionJSON(
@@ -134,8 +154,8 @@ export class RAGOrchestrator {
       // 8. Verify instruction
       
       // For writing tasks, be more lenient with coverage requirements
-      const isWritingTask = route.task === 'write' || ['create', 'generate', 'compose', 'draft', 'report', 'document'].some(task => 
-        route.task.toLowerCase().includes(task)
+      const isWritingTask = task === 'write' || ['create', 'generate', 'compose', 'draft', 'report', 'document'].some((w) => 
+        task.toLowerCase().includes(w)
       )
       
       const verification = await verifyInstruction(instruction, ragCtx, {
@@ -158,14 +178,14 @@ export class RAGOrchestrator {
       const processingTime = Date.now() - startTime
 
       // Check if the response should trigger live editing
-      const shouldTriggerLiveEdit = this.shouldTriggerLiveEdit(response.content, route.task)
+      const shouldTriggerLiveEdit = this.shouldTriggerLiveEdit(response.content, task)
       const liveEditContent = shouldTriggerLiveEdit ? this.extractContentForLiveEdit(response.content) : undefined
 
       return {
         content: response.content,
         citations: response.citations,
         metadata: {
-          task: route.task,
+          task,
           ragConfidence: ragConf,
           coverage: improvedCoverage,
           totalTokens: evidence.totalTokens,
@@ -250,7 +270,7 @@ Return only the search terms:`
       const response = await generateChatCompletion([
         { role: 'user', content: extractionPrompt }
       ], {
-        model: 'gpt-4o-mini',
+        model: getRoutingModel(),
         temperature: 0.1,
         max_tokens: 50
       })
@@ -298,166 +318,39 @@ Return only the search terms:`
   }
 
   /**
-   * Web search implementation using a real search API
-   * For now, uses a simple approach with current information
+   * Web search using GPT-5 web_search tool
    */
   private async searchWeb(query: string): Promise<any[]> {
     try {
-      // Use a simple web search approach
-      // In production, you'd integrate with a real search API like SerpAPI, Google Custom Search, etc.
-      const searchResults = await this.performRealWebSearch(query)
+      console.log('🔍 Performing web search for:', query)
       
-      return searchResults
+      // Use direct web search function
+      const { webSearch } = await import('./services/web-search')
+      
+      const result = await webSearch({
+        prompt: `Search for current information about: ${query}`,
+        model: getChatModel(),
+        maxResults: 8,
+        includeImages: false,
+        searchRegion: 'US',
+        language: 'en',
+        timeoutMs: 20000 // Reduced timeout
+      })
+      
+      console.log('✅ Web search completed, found', result.citations.length, 'citations')
+      
+      // Convert to expected format
+      return result.citations.map((citation) => ({
+        title: citation.title || 'Web Result',
+        url: citation.url,
+        content: result.text || '',
+        type: 'web'
+      }))
     } catch (error) {
       console.error('Web search error:', error)
-      
-      // Fallback to GPT-based search if real search fails
-      return await this.fallbackGPTSearch(query)
+      // Return empty results on failure rather than fallback
+      return []
     }
-  }
-
-  /**
-   * Perform real web search using web search tool
-   */
-  private async performRealWebSearch(query: string): Promise<any[]> {
-    try {
-      console.log('🔍 Performing real web search for:', query)
-      
-      // Use the web search tool to get real current information
-      const searchResults = await this.searchWebWithTool(query)
-      
-      console.log('✅ Web search completed, found', searchResults.length, 'results')
-      return searchResults
-    } catch (error) {
-      console.error('Real web search error:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Search web using the web search tool
-   */
-  private async searchWebWithTool(query: string): Promise<any[]> {
-    try {
-      // This would be called from the API route that has access to the web search tool
-      // For now, we'll make a request to a web search endpoint
-      const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
-      const response = await fetch(`${baseUrl}/api/web-search`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ query })
-      })
-
-      if (!response.ok) {
-        throw new Error(`Web search API error: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data.results || []
-    } catch (error) {
-      console.error('Web search tool error:', error)
-      // Fallback to GPT-based search
-      return await this.fallbackGPTSearch(query)
-    }
-  }
-
-  /**
-   * Fallback GPT-based search when real search fails
-   */
-  private async fallbackGPTSearch(query: string): Promise<any[]> {
-    try {
-      const formattedDate = new Date().toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
-      })
-      
-      const searchPrompt = `Provide current, factual information about: "${query}" as of ${formattedDate}
-
-CRITICAL REQUIREMENTS:
-- Provide ONLY real, current data - never use placeholder values like "XYZ", "ABC", or generic examples
-- Use actual stock symbols (e.g., TSLA for Tesla, AAPL for Apple)
-- Include specific numbers, dates, and facts from recent reports
-- If you don't have current data, clearly state "Data as of [specific date]" and provide the most recent available data
-- Never make up or estimate financial data
-
-Include:
-1. Recent facts and data with specific numbers
-2. Key metrics and statistics with real values
-3. Important developments with actual dates
-4. Relevant context with factual information
-
-Format as search results with titles and summaries using real data.`
-
-      const response = await generateChatCompletion([
-        { role: 'user', content: searchPrompt }
-      ], {
-        model: 'gpt-4o-mini',
-        temperature: 0.3,
-        max_tokens: 800
-      })
-
-      const content = response.choices[0]?.message?.content?.trim()
-      
-      if (!content) {
-        return [{
-          title: `Search: ${query}`,
-          url: 'https://example.com',
-          snippet: `Unable to fetch current information for "${query}". Please search manually for the most recent data.`,
-          score: 0.3
-        }]
-      }
-
-      return this.parseGPTResponseAsSearchResults(content, query)
-    } catch (error) {
-      console.error('Fallback GPT search error:', error)
-      
-      return [{
-        title: `Search: ${query}`,
-        url: 'https://example.com',
-        snippet: `Unable to fetch current information for "${query}". Please search manually for the most recent data.`,
-        score: 0.3
-      }]
-    }
-  }
-
-  /**
-   * Parse GPT response into search results format
-   */
-  private parseGPTResponseAsSearchResults(content: string, originalQuery: string): any[] {
-    const results: any[] = []
-    
-    // Split content into sections and create search results
-    const sections = content.split('\n\n').filter(section => section.trim().length > 0)
-    
-    sections.forEach((section, index) => {
-      if (section.trim().length > 20) { // Only include substantial sections
-        const lines = section.split('\n')
-        const title = lines[0]?.replace(/^#+\s*/, '') || `Result ${index + 1}: ${originalQuery}`
-        const snippet = lines.slice(1).join(' ').trim() || section.trim()
-        
-        results.push({
-          title: title.length > 100 ? title.substring(0, 100) + '...' : title,
-          url: `https://openai.com/search?q=${encodeURIComponent(originalQuery)}`,
-          snippet: snippet.length > 200 ? snippet.substring(0, 200) + '...' : snippet,
-          score: 0.9 - (index * 0.1) // Decreasing score for each result
-        })
-      }
-    })
-    
-    // If no good sections found, create a single result
-    if (results.length === 0) {
-      results.push({
-        title: `Current Information: ${originalQuery}`,
-        url: 'https://openai.com',
-        snippet: content.length > 200 ? content.substring(0, 200) + '...' : content,
-        score: 0.9
-      })
-    }
-    
-    return results.slice(0, 5) // Limit to 5 results
   }
 
 
@@ -488,7 +381,7 @@ Format as search results with titles and summaries using real data.`
 
       // Generate response
       const response = await generateChatCompletion(messages, {
-        model: 'gpt-5-nano-2025-08-07', // Use the preferred model
+        model: getChatModel(), // Use GPT-5 as primary model
         temperature: instruction.needs?.creativity === 'high' ? 0.8 : 0.3,
         max_tokens: instruction.policies.max_tokens || 2000
       })
@@ -578,7 +471,7 @@ Examples:
       const response = await generateChatCompletion([
         { role: 'user', content: relevancePrompt }
       ], {
-        model: 'gpt-4o-mini',
+        model: getRoutingModel(),
         temperature: 0.1,
         max_tokens: 10
       })
@@ -604,7 +497,7 @@ Examples:
   /**
    * Calculate improved coverage including web results and task-specific adjustments
    */
-  private calculateImprovedCoverage(ragChunks: RagChunk[], webResults: any[], routerResult: any): number {
+  private calculateImprovedCoverage(ragChunks: RagChunk[], webResults: any[], task: string): number {
     // Base coverage from RAG chunks
     const ragCoverage = this.calculateCoverage(ragChunks)
     
@@ -612,8 +505,8 @@ Examples:
     const webCoverage = Math.min(0.5, webResults.length * 0.1)
     
     // Task-specific adjustments
-    const isWritingTask = route.task === 'write' || ['create', 'generate', 'compose', 'draft', 'report', 'document'].some(task => 
-      route.task.toLowerCase().includes(task)
+    const isWritingTask = task === 'write' || ['create', 'generate', 'compose', 'draft', 'report', 'document'].some((w) => 
+      task.toLowerCase().includes(w)
     )
     
     // For writing tasks, be more lenient - minimum 0.3 if we have any content
@@ -630,10 +523,8 @@ Examples:
    * Check if the response should trigger live editing
    */
   private shouldTriggerLiveEdit(content: string, task: string): boolean {
-    // Check for writing-related tasks
-    const isWritingTask = task === 'write' || ['create', 'generate', 'compose', 'draft', 'add', 'insert', 'report'].some(writingTask => 
-      task.toLowerCase().includes(writingTask)
-    )
+    // Only allow live editing when task is explicitly a writing action
+    const isWritingTask = task === 'write'
 
     // Check for trigger phrases in content
     const triggerPhrases = [
@@ -679,7 +570,7 @@ Examples:
                                task.includes('analysis') ||
                                task.includes('summary')
 
-    const result = isWritingTask || hasTriggerPhrase || (isStructuredContent && isReportRequest) || isAnyWritingRequest
+    const result = isWritingTask && (hasTriggerPhrase || isStructuredContent || isAnyWritingRequest)
     
     // Debug information for live editing trigger
     console.log('🔍 RAG Live Edit Decision:', {

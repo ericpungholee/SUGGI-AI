@@ -3,7 +3,7 @@
  * Provides fast similarity search for learned routing
  */
 
-import { OpenAI } from 'openai'
+import { getOpenAI } from './core/openai-client'
 import { createHash } from 'crypto'
 
 // Simple in-memory FAISS-like implementation
@@ -27,16 +27,14 @@ interface SearchResult {
 
 export class EmbeddingService {
   private static instance: EmbeddingService
-  private openai: OpenAI
+  private openai: ReturnType<typeof getOpenAI>
   private vectors: EmbeddingVector[] = []
   private vectorCache: Map<string, number[]> = new Map()
   private readonly embeddingModel = 'text-embedding-3-small'
   private readonly dimension = 1536 // text-embedding-3-small dimension
 
   private constructor() {
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
-    })
+    this.openai = getOpenAI()
   }
 
   static getInstance(): EmbeddingService {

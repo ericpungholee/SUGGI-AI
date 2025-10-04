@@ -1,41 +1,8 @@
-import OpenAI from 'openai'
+import { getOpenAI } from './core/openai-client'
+import { getChatModel } from './core/models'
 
-// Lazy initialization of OpenAI client
-let openai: OpenAI | null = null
-
-function getOpenAI(): OpenAI {
-  if (!openai) {
-    const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) {
-      throw new Error('OPENAI_API_KEY environment variable is required')
-    }
-    openai = new OpenAI({
-      apiKey,
-    })
-  }
-  return openai
-}
-
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string
-}
-
-export interface ChatCompletionOptions {
-  model?: string
-  temperature?: number
-  max_tokens?: number
-  stream?: boolean
-  abortSignal?: AbortSignal
-  useWebSearch?: boolean
-  tools?: Array<{ type: string; [key: string]: any }>
-  tool_choice?: 'auto' | { type: string }
-}
-
-export interface EmbeddingOptions {
-  model?: string
-  dimensions?: number
-}
+// Re-export types from core
+export type { ChatMessage, ChatCompletionOptions, EmbeddingOptions } from './core/types'
 
 /**
  * Generate chat completion using OpenAI
@@ -45,7 +12,7 @@ export async function generateChatCompletion(
   options: ChatCompletionOptions = {}
 ) {
   const {
-    model = process.env.OPENAI_CHAT_MODEL || 'gpt-5-2025-08-07',
+    model = process.env.OPENAI_CHAT_MODEL || getChatModel(),
     temperature = 0.7,
     max_tokens = 2000,
     stream = false,
@@ -183,7 +150,7 @@ export async function generateChatCompletion(
         
         // Fall back to regular Chat Completions API with web search tools if needed
         const fallbackParams: any = {
-          model: 'gpt-4o-mini', // Use a reliable fallback model
+          model: getChatModel(), // Use GPT-5 as primary model
           messages: messages,
           max_tokens: 2000,
           temperature: 0.7
@@ -238,7 +205,7 @@ export async function generateEmbedding(
 ) {
   try {
     // Use the best available embedding model
-    const { model = (process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small') } = options
+    const { model = (process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-large') } = options
 
     const response = await getOpenAI().embeddings.create({
       model,
@@ -260,7 +227,7 @@ export async function generateEmbeddings(
   options: EmbeddingOptions = {}
 ) {
   try {
-    const { model = (process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small') } = options
+    const { model = (process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-large') } = options
 
     const response = await getOpenAI().embeddings.create({
       model,

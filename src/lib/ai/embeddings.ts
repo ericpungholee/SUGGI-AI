@@ -1,4 +1,5 @@
 import { generateEmbedding, generateEmbeddings } from './openai'
+import { getEmbeddingModel, getRoutingModel } from './core/models'
 import { SearchResult, DocumentSearchOptions } from './vector-search'
 
 export interface DocumentChunk {
@@ -501,7 +502,7 @@ Make sure each alternative:
     const response = await generateChatCompletion([
       { role: 'user', content: expansionPrompt }
     ], {
-      model: 'gpt-5-nano',
+      model: getRoutingModel(),
       temperature: 0.3, // Lower temperature for more conservative expansion
       max_tokens: 300
     })
@@ -553,7 +554,7 @@ Rewritten query:`
     const response = await generateChatCompletion([
       { role: 'user', content: rewritePrompt }
     ], {
-      model: 'gpt-5-nano',
+      model: getRoutingModel(),
       temperature: 0.1, // Very low temperature for conservative rewriting
       max_tokens: 100
     })
@@ -711,7 +712,7 @@ Compressed context:`
     const response = await generateChatCompletion([
       { role: 'user', content: compressionPrompt }
     ], {
-      model: 'gpt-5-nano',
+      model: getRoutingModel(),
       temperature: 0.3,
       max_tokens: Math.floor(maxTokens * 0.8) // Leave room for response
     })
@@ -757,7 +758,7 @@ Relevant Information:`
     const response = await generateChatCompletion([
       { role: 'user', content: extractionPrompt }
     ], {
-      model: 'gpt-5-nano',
+      model: getRoutingModel(),
       temperature: 0.2,
       max_tokens: 1000
     })
@@ -810,7 +811,7 @@ Rules:
     const response = await generateChatCompletion([
       { role: 'user', content: classificationPrompt }
     ], {
-      model: 'gpt-4o-mini', // Use faster model to avoid timeouts
+      model: getRoutingModel(), // Use GPT-5 nano for fast classification
       temperature: 0.1,
       max_tokens: 200
     }).catch(error => {
