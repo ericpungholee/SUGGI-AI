@@ -30,45 +30,18 @@ export async function webSearch({
   try {
     const openai = getOpenAI();
 
-    // Try chat completions API with web_search tool first (more reliable)
-    let resp: any;
-    try {
-      resp = await openai.chat.completions.create(
-        {
-          model,
-          messages: [{ role: 'user', content: prompt }],
-          tools: [{ 
-            type: "web_search"
-          }],
-          max_tokens: 4000,
-          temperature: 0.1
-        },
-        { timeout: timeoutMs }
-      );
-      
-      // Convert chat completion response to responses format
-      resp = {
-        output_text: resp.choices[0]?.message?.content || '',
-        output: resp.choices[0]?.message?.tool_calls || [],
-        status: 'completed',
-        model: resp.model
-      };
-    } catch (chatError) {
-      console.log('🔄 Chat completions failed, trying responses API...', chatError);
-      
-      // Fallback to responses API
-      resp = await openai.responses.create(
-        {
-          model,
-          input: prompt,
-          tools: [{ 
-            type: "web_search"
-          }],
-          max_output_tokens: 4000
-        },
-        { timeout: timeoutMs }
-      );
-    }
+    // Use responses API directly for GPT-5 web search
+    const resp = await openai.responses.create(
+      {
+        model,
+        input: prompt,
+        tools: [{ 
+          type: "web_search"
+        }],
+        max_output_tokens: 4000
+      },
+      { timeout: timeoutMs }
+    );
 
     const text = resp.output_text ?? "";
     console.log('✅ Web Search Response:', {
