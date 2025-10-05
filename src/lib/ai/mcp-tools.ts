@@ -1,10 +1,9 @@
 /**
  * MCP Tools Implementation
- * Provides tool interfaces for document operations
+ * Provides tool interfaces for document operations as specified in Writer Agent V2
  */
 
-import { createRAGOrchestrator } from './rag-orchestrator'
-import { RagChunk } from './rag-adapter'
+import { ragAdapter, RagChunk } from './rag-adapter'
 
 export interface MCPTools {
   search_docs: (query: string, k?: number) => Promise<{ chunks: RagChunk[] }>
@@ -40,29 +39,12 @@ async function searchDocs(
   documentId?: string
 ): Promise<{ chunks: RagChunk[] }> {
   try {
-    const orchestrator = createRAGOrchestrator({
-      userId,
-      documentId,
-      maxTokens: 2000,
-      enableWebSearch: false
+    const searchResults = await ragAdapter.search(query, {
+      topK: k,
+      projectId: userId
     })
 
-    const response = await orchestrator.processQuery(query)
-    
-    // Convert RAG response to RagChunk format
-    // This is a placeholder - you would need to adapt this based on your actual RAG system
-    const chunks: RagChunk[] = response.citations?.map((citation, index) => ({
-      id: `chunk-${index}`,
-      docId: documentId || 'unknown',
-      anchor: `doc#p${index}`,
-      text: citation,
-      score: 0.8,
-      headings: [],
-      updatedAt: new Date(),
-      tokens: Math.ceil(citation.length / 4)
-    })) || []
-
-    return { chunks: chunks.slice(0, k) }
+    return { chunks: searchResults }
   } catch (error) {
     console.error('search_docs error:', error)
     return { chunks: [] }
@@ -79,9 +61,13 @@ async function packContext(
   documentId?: string
 ): Promise<{ chunks: RagChunk[] }> {
   try {
-    // This would need to be implemented based on your RAG system
-    // For now, return empty chunks
-    return { chunks: [] }
+    // Get chunks by IDs and pack them within token budget
+    const chunks = await ragAdapter.packContext(
+      ids.map(id => ({ id, docId: documentId || 'unknown' } as RagChunk)),
+      budgetTokens
+    )
+
+    return { chunks }
   } catch (error) {
     console.error('pack_context error:', error)
     return { chunks: [] }

@@ -4,6 +4,9 @@ import { getWebSearchModel } from '../core/models';
 // Re-export types from core
 export type { Citation, WebSearchOptions, WebSearchResult } from '../core/types';
 
+// Export fallback function for direct use
+// Export will be added after function declaration
+
 // Simplified web search - let GPT-5 handle query optimization internally
 
 /**
@@ -12,7 +15,7 @@ export type { Citation, WebSearchOptions, WebSearchResult } from '../core/types'
 export async function webSearch({
   prompt,
   model = getWebSearchModel(),
-  timeoutMs = 30_000, // Reduced from 45s to 30s
+  timeoutMs = 30_000, // Reduced to 30s for better reliability
   maxResults = 8,
   includeImages = false,
   searchRegion = "US",
@@ -27,36 +30,17 @@ export async function webSearch({
     language
   });
 
+  let resp: any;
+  
   try {
     const openai = getOpenAI();
 
-    // Try chat completions API with web_search tool first (more reliable)
-    let resp: any;
+    // Create AbortController for proper timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
-      resp = await openai.chat.completions.create(
-        {
-          model,
-          messages: [{ role: 'user', content: prompt }],
-          tools: [{ 
-            type: "web_search"
-          }],
-          max_tokens: 4000,
-          temperature: 0.1
-        },
-        { timeout: timeoutMs }
-      );
-      
-      // Convert chat completion response to responses format
-      resp = {
-        output_text: resp.choices[0]?.message?.content || '',
-        output: resp.choices[0]?.message?.tool_calls || [],
-        status: 'completed',
-        model: resp.model
-      };
-    } catch (chatError) {
-      console.log('🔄 Chat completions failed, trying responses API...', chatError);
-      
-      // Fallback to responses API
+      // Use responses API with proper timeout handling
       resp = await openai.responses.create(
         {
           model,
@@ -66,8 +50,45 @@ export async function webSearch({
           }],
           max_output_tokens: 4000
         },
-        { timeout: timeoutMs }
+        { 
+          signal: controller.signal,
+          timeout: timeoutMs 
+        }
       );
+
+      clearTimeout(timeoutId);
+
+      // Poll for completion if response is incomplete with proper timeout handling
+      let attempts = 0
+      const maxAttempts = 5 // Increased attempts for better reliability
+      while (resp.status === 'incomplete' && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1000)) // Increased delay for stability
+        
+        try {
+          // Create new controller for each poll request
+          const pollController = new AbortController();
+          const pollTimeoutId = setTimeout(() => pollController.abort(), 15000); // 15s timeout for polls
+          
+          resp = await openai.responses.retrieve(resp.id, {}, { 
+            signal: pollController.signal,
+            timeout: 15000 
+          });
+          
+          clearTimeout(pollTimeoutId);
+        } catch (pollError) {
+          console.warn('Error polling for completion:', pollError)
+          clearTimeout(pollTimeoutId);
+          break
+        }
+        attempts++
+      }
+      
+      if (resp.status === 'incomplete') {
+        throw new Error('Web search response incomplete, falling back')
+      }
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
     }
 
     const text = resp.output_text ?? "";
@@ -134,9 +155,17 @@ export async function webSearch({
   } catch (error) {
     console.error('❌ Web Search Error:', error);
     
-    // Handle specific timeout errors
-    if (error instanceof Error && error.message.includes('timeout')) {
-      throw new Error('Web search timed out. Please try again with a simpler query.');
+    // Try fallback approach on timeout or incomplete response
+    if (error instanceof Error) {
+      if (error.message.includes('timeout') || error.message.includes('Request timed out') || error.message.includes('incomplete')) {
+        console.log('🔄 Main web search failed, trying fallback approach...');
+        try {
+          return await fallbackWebSearch({ prompt, model, timeoutMs, maxResults, includeImages, searchRegion, language });
+        } catch (fallbackError) {
+          console.error('❌ Fallback web search also failed:', fallbackError);
+          throw new Error('Web search timed out. The search is taking longer than expected. Please try again with a simpler query or try again later.');
+        }
+      }
     }
     
     throw new Error(`Web search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -144,11 +173,76 @@ export async function webSearch({
 }
 
 /**
+ * Fallback web search using a simpler approach
+ */
+export async function fallbackWebSearch(args: WebSearchOptions): Promise<WebSearchResult> {
+  console.log('🔄 Using fallback web search approach');
+  
+  try {
+    const openai = getOpenAI();
+    
+    // Create AbortController for fallback timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout for fallback
+    
+    try {
+      // Use a simpler approach with shorter timeout
+      const resp = await openai.responses.create(
+        {
+          model: args.model || getWebSearchModel(),
+          input: `Search for: ${args.prompt}`,
+          tools: [{ type: "web_search" }],
+          max_output_tokens: 2000 // Reduced token limit
+        },
+        { 
+          signal: controller.signal,
+          timeout: 15000 
+        }
+      );
+      
+      clearTimeout(timeoutId);
+
+      const text = resp.output_text ?? "";
+      
+      // Simple citation extraction
+      const citations: Citation[] = [];
+      const urlRegex = /(https?:\/\/[^\s)]+)/gi;
+      const urls = Array.from(text.matchAll(urlRegex));
+      
+      urls.forEach((match, index) => {
+        const url = match[1];
+        citations.push({
+          title: `Source ${index + 1}`,
+          url: url,
+          domain: new URL(url).hostname
+        });
+      });
+
+      return {
+        text: text,
+        citations,
+        requestId: (resp as any)?._request_id ?? null,
+        usage: (resp as any)?.usage ?? null,
+        model: resp.model
+      };
+      
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
+    }
+
+  } catch (error) {
+    console.error('❌ Fallback web search also failed:', error);
+    throw new Error(`Fallback web search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
  * Robust web search with retry logic
  */
 export async function robustWebSearch(args: WebSearchOptions): Promise<WebSearchResult> {
-  const maxAttempts = 2; // Reduced from 3 to 2
-  const baseDelay = 1000; // Increased base delay
+  const maxAttempts = 3; // Restored to 3 attempts
+  const baseDelay = 1000; // Reduced base delay for faster retries
   
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
@@ -156,12 +250,14 @@ export async function robustWebSearch(args: WebSearchOptions): Promise<WebSearch
       
       // Add exponential backoff with jitter
       if (attempt > 0) {
-        const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 1000;
+        const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 500;
         console.log(`⏳ Waiting ${Math.round(delay)}ms before retry...`);
         await new Promise(r => setTimeout(r, delay));
       }
       
-      const result = await webSearch(args);
+      // Reduce timeout for retries to fail faster
+      const retryTimeout = Math.max(15000, args.timeoutMs - (attempt * 5000));
+      const result = await webSearch({ ...args, timeoutMs: retryTimeout });
       
       // Validate result quality - be more lenient with citations
       if (result.text && result.text.length > 50) {
@@ -173,7 +269,7 @@ export async function robustWebSearch(args: WebSearchOptions): Promise<WebSearch
       
     } catch (e: any) {
       const msg = String(e?.message ?? "");
-      const isTimeout = /timeout|AbortError|504/i.test(msg);
+      const isTimeout = /timeout|AbortError|504|aborted/i.test(msg);
       const isRateLimit = /rate.?limit|429/i.test(msg);
       const isServerError = /5\d\d/i.test(msg);
       
@@ -190,9 +286,14 @@ export async function robustWebSearch(args: WebSearchOptions): Promise<WebSearch
         throw e;
       }
       
-      // Don't retry on last attempt
+      // On last attempt, try fallback approach
       if (attempt === maxAttempts - 1) {
-        throw new Error(`Web search failed after ${maxAttempts} attempts: ${msg}`);
+        console.log('🔄 Main web search failed, trying fallback approach...');
+        try {
+          return await fallbackWebSearch({ ...args, timeoutMs: 10000 }); // Even shorter timeout for fallback
+        } catch (fallbackError) {
+          throw new Error(`Web search failed after ${maxAttempts} attempts and fallback: ${msg}`);
+        }
       }
     }
   }

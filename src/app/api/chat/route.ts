@@ -7,89 +7,10 @@ import { routerService } from '@/lib/ai/router-service'
 import { RouterContext } from '@/lib/ai/intent-schema'
 import { getChatModel, getRoutingModel } from '@/lib/ai/core/models'
 
-// Helper function to extract content for live editing
-function extractContentForLiveEdit(content: string): string {
-  console.log('🔍 Extracting content for live edit:', {
-    contentLength: content.length,
-    contentPreview: content.substring(0, 200) + '...'
-  })
-  
-  // Look for content after common phrases with better regex patterns
-  const patterns = [
-    /I'll write[:\s]*\n?(.+)/is,
-    /I'm writing[:\s]*\n?(.+)/is,
-    /Let me write[:\s]*\n?(.+)/is,
-    /Here's the[:\s]*\n?(.+)/is,
-    /Here is the[:\s]*\n?(.+)/is,
-    /I'll create[:\s]*\n?(.+)/is,
-    /I'm creating[:\s]*\n?(.+)/is,
-    /I'll add[:\s]*\n?(.+)/is,
-    /I'm adding[:\s]*\n?(.+)/is,
-    /Let me add[:\s]*\n?(.+)/is,
-    /I'll insert[:\s]*\n?(.+)/is,
-    /I'm inserting[:\s]*\n?(.+)/is,
-    /Writing[:\s]*\n?(.+)/is,
-    /Creating[:\s]*\n?(.+)/is,
-    /Adding[:\s]*\n?(.+)/is,
-    /I'll provide[:\s]*\n?(.+)/is,
-    /I'm providing[:\s]*\n?(.+)/is,
-    /Let me provide[:\s]*\n?(.+)/is
-  ]
-  
-  for (const pattern of patterns) {
-    const match = content.match(pattern)
-    if (match && match[1]) {
-      const extracted = match[1].trim()
-      console.log('🔍 Pattern match found:', {
-        pattern: pattern.toString(),
-        extractedLength: extracted.length,
-        extractedPreview: extracted.substring(0, 100) + '...'
-      })
-      // Only return if we have substantial content (more than just a few words)
-      if (extracted.length > 20) {
-        console.log('✅ Returning extracted content from pattern')
-        return extracted
-      }
-    }
-  }
-  
-  // If no pattern matches, check if it's structured content (report/document)
-  const isStructured = content.length > 500 && (
-    content.includes('#') || 
-    content.includes('##') || 
-    content.includes('**') || 
-    content.includes('1.') || 
-    content.includes('- ') || 
-    content.includes('|')
-  )
-  
-  console.log('🔍 Structured content check:', {
-    isStructured,
-    contentLength: content.length,
-    hasHeaders: content.includes('#'),
-    hasSubheaders: content.includes('##'),
-    hasBold: content.includes('**'),
-    hasNumbered: content.includes('1.'),
-    hasBullets: content.includes('- '),
-    hasTables: content.includes('|')
-  })
-  
-  if (isStructured) {
-    // For structured content, return the entire content
-    console.log('✅ Returning full content as structured content')
-    return content
-  }
-  
-  // If no pattern matches and content is substantial, return as-is
-  if (content.length > 100) {
-    console.log('✅ Returning full content as substantial content')
-    return content
-  }
-  
-  // Return empty string if content is too short or doesn't match patterns
-  console.log('❌ No content extracted - too short or no patterns matched')
-  return ''
-}
+// Note: Content generation is now handled by WriterAgentV2
+
+// Import Writer Agent V2 for sophisticated content generation
+import { WriterAgentV2 } from '@/lib/ai/writer-agent-v2'
 
 /**
  * Determine whether web search results should be delivered as chat response or editor content
@@ -159,72 +80,7 @@ Examples:
 /**
  * Generate formatted content for the editor based on web search results
  */
-async function generateEditorContent(
-  userMessage: string,
-  webSearchText: string,
-  citations: any[]
-): Promise<string> {
-  try {
-    const prompt = `Create well-formatted content for a document editor based on the user's request and web search results.
-
-User Request: "${userMessage}"
-
-Web Search Information:
-${webSearchText}
-
-Available Sources: ${citations.length} citations
-
-REQUIREMENTS:
-- Create comprehensive, well-structured content suitable for a document
-- Use markdown formatting (headers, lists, bold, etc.)
-- Include the actual data and facts from the web search
-- Structure the content logically with clear sections
-- Include source citations where appropriate
-- Make it ready to insert into a document editor
-- Use real data, not placeholders
-- Ensure the content directly addresses what the user asked for
-
-FORMATTING GUIDELINES:
-- Use # for main headings, ## for subheadings
-- Use **bold** for emphasis
-- Use bullet points (-) or numbered lists (1.) as appropriate
-- Include tables with | if data is tabular
-- Add source links in [Source: Title](URL) format when referencing specific information
-
-Create the content now:`
-
-    const response = await generateChatCompletion([
-      { role: 'user', content: prompt }
-    ], {
-      model: getChatModel(),
-      temperature: 0.3,
-      max_tokens: 3000
-    })
-
-    const content = response.choices[0]?.message?.content?.trim() || ''
-    
-    // Add source citations at the end if not already included
-    if (citations.length > 0 && !content.includes('## Sources') && !content.includes('**Sources**')) {
-      const sourcesText = `\n\n## Sources\n\n${citations.map((citation, index) => 
-        `${index + 1}. [${citation.title || citation.domain || 'Source'}](${citation.url})`
-      ).join('\n')}`
-      
-      return content + sourcesText
-    }
-
-    console.log('✅ Generated editor content:', {
-      contentLength: content.length,
-      hasSources: citations.length > 0,
-      contentPreview: content.substring(0, 200) + '...'
-    })
-
-    return content
-  } catch (error) {
-    console.error('Error generating editor content:', error)
-    // Fallback to simple formatted web search text
-    return `# ${userMessage}\n\n${webSearchText}\n\n## Sources\n\n${citations.map((c, i) => `${i + 1}. [${c.title || c.domain || 'Source'}](${c.url})`).join('\n')}`
-  }
-}
+// Content generation is now handled by WriterAgentV2
 
 export async function POST(request: NextRequest) {
   try {
@@ -242,9 +98,12 @@ export async function POST(request: NextRequest) {
       message, 
       documentId, 
       selection,
+      documentContent,
+      cursorPosition,
       maxTokens = 2000,
       conversationHistory = [],
-      forceWebSearch = false
+      forceWebSearch = false,
+      directEdit = false
     } = body
 
     if (!message) {
@@ -258,7 +117,9 @@ export async function POST(request: NextRequest) {
       userId: session.user.id,
       documentId,
       messageLength: message.length,
-      conversationLength: conversationHistory.length
+      conversationLength: conversationHistory.length,
+      directEdit,
+      hasDocumentContent: !!documentContent
     })
 
     // Fast path for simple greetings to avoid heavy routing/RAG
@@ -340,7 +201,7 @@ export async function POST(request: NextRequest) {
           includeImages: false,
           searchRegion: 'US',
           language: 'en',
-          timeoutMs: 15000
+          timeoutMs: 25000 // Increased timeout for better reliability
         })
         
         const webSearchText = webData.text || ''
@@ -357,7 +218,8 @@ export async function POST(request: NextRequest) {
           
           if (contentDecision.shouldGenerateEditorContent) {
             // Generate content for editor
-            const editorContent = await generateEditorContent(message, webSearchText, webSearchCitations)
+            // Content generation is now handled by WriterAgentV2
+            const editorContent = webSearchText
             return NextResponse.json({
               message: 'Content will be written to the document.',
               liveEditContent: editorContent,
@@ -400,6 +262,67 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Handle direct editing mode
+    if (directEdit) {
+      console.log('🎯 Direct editing mode requested')
+      
+      try {
+        // Generate content for direct editing
+        const messages = [
+          {
+            role: 'system',
+            content: `You are an AI writing assistant. The user wants you to write content directly into their document editor.
+
+CURRENT DOCUMENT CONTENT:
+${documentContent || '(empty document)'}
+
+INSTRUCTIONS:
+- Write content that directly addresses the user's request
+- Use proper markdown formatting (headers, lists, bold, etc.)
+- Be concise but comprehensive
+- Write as if you're typing directly into the document
+- Don't include meta-commentary or explanations
+- Just provide the content to be inserted
+
+The user will see your content as a highlighted proposal that they can accept or reject.`
+          },
+          ...conversationHistory,
+          {
+            role: 'user',
+            content: message
+          }
+        ]
+
+        const response = await generateChatCompletion(messages, {
+          model: getChatModel(),
+          temperature: 0.7,
+          max_tokens: 2000
+        })
+
+        const content = response.choices[0]?.message?.content?.trim() || ''
+        
+        return NextResponse.json({
+          message: 'Content prepared for direct editing.',
+          directEditContent: content,
+          metadata: {
+            task: 'direct_edit',
+            useWebSearch: false,
+            processingTime: Date.now(),
+            shouldTriggerLiveEdit: false,
+            intent: 'direct_edit',
+            confidence: 1.0,
+            routerProcessingTime: 0,
+            fallbackUsed: false,
+            forceWebSearch: false,
+            directEdit: true
+          }
+        })
+      } catch (error) {
+        console.error('❌ Direct edit generation failed:', error)
+        // Fallback to regular chat response
+      }
+    }
+
     // Determine routing based on intent
     const shouldTriggerRAG = routerResult.classification.intent === 'rag_query'
     
@@ -418,7 +341,47 @@ export async function POST(request: NextRequest) {
     })
     
     const isEditRequest = routerResult.classification.intent === 'edit_request'
-    const isEditorWrite = routerResult.classification.intent === 'editor_write'
+    const isEditorWrite = routerResult.classification.intent === 'editor_write' || routerResult.classification.intent === 'edit_request'
+    
+    // Additional check for writing requests that might not be classified correctly
+    const isWritingRequest = message.toLowerCase().includes('write') || 
+                           message.toLowerCase().includes('create') || 
+                           message.toLowerCase().includes('generate') ||
+                           message.toLowerCase().includes('compose') ||
+                           message.toLowerCase().includes('draft') ||
+                           message.toLowerCase().includes('report') ||
+                           message.toLowerCase().includes('document') ||
+                           message.toLowerCase().includes('analysis') ||
+                           message.toLowerCase().includes('summary') ||
+                           message.toLowerCase().includes('add') ||
+                           message.toLowerCase().includes('insert')
+    
+    // Always trigger live edit for writing requests if we have a documentId
+    let shouldTriggerLiveEdit = isEditorWrite || isWritingRequest
+    
+    // But only if we have a document context (either documentId or documentContent)
+    if (shouldTriggerLiveEdit && !documentId && !documentContent) {
+      shouldTriggerLiveEdit = false
+      console.log('⚠️ Writing request detected but no document context available')
+    }
+    
+    console.log('🔍 Intent Classification Debug:', {
+      intent: routerResult.classification.intent,
+      confidence: routerResult.classification.confidence,
+      isEditRequest,
+      isEditorWrite,
+      isWritingRequest,
+      shouldTriggerLiveEdit,
+      hasDocumentId: !!documentId,
+      userMessage: message.substring(0, 100) + '...'
+    })
+
+    // Check if we're going through regular chat path
+    if (!shouldTriggerLiveEdit) {
+      console.log('💬 Regular chat path - not triggering live edit workflow')
+    } else {
+      console.log('⚠️ WARNING: shouldTriggerLiveEdit is true but early return path was not taken!')
+    }
 
     // Build conversation context
     const messages = [
@@ -482,45 +445,102 @@ Current conversation context: ${conversationHistory.length > 0 ? 'Previous messa
       conversationHistory.some((msg: any) => msg.role === 'assistant' && 
         (msg.content.includes('stock') || msg.content.includes('company') || msg.content.includes('price')))
 
-    if (isEditorWrite) {
-      // One-shot compose: plan, gather (RAG+Web), compose markdown, return approval card with sources
-      console.log('🧪 One-shot compose triggered')
+    // For writing requests, use Writer Agent V2 for sophisticated content generation
+    if (shouldTriggerLiveEdit) {
+      console.log('✍️ Writing request detected - using Writer Agent V2')
       try {
-        const { oneShotCompose } = await import('@/lib/ai/one-shot-compose')
-        const selectedDocs = routerContext.doc_ids || []
-        const useDocs = selectedDocs.length > 0 || routerResult.classification.intent === 'rag_query'
-        const useWeb = forceWebSearch || routerResult.classification.slots.needs_recency || true
-        const compose = await oneShotCompose({
-          topic: message,
-          grounding: { use_docs: useDocs, use_web: useWeb, docs: selectedDocs },
-          timeBudgetMs: 20_000, // Reduced from 35s to 20s
-          editorDocId: documentId || undefined
+        // Create Writer Agent V2 instance
+        const writerAgent = new WriterAgentV2({
+          userId: session.user.id,
+          documentId: documentId || undefined,
+          enableWebSearch: forceWebSearch || routerResult.classification.slots.needs_recency,
+          maxTokens: maxTokens
         })
 
-        // Return approval payload (do not paste draft in chat)
+        // Process request through Writer Agent V2 pipeline
+        const result = await writerAgent.processRequest(message, documentContent)
+        
+        console.log('✅ Writer Agent V2 completed:', {
+          task: result.routerOut.task,
+          confidence: result.routerOut.confidence,
+          operationsCount: result.previewOps.ops?.length || 0,
+          approvalMessage: result.approvalMessage.substring(0, 100) + '...'
+        })
+
+        // Extract content from preview operations
+        let content = ''
+        if (result.previewOps.ops && result.previewOps.ops.length > 0) {
+          // Extract text content from operations
+          const textOps = result.previewOps.ops.filter(op => op.text)
+          content = textOps.map(op => op.text).join('\n\n')
+          
+          console.log('📝 Extracted content from operations:', {
+            operationsCount: result.previewOps.ops.length,
+            textOpsCount: textOps.length,
+            contentLength: content.length,
+            contentPreview: content.substring(0, 100) + '...'
+          })
+        } else {
+          // Fallback to approval message if no operations
+          content = result.approvalMessage
+          console.log('⚠️ No operations found, using approval message as content')
+        }
+
+        // Always return Writer Agent V2 results for writing requests
+        if (content && content.trim() !== '') {
+          return NextResponse.json({
+            message: content,
+            metadata: {
+              task: result.routerOut.task,
+              useWebSearch: forceWebSearch || routerResult.classification.slots.needs_recency,
+              shouldTriggerLiveEdit: true,
+              intent: routerResult.classification.intent,
+              confidence: result.routerOut.confidence,
+              routerProcessingTime: routerResult.processing_time,
+              fallbackUsed: routerResult.fallback_used,
+              forceWebSearch,
+              directPaste: true,
+              // Include Writer Agent V2 specific metadata
+              writerAgentV2: {
+                routerOut: result.routerOut,
+                instruction: result.instruction,
+                previewOps: result.previewOps,
+                approvalMessage: result.approvalMessage
+              }
+            }
+          })
+        } else {
+          // If no content generated, return a helpful message
+          return NextResponse.json({
+            message: 'I understand you want me to write content, but I wasn\'t able to generate anything. Please try rephrasing your request or provide more context.',
+            metadata: {
+              task: result.routerOut.task,
+              useWebSearch: false,
+              shouldTriggerLiveEdit: false,
+              intent: routerResult.classification.intent,
+              confidence: result.routerOut.confidence,
+              error: 'No content generated'
+            }
+          })
+        }
+      } catch (e) {
+        console.error('Writer Agent V2 error:', e)
+        console.error('Writer Agent V2 error details:', {
+          message: e instanceof Error ? e.message : 'Unknown error',
+          stack: e instanceof Error ? e.stack : undefined
+        })
+        
+        // Return error message for writing requests instead of falling through
         return NextResponse.json({
-          message: 'Draft ready. Review and Approve to insert into the editor.',
-          approval: {
-            draft: true,
-            title: 'AI Draft',
-            summary: 'A one-shot draft was created using saved docs and web sources.',
-            sources: compose.sources,
-            markdown: compose.markdown
-          },
+          message: 'I encountered an error while trying to generate content. Please try again with a different request.',
           metadata: {
-            task: 'editor_write',
-            useWebSearch: useWeb,
+            task: 'error',
+            useWebSearch: false,
             shouldTriggerLiveEdit: false,
             intent: routerResult.classification.intent,
-            confidence: routerResult.classification.confidence,
-            routerProcessingTime: routerResult.processing_time,
-            fallbackUsed: routerResult.fallback_used,
-            forceWebSearch
+            error: e instanceof Error ? e.message : 'Unknown error'
           }
         })
-      } catch (e) {
-        console.error('One-shot compose error:', e)
-        // Fallback to legacy path
       }
     }
 
@@ -661,110 +681,14 @@ The web data above contains current, factual information from October 2025 - use
       shouldUseWebSearch
     })
 
-    // Check if the response should trigger live editing
-    let shouldTriggerLiveEdit = false
-    let extractedContent = ''
-
-    // Use router decision for edit requests, but guard against short or random inputs
-    const isShortOrRandom = message.trim().length < 15
-    if (isEditRequest && !isShortOrRandom) {
-      shouldTriggerLiveEdit = true
-      extractedContent = extractContentForLiveEdit(content)
-    }
-    // Use router decision for editor write requests with the same guard
-    else if (isEditorWrite && !isShortOrRandom) {
-      shouldTriggerLiveEdit = true
-      extractedContent = extractContentForLiveEdit(content)
-    }
-    // If RAG orchestrator was used and it determined live editing should trigger, use its decision
-    else if (metadata.shouldTriggerLiveEdit !== undefined) {
-      shouldTriggerLiveEdit = metadata.shouldTriggerLiveEdit
-      // Use the liveEditContent from RAG orchestrator if available, otherwise extract from content
-      extractedContent = ragResponse?.liveEditContent || extractContentForLiveEdit(content)
-      
-      // Fallback: If extracted content is too short, use the full content
-      if (extractedContent.length < 100 && content.length > 100) {
-        console.log('⚠️ RAG extracted content too short, using full content')
-        extractedContent = content
-      }
-    } else {
-      // Only use fallback detection for non-web-search intents
-      // Web search questions should never trigger live editing
-      if (routerResult.classification.intent !== 'web_search' && routerResult.classification.intent !== 'ask' && !isShortOrRandom) {
-        const isWritingRequest = message.toLowerCase().includes('write') || 
-                               message.toLowerCase().includes('create') || 
-                               message.toLowerCase().includes('generate') ||
-                               message.toLowerCase().includes('compose') ||
-                               message.toLowerCase().includes('draft') ||
-                               message.toLowerCase().includes('report') ||
-                               message.toLowerCase().includes('document') ||
-                               message.toLowerCase().includes('analysis') ||
-                               message.toLowerCase().includes('summary')
-
-        const hasTriggerPhrase = content.includes('I\'ll write') || 
-                                content.includes('I\'m writing') || 
-                                content.includes('Let me write') ||
-                                content.includes('Here\'s the') ||
-                                content.includes('Here is the') ||
-                                content.includes('I\'ll create') ||
-                                content.includes('I\'m creating') ||
-                                content.includes('I\'ll add') ||
-                                content.includes('I\'m adding') ||
-                                content.includes('I\'ll insert') ||
-                                content.includes('I\'m inserting') ||
-                                content.includes('Writing:') ||
-                                content.includes('Creating:') ||
-                                content.includes('Adding:') ||
-                                content.includes('I\'ll provide') ||
-                                content.includes('I\'m providing') ||
-                                content.includes('Let me provide')
-
-        // Check if content looks like a report or document (long structured content)
-        const isStructuredContent = content.length > 500 && (
-          content.includes('#') || // Has headers
-          content.includes('##') || // Has subheaders
-          content.includes('**') || // Has bold text
-          content.includes('1.') || // Has numbered lists
-          content.includes('- ') || // Has bullet points
-          content.includes('|') // Has tables
-        )
-
-        // Extract content to check if it's substantial enough for live editing
-        extractedContent = extractContentForLiveEdit(content)
-        const hasSubstantialContent = extractedContent.length > 50
-
-        // Only trigger live editing if we have both a writing request AND substantial content
-        shouldTriggerLiveEdit = (isWritingRequest || hasTriggerPhrase || isStructuredContent) && hasSubstantialContent
-      }
-    }
-
-    console.log('🔍 Live Editing Detection:', {
-      message,
-      shouldTriggerLiveEdit,
-      contentLength: content.length,
-      extractedContentLength: extractedContent.length,
-      usingRAGDecision: metadata.shouldTriggerLiveEdit !== undefined,
-      ragLiveEditContent: ragResponse?.liveEditContent?.length || 0,
-      extractedContentPreview: extractedContent.substring(0, 100) + '...'
-    })
-
-    // Debug: Log final response decision
-    console.log('🔍 Final Response Decision:', {
-      shouldTriggerLiveEdit,
-      contentLength: content.length,
-      extractedContentLength: extractedContent.length,
-      willReturnStatusMessage: shouldTriggerLiveEdit,
-      messagePreview: shouldTriggerLiveEdit ? 'Content will be written to the document.' : content.substring(0, 100) + '...'
-    })
-
+    // Simple response - just return the content as a message
     const responseData = {
-      // If it should trigger live editing, only return a status message, not the full content
-      message: shouldTriggerLiveEdit ? 'Content will be written to the document.' : content,
+      message: content,
       metadata: {
         task: metadata.task || 'chat',
         useWebSearch: shouldUseWebSearch,
         processingTime: metadata.processingTime || Date.now(),
-        shouldTriggerLiveEdit,
+        shouldTriggerLiveEdit: metadata.shouldTriggerLiveEdit !== undefined ? metadata.shouldTriggerLiveEdit : shouldTriggerLiveEdit,
         // Include router metadata
         intent: routerResult.classification.intent,
         confidence: routerResult.classification.confidence,
@@ -775,19 +699,13 @@ The web data above contains current, factual information from October 2025 - use
         ...(metadata.ragConfidence !== undefined && { ragConfidence: metadata.ragConfidence }),
         ...(metadata.coverage !== undefined && { coverage: metadata.coverage }),
         ...(metadata.sourcesUsed !== undefined && { sourcesUsed: metadata.sourcesUsed })
-      },
-      // If it should trigger live editing, include the content to be written
-      ...(shouldTriggerLiveEdit && {
-        liveEditContent: extractedContent
-      })
+      }
     }
 
     console.log('🔍 Final API Response:', {
-      shouldTriggerLiveEdit,
-      hasLiveEditContent: !!responseData.liveEditContent,
-      liveEditContentLength: responseData.liveEditContent?.length || 0,
       messageLength: responseData.message.length,
-      extractedContentLength: extractedContent.length
+      shouldTriggerLiveEdit: responseData.metadata.shouldTriggerLiveEdit,
+      intent: routerResult.classification.intent
     })
 
     return NextResponse.json(responseData)

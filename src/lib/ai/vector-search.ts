@@ -923,36 +923,5 @@ export async function getDocumentStats(userId: string): Promise<{
   }
 }
 
-/**
- * Extract text content from document JSON content
- */
-function extractTextFromContent(content: any): string {
-  if (typeof content === 'string') {
-    return content
-  }
-
-  if (Array.isArray(content)) {
-    return content.map(item => extractTextFromContent(item)).join(' ')
-  }
-
-  if (content && typeof content === 'object') {
-    if (content.type === 'doc' && content.content) {
-      return extractTextFromContent(content.content)
-    }
-    
-    if (content.text) {
-      return content.text
-    }
-    
-    if (content.content) {
-      return extractTextFromContent(content.content)
-    }
-    
-    // Handle ProseMirror document structure
-    if (content.type && content.content) {
-      return extractTextFromContent(content.content)
-    }
-  }
-
-  return ''
-}
+// Import centralized utility
+import { extractTextFromContent } from './content-extraction-utils'

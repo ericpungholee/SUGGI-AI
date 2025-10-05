@@ -4,7 +4,6 @@ import { authOptions } from '@/lib/auth'
 import { hybridLearnedRouter } from '@/lib/ai/hybrid-learned-router'
 import { embeddingService } from '@/lib/ai/embedding-service'
 import { learnedClassifier } from '@/lib/ai/learned-classifier'
-import { llmMetaClassifier } from '@/lib/ai/llm-meta-classifier'
 import { routerService } from '@/lib/ai/router-service'
 
 export async function GET(request: NextRequest) {
@@ -42,10 +41,6 @@ export async function GET(request: NextRequest) {
       learnedClassifier: {
         status: classifierStatus.isTrained ? 'healthy' : 'training',
         details: classifierStatus
-      },
-      llmMetaClassifier: {
-        status: 'healthy',
-        details: { available: true }
       },
       routerService: {
         status: 'healthy',
@@ -89,7 +84,6 @@ export async function GET(request: NextRequest) {
         hybridRouter: componentTests.hybridRouter.status,
         embeddingService: componentTests.embeddingService.status,
         learnedClassifier: componentTests.learnedClassifier.status,
-        llmMetaClassifier: componentTests.llmMetaClassifier.status,
         routerService: componentTests.routerService.status
       },
       performance: performanceMetrics,

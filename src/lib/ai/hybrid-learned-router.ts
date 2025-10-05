@@ -5,7 +5,6 @@
 
 import { embeddingService } from './embedding-service'
 import { learnedClassifier } from './learned-classifier'
-import { llmMetaClassifier } from './llm-meta-classifier'
 import { 
   IntentClassification, 
   RouterContext, 
@@ -127,14 +126,13 @@ export class HybridLearnedRouter {
         this.metrics.embeddingHits++
         
       } else {
-        // Low confidence - use LLM meta-classifier
-        const metaResult = await llmMetaClassifier.classify(query, context)
-        finalClassification = metaResult.classification
+        // Low confidence - use simple heuristic fallback
+        const fallbackIntent = this.determineFallbackIntent(query, context)
+        finalClassification = this.buildClassification(fallbackIntent, 0.4, context)
         explanation = {
           method: 'meta_classifier',
-          confidence: metaResult.classification.confidence,
-          reasoning: metaResult.reasoning,
-          similarExamples: metaResult.examplesUsed
+          confidence: 0.4,
+          reasoning: 'Low confidence from both embedding and classifier, using heuristic fallback'
         }
         this.metrics.metaClassifierHits++
       }
@@ -313,6 +311,36 @@ export class HybridLearnedRouter {
       selection_present: context.is_selection_present,
       conversation_context: context.conversation_length > 0
     }
+  }
+
+  /**
+   * Determine fallback intent using simple heuristics
+   */
+  private determineFallbackIntent(query: string, context: RouterContext): string {
+    const lowerQuery = query.toLowerCase()
+    
+    // Check for web search patterns
+    if (/\b(latest|current|today|breaking|recent|now|price|stock|news)\b/.test(lowerQuery)) {
+      return 'web_search'
+    }
+    
+    // Check for edit patterns
+    if (/\b(rewrite|edit|fix|improve|change|modify|correct)\b/.test(lowerQuery)) {
+      return 'edit_request'
+    }
+    
+    // Check for writing patterns
+    if (/\b(write|create|generate|compose|draft|make)\b/.test(lowerQuery)) {
+      return 'editor_write'
+    }
+    
+    // Check for document queries
+    if (context.has_attached_docs || /\b(my|document|file|note|research)\b/.test(lowerQuery)) {
+      return 'rag_query'
+    }
+    
+    // Default to ask
+    return 'ask'
   }
 
   /**

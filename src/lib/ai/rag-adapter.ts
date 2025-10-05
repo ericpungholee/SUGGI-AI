@@ -1,4 +1,5 @@
-import { vectorDB, VectorSearchResult } from './vector-db'
+import { vectorDB } from './vector-db'
+import type { VectorSearchResult } from './vector-db'
 import { createEmbedding } from './embeddings'
 import { DocumentChunk } from './embeddings'
 

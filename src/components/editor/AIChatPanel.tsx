@@ -2,16 +2,19 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { X, Send, User, GripVertical, Feather, Paperclip, Loader2, Check, XCircle, Globe } from 'lucide-react'
-import { AIEditorAgent } from '@/lib/ai/editor-agent'
+// import { AIEditorAgent } from '@/lib/ai/editor-agent' // Removed - unused
+import { getCursorContext } from '@/lib/editor/position-utils'
 
 interface AIChatPanelProps {
   isOpen: boolean
   onClose: () => void
   width: number
   documentId?: string
-  onApplyChanges?: (changes: any) => void
+  onApplyChanges?: (changes: any, cursorPosition?: string) => void
   onRevertChanges?: () => void
   connectedDocuments?: Array<{ id: string; title: string }>
+  editorRef?: React.RefObject<HTMLDivElement>
+  documentContent?: string
 }
 
 interface ChatMessage {
@@ -36,8 +39,25 @@ export default function AIChatPanel({
   documentId,
   onApplyChanges,
   onRevertChanges,
-  connectedDocuments = []
+  connectedDocuments = [],
+  editorRef,
+  documentContent
 }: AIChatPanelProps) {
+  console.log('🔍 AIChatPanel rendered:', {
+    isOpen,
+    hasOnApplyChanges: !!onApplyChanges,
+    hasEditorRef: !!editorRef,
+    documentId,
+    documentContentLength: documentContent?.length || 0
+  })
+  
+  // Test if the component is working
+  useEffect(() => {
+    if (isOpen) {
+      console.log('✅ AIChatPanel is open and mounted')
+    }
+  }, [isOpen])
+  
   const { data: session } = useSession()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
@@ -50,10 +70,10 @@ export default function AIChatPanel({
 
   // Load conversation history on mount
   useEffect(() => {
-    if (documentId) {
+    if (documentId && session?.user?.id) {
       loadConversationHistory()
     }
-  }, [documentId])
+  }, [documentId, session?.user?.id])
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -69,6 +89,12 @@ export default function AIChatPanel({
 
   const loadConversationHistory = async () => {
     try {
+      // Check if user is authenticated before making the request
+      if (!session?.user?.id) {
+        console.log('📚 No authenticated session, skipping conversation history load')
+        return
+      }
+
       console.log('📚 Loading conversation history for document:', documentId)
       console.log('📚 Session status:', { hasSession: !!session, userId: session?.user?.id })
       
@@ -96,17 +122,24 @@ export default function AIChatPanel({
         } else {
           console.log('📚 No conversation history found for document')
         }
+      } else if (response.status === 401) {
+        console.log('📚 User not authenticated, skipping conversation history load')
       } else {
         const errorData = await response.json()
         console.error('Failed to load conversation history:', response.status, errorData)
       }
     } catch (error) {
-      console.error('Failed to load conversation history:', error)
+      // Only log error if it's not a network/authentication issue
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        console.log('📚 Network error or user not authenticated, skipping conversation history load')
+      } else {
+        console.error('Failed to load conversation history:', error)
+      }
     }
   }
 
   const saveConversationHistory = async (messagesToSave: ChatMessage[]) => {
-    if (!documentId) return
+    if (!documentId || !session?.user?.id) return
     
     try {
       console.log('💾 Saving conversation history:', {
@@ -142,10 +175,22 @@ export default function AIChatPanel({
     }
   }
 
+
   const sendMessage = async () => {
     if (!inputValue.trim() || isLoading) return
 
+    console.log('🚀 AIChatPanel sendMessage called:', {
+      messageLength: inputValue.trim().length,
+      isLoading,
+      hasSession: !!session?.user?.id,
+      documentId,
+      hasEditorRef: !!editorRef
+    })
+
     const message = inputValue.trim()
+    
+    // Get current cursor context
+    const cursorContext = getCursorContext(editorRef || undefined)
     
     // Add user message
     const userMessage: ChatMessage = {
@@ -166,10 +211,15 @@ export default function AIChatPanel({
         content: msg.content
       }))
       
-      console.log('💬 Sending conversation history:', {
+      console.log('💬 Sending conversation history with context:', {
         messageCount: conversationHistory.length,
-        lastMessage: conversationHistory[conversationHistory.length - 1]?.content?.substring(0, 50) + '...'
+        lastMessage: conversationHistory[conversationHistory.length - 1]?.content?.substring(0, 50) + '...',
+        documentContentLength: documentContent?.length || 0,
+        cursorPosition: cursorContext.cursorPosition,
+        selectionLength: cursorContext.selection.length
       })
+      
+      console.log('🔍 AIChatPanel making API call...')
       
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -180,90 +230,113 @@ export default function AIChatPanel({
           message,
           documentId: documentId,
           conversationHistory,
-          forceWebSearch
+          forceWebSearch,
+          documentContent: documentContent,
+          selection: cursorContext.selection,
+          cursorPosition: cursorContext.cursorPosition
         })
       })
+
+      console.log('🔍 AIChatPanel API response status:', response.status, response.ok)
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
       const result = await response.json()
+      console.log('🔍 AIChatPanel raw response:', result)
       
-      // Handle one-shot compose approval card
-      if (result.approval?.draft && result.approval?.markdown) {
-        const approvalMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          type: 'approval',
-          content: result.message || 'Draft ready. Review sources and approve to insert.',
-          timestamp: new Date(),
-          approvalData: {
-            pendingChangeId: `draft_${Date.now()}`,
-            summary: result.approval.summary || 'AI draft prepared',
-            sources: (result.approval.sources || []).map((s: any) => s.url || s.title || s.docId),
-            canApprove: true,
-            canDeny: true
-          },
-          previewOps: {
-            pending_change_id: `draft_${Date.now()}`,
-            summary: 'Insert AI draft markdown into the editor',
-            notes: 'AI generated draft with citations',
-            citations: (result.approval.sources || []).map((s: any) => s.url || s.title || s.docId),
-            ops: [{ op: 'insert', text: result.approval.markdown, anchor: 'end' }]
-          }
+      console.log('🔍 AIChatPanel received response:', {
+        hasMessage: !!result.message,
+        messageLength: result.message?.length || 0,
+        shouldTriggerLiveEdit: result.metadata?.shouldTriggerLiveEdit,
+        directPaste: result.metadata?.directPaste,
+        intent: result.metadata?.intent,
+        hasWriterAgentV2: !!result.metadata?.writerAgentV2,
+        writerAgentTask: result.metadata?.writerAgentV2?.routerOut?.task,
+        fullResult: result
+      })
+
+      // Check if this is a writing request that should trigger approval workflow
+      const shouldTriggerApproval = result.metadata?.shouldTriggerLiveEdit || result.metadata?.directPaste
+      
+      if (shouldTriggerApproval && result.message) {
+        console.log('✍️ Writing request detected - starting approval workflow')
+        
+        // Step 1: Apply content to editor FIRST (will show in gray)
+        if (onApplyChanges) {
+          console.log('📝 Applying content to editor...', {
+            hasOnApplyChanges: !!onApplyChanges,
+            messageLength: result.message.length,
+            cursorPosition: cursorContext.cursorPosition
+          })
+          onApplyChanges(result.message, cursorContext.cursorPosition)
+        } else {
+          console.error('❌ onApplyChanges is not available!')
         }
-        setPendingChange(approvalMessage.previewOps)
-        setMessages(prev => {
-          const newMessages = [...prev, approvalMessage]
-          saveConversationHistory(newMessages)
-          return newMessages
+        
+        // Step 2: Wait a moment for content to be inserted, then show approval message
+        setTimeout(() => {
+          let approvalContent = `Content has been added to your document. Review it and approve or deny.`
+          let summary = `Generated ${result.message.length} characters`
+          
+          if (result.metadata?.writerAgentV2) {
+            const wa2 = result.metadata.writerAgentV2
+            const task = wa2.routerOut?.task || 'content generation'
+            const confidence = wa2.routerOut?.confidence || 0
+            const operationsCount = wa2.previewOps?.ops?.length || 0
+            
+            approvalContent = `Generated ${task} content (confidence: ${Math.round(confidence * 100)}%). Review and approve or deny.`
+            summary = `${task} - ${operationsCount} operations, ${result.message.length} characters`
+          }
+          
+          const approvalMessage: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            type: 'approval',
+            content: approvalContent,
+            timestamp: new Date(),
+            approvalData: {
+              pendingChangeId: `change_${Date.now()}`,
+              summary: summary,
+              sources: [],
+              canApprove: true,
+              canDeny: true
+            }
+          }
+          
+          // Add approval message to chat
+          setMessages(prev => {
+            const newMessages = [...prev, approvalMessage]
+            saveConversationHistory(newMessages)
+            console.log('✅ Approval message added to chat:', {
+              messageId: approvalMessage.id,
+              type: approvalMessage.type,
+              hasApprovalData: !!approvalMessage.approvalData,
+              canApprove: approvalMessage.approvalData?.canApprove,
+              canDeny: approvalMessage.approvalData?.canDeny
+            })
+            return newMessages
+          })
+        }, 100) // Small delay to ensure content is inserted first
+        
+        // Step 3: Set up the pending change for approval
+        setPendingChange({
+          text: result.message,
+          cursorPosition: cursorContext.cursorPosition
         })
+        
         setIsLoading(false)
         return
       }
 
-      // Handle live edit content
-      if (result.liveEditContent) {
-        const liveEditOps = {
-          pending_change_id: `live_edit_${Date.now()}`,
-          summary: `Add ${result.liveEditContent.length} characters of content to the document`,
-          notes: 'AI generated content for live editing',
-          citations: [],
-          ops: [{
-            op: 'insert',
-            text: result.liveEditContent,
-            anchor: 'end'
-          }]
-        }
+      // Handle regular chat response
+      if (result.message) {
+        console.log('🔍 Regular chat response')
         
-        setPendingChange(liveEditOps)
-        
-        // Create approval message for live typing
-        const approvalMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          type: 'approval',
-          content: result.message || 'I have prepared content to add to your document. Please review and approve or deny.',
-          timestamp: new Date(),
-          previewOps: liveEditOps,
-          approvalData: {
-            pendingChangeId: liveEditOps.pending_change_id,
-            summary: liveEditOps.summary,
-            sources: ['AI Generated Content'],
-            canApprove: true,
-            canDeny: true
-          }
-        }
-        setMessages(prev => {
-          const newMessages = [...prev, approvalMessage]
-          saveConversationHistory(newMessages)
-          return newMessages
-        })
-      } else {
-        // Regular response
         const aiMessage: ChatMessage = {
           id: (Date.now() + 1).toString(),
           type: 'assistant',
-          content: result.message || 'Processing completed',
+          content: result.message,
           timestamp: new Date()
         }
         setMessages(prev => {
@@ -293,60 +366,114 @@ export default function AIChatPanel({
     }
   }
 
-  const handleApprove = async () => {
+  const handleApprove = () => {
     if (!pendingChange) return
     
-    try {
-      if (onApplyChanges) {
-        onApplyChanges(pendingChange)
-      }
-      
-      // Add confirmation message
-      const confirmMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: 'Changes have been applied to the document.',
-        timestamp: new Date()
-      }
-      setMessages(prev => {
-        const newMessages = [...prev, confirmMessage]
-        saveConversationHistory(newMessages)
-        return newMessages
+    console.log('✅ Approving AI content through chat')
+    console.log('🔍 Approval debug info:', {
+      hasPendingChange: !!pendingChange,
+      hasEditorRef: !!editorRef?.current,
+      pendingChangeText: pendingChange?.text?.substring(0, 50) + '...'
+    })
+    
+    // Use DirectEditManager's acceptProposal function
+    if (editorRef?.current) {
+      const directEditManager = (editorRef.current as any).directEditManager
+      console.log('🔍 DirectEditManager status:', {
+        hasDirectEditManager: !!directEditManager,
+        hasAcceptProposal: !!directEditManager?.acceptProposal,
+        managerType: typeof directEditManager
       })
       
-      setPendingChange(null)
-      setShowPreview(false)
-    } catch (error) {
-      console.error('Error applying changes:', error)
+      if (directEditManager && directEditManager.acceptProposal) {
+        console.log('🚀 Calling DirectEditManager.acceptProposal()')
+        directEditManager.acceptProposal()
+        console.log('✅ Used DirectEditManager to approve proposal')
+      } else {
+        console.log('⚠️ DirectEditManager not available, using fallback')
+        // Fallback: direct DOM manipulation
+        const proposalElement = document.querySelector('.agent-text-block[data-is-approved="false"]') as HTMLElement
+        console.log('🔍 Fallback DOM manipulation:', {
+          foundProposalElement: !!proposalElement,
+          elementId: proposalElement?.getAttribute('data-proposal-id')
+        })
+        
+        if (proposalElement) {
+          proposalElement.setAttribute('data-is-approved', 'true')
+          proposalElement.style.cssText = `
+            color: #000000 !important;
+            background: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+            transition: all 0.3s ease !important;
+          `
+          proposalElement.removeAttribute('data-proposal-id')
+          console.log('✅ Used fallback DOM manipulation to approve proposal')
+        } else {
+          console.error('❌ No proposal element found for approval')
+        }
+      }
+    } else {
+      console.error('❌ No editorRef available for approval')
     }
+    
+    // Add confirmation message
+    const confirmMessage: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      type: 'assistant',
+      content: 'Content has been approved and saved to the document.',
+      timestamp: new Date()
+    }
+    setMessages(prev => {
+      const newMessages = [...prev, confirmMessage]
+      saveConversationHistory(newMessages)
+      return newMessages
+    })
+    
+    // Clear pending change
+    setPendingChange(null)
+    
+    console.log('✅ AI content approved and saved')
   }
 
-  const handleDeny = async () => {
+  const handleDeny = () => {
     if (!pendingChange) return
     
-    try {
-      if (onRevertChanges) {
-        onRevertChanges()
+    console.log('❌ Denying AI content through chat')
+    
+    // Use DirectEditManager's rejectProposal function
+    if (editorRef?.current) {
+      const directEditManager = (editorRef.current as any).directEditManager
+      if (directEditManager && directEditManager.rejectProposal) {
+        directEditManager.rejectProposal()
+        console.log('✅ Used DirectEditManager to reject proposal')
+      } else {
+        // Fallback: direct DOM manipulation
+        const pendingElements = document.querySelectorAll('.agent-text-block[data-is-approved="false"]')
+        pendingElements.forEach(element => {
+          element.remove()
+          console.log('❌ Removed pending proposal element')
+        })
       }
-      
-      // Add confirmation message
-      const confirmMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: 'Changes have been reverted.',
-        timestamp: new Date()
-      }
-      setMessages(prev => {
-        const newMessages = [...prev, confirmMessage]
-        saveConversationHistory(newMessages)
-        return newMessages
-      })
-      
-      setPendingChange(null)
-      setShowPreview(false)
-    } catch (error) {
-      console.error('Error reverting changes:', error)
     }
+    
+    // Add confirmation message
+    const confirmMessage: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      type: 'assistant',
+      content: 'Content has been removed from the document.',
+      timestamp: new Date()
+    }
+    setMessages(prev => {
+      const newMessages = [...prev, confirmMessage]
+      saveConversationHistory(newMessages)
+      return newMessages
+    })
+    
+    // Clear pending change
+    setPendingChange(null)
+    
+    console.log('✅ AI content denied and removed')
   }
 
   const clearChat = async () => {
@@ -444,36 +571,22 @@ export default function AIChatPanel({
                 <div className="text-sm whitespace-pre-wrap leading-relaxed break-words hyphens-auto [word-break:break-word]">
                   {message.content}
                 </div>
-                {message.type === 'approval' && message.approvalData && (
-                  <div className="mt-3 space-y-2">
-                    <div className="bg-white rounded-md p-2 border border-gray-200">
-                      <div className="text-xs font-medium text-gray-700 mb-1">Summary</div>
-                      <div className="text-xs text-gray-600 break-words">{message.approvalData.summary}</div>
-                    </div>
-                    {message.approvalData.sources.length > 0 && (
-                      <div className="bg-white rounded-md p-2 border border-gray-200">
-                        <div className="text-xs font-medium text-gray-700 mb-1">Sources</div>
-                        <div className="text-xs text-gray-600 break-words">{message.approvalData.sources.join(', ')}</div>
-                      </div>
-                    )}
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={handleApprove}
-                        disabled={!message.approvalData.canApprove}
-                        className="px-3 py-1.5 bg-gray-900 text-white text-xs rounded-md hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1.5 transition-all duration-200"
-                      >
-                        <Check className="h-2.5 w-2.5" />
-                        <span>Approve</span>
-                      </button>
-                      <button
-                        onClick={handleDeny}
-                        disabled={!message.approvalData.canDeny}
-                        className="px-3 py-1.5 bg-gray-500 text-white text-xs rounded-md hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1.5 transition-all duration-200"
-                      >
-                        <XCircle className="h-2.5 w-2.5" />
-                        <span>Deny</span>
-                      </button>
-                    </div>
+                {message.type === 'approval' && (
+                  <div className="mt-3 flex space-x-2">
+                    <button
+                      onClick={handleApprove}
+                      className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-800 flex items-center space-x-2 transition-all duration-200"
+                    >
+                      <Check className="h-4 w-4" />
+                      <span>Approve</span>
+                    </button>
+                    <button
+                      onClick={handleDeny}
+                      className="px-4 py-2 bg-white text-black text-sm rounded-md border border-gray-300 hover:bg-gray-100 flex items-center space-x-2 transition-all duration-200"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      <span>Deny</span>
+                    </button>
                   </div>
                 )}
               </div>

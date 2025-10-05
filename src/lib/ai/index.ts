@@ -4,7 +4,7 @@ export { generateChatCompletion, generateEmbedding, generateEmbeddings } from '.
 export type { ChatMessage, ChatCompletionOptions, EmbeddingOptions } from './core/types'
 
 // Web search services
-export { webSearch, robustWebSearch } from './services/web-search'
+export { webSearch, robustWebSearch, fallbackWebSearch } from './services/web-search'
 export type { WebSearchOptions, WebSearchResult, Citation } from './core/types'
 
 // Embedding services
@@ -25,11 +25,11 @@ export {
   vectorizeDocument, 
   getDocumentStats 
 } from './vector-search'
-export type { SearchResult, DocumentSearchOptions } from './core/types'
+// DocumentSearchOptions is exported from vector-search.ts
 
 // Vector database services
 export { vectorDB, storeDocumentInVectorDB, searchDocumentsInVectorDB } from './vector-db'
-export type { VectorDocument, VectorSearchResult, VectorSearchOptions } from './core/types'
+export type { VectorDocument } from './core/types'
 
 // Document processing services
 export { 
@@ -57,7 +57,6 @@ export type { RagChunk } from './core/types'
 export { hybridLearnedRouter } from './hybrid-learned-router'
 export { embeddingService } from './embedding-service'
 export { learnedClassifier } from './learned-classifier'
-export { llmMetaClassifier } from './llm-meta-classifier'
 export { routerService } from './router-service'
 export type { IntentClassification, RouterContext, RouterFeatures, RouterResponse } from './core/types'
 
@@ -68,7 +67,28 @@ export { verifyInstruction, validateResponse, generateVerificationReport } from 
 export type { VerificationResult, VerificationOptions } from './core/types'
 
 export { createRAGOrchestrator, processRAGQuery } from './rag-orchestrator'
-export type { RAGOrchestratorOptions, RAGResponse } from './core/types'
+export type { RAGResponse } from './core/types'
 
 export { getRAGConfig } from './rag-config'
 export type { RAGConfig } from './core/types'
+
+// Unified Services
+export { 
+  unifiedSearchService, 
+  unifiedSearch, 
+  searchDocuments, 
+  searchFolders 
+} from './unified-search'
+export type { 
+  UnifiedSearchOptions, 
+  UnifiedSearchResult 
+} from './unified-search'
+
+
+// MCP Tools
+export { 
+  createMCPTools 
+} from './mcp-tools'
+export type { 
+  MCPTools 
+} from './mcp-tools'

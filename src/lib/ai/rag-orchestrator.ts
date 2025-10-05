@@ -523,143 +523,17 @@ Examples:
    * Check if the response should trigger live editing
    */
   private shouldTriggerLiveEdit(content: string, task: string): boolean {
-    // Only allow live editing when task is explicitly a writing action
-    const isWritingTask = task === 'write'
-
-    // Check for trigger phrases in content
-    const triggerPhrases = [
-      'I\'ll write', 'I\'m writing', 'Let me write',
-      'Here\'s the', 'Here is the', 'I\'ll create',
-      'I\'m creating', 'I\'ll add', 'I\'m adding',
-      'I\'ll insert', 'I\'m inserting', 'Writing:',
-      'Creating:', 'Adding:', 'I\'ll provide',
-      'I\'m providing', 'Let me provide', 'Here\'s a',
-      'Here is a', 'I\'ll draft', 'I\'m drafting'
-    ]
-
-    const hasTriggerPhrase = triggerPhrases.some(phrase => 
-      content.includes(phrase)
-    )
-
-    // Check if content looks like a report or document (long structured content)
-    const isStructuredContent = content.length > 500 && (
-      content.includes('#') || // Has headers
-      content.includes('##') || // Has subheaders
-      content.includes('**') || // Has bold text
-      content.includes('1.') || // Has numbered lists
-      content.includes('- ') || // Has bullet points
-      content.includes('|') // Has tables
-    )
-
-    // Check if user asked for a report or document
-    const isReportRequest = task.includes('report') || 
-                           task.includes('document') || 
-                           task.includes('analysis') ||
-                           task.includes('summary')
-
-    // For any writing-related request, always trigger live editing
-    const isAnyWritingRequest = task.includes('write') || 
-                               task.includes('create') || 
-                               task.includes('generate') ||
-                               task.includes('compose') ||
-                               task.includes('draft') ||
-                               task.includes('add') ||
-                               task.includes('insert') ||
-                               task.includes('report') ||
-                               task.includes('document') ||
-                               task.includes('analysis') ||
-                               task.includes('summary')
-
-    const result = isWritingTask && (hasTriggerPhrase || isStructuredContent || isAnyWritingRequest)
-    
-    // Debug information for live editing trigger
-    console.log('🔍 RAG Live Edit Decision:', {
-      task,
-      isWritingTask,
-      hasTriggerPhrase,
-      isStructuredContent,
-      isReportRequest,
-      isAnyWritingRequest,
-      result,
-      contentLength: content.length
-    })
-
-    return result
+    const { shouldTriggerLiveEdit } = require('./content-extraction-utils')
+    return shouldTriggerLiveEdit(content, task)
   }
 
   /**
    * Extract content for live editing
+   * Delegates to centralized utility
    */
   private extractContentForLiveEdit(content: string): string {
-    console.log('🔍 RAG extractContentForLiveEdit:', {
-      contentLength: content.length,
-      contentPreview: content.substring(0, 200) + '...',
-      hasHeaders: content.includes('#'),
-      hasBullets: content.includes('- '),
-      hasNumbers: content.includes('1.'),
-      hasBold: content.includes('**'),
-      hasTables: content.includes('|')
-    })
-
-    // Look for content after common phrases
-    const patterns = [
-      /I'll write[:\\s]*(.+)/i,
-      /I'm writing[:\\s]*(.+)/i,
-      /Let me write[:\\s]*(.+)/i,
-      /Here's the[:\\s]*(.+)/i,
-      /Here is the[:\\s]*(.+)/i,
-      /I'll create[:\\s]*(.+)/i,
-      /I'm creating[:\\s]*(.+)/i,
-      /I'll add[:\\s]*(.+)/i,
-      /I'm adding[:\\s]*(.+)/i,
-      /Let me add[:\\s]*(.+)/i,
-      /I'll insert[:\\s]*(.+)/i,
-      /I'm inserting[:\\s]*(.+)/i,
-      /Writing[:\\s]*(.+)/i,
-      /Creating[:\\s]*(.+)/i,
-      /Adding[:\\s]*(.+)/i,
-      /I'll provide[:\\s]*(.+)/i,
-      /I'm providing[:\\s]*(.+)/i,
-      /Let me provide[:\\s]*(.+)/i,
-      /Here's a[:\\s]*(.+)/i,
-      /Here is a[:\\s]*(.+)/i,
-      /I'll draft[:\\s]*(.+)/i,
-      /I'm drafting[:\\s]*(.+)/i
-    ]
-    
-    for (const pattern of patterns) {
-      const match = content.match(pattern)
-      if (match && match[1]) {
-        const extracted = match[1].trim()
-        console.log('✅ Pattern matched, extracted:', extracted.substring(0, 100) + '...')
-        return extracted
-      }
-    }
-    
-    // If no pattern matches, check if it's structured content (report/document)
-    if (content.length > 500 && (
-      content.includes('#') || 
-      content.includes('##') || 
-      content.includes('**') || 
-      content.includes('1.') || 
-      content.includes('- ') || 
-      content.includes('|')
-    )) {
-      // For structured content, return the entire content
-      console.log('✅ Structured content detected, returning full content')
-      return content
-    }
-    
-    // For any content longer than 100 characters, return it as-is
-    // This ensures we don't lose content due to pattern matching issues
-    if (content.length > 100) {
-      console.log('✅ Long content detected, returning full content')
-      return content
-    }
-    
-    // If no pattern matches, return the content as-is
-    console.log('⚠️ No pattern matched, returning content as-is')
-    return content
+    const { extractContentForLiveEdit } = require('./content-extraction-utils')
+    return extractContentForLiveEdit(content)
   }
 }
 

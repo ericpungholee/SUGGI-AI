@@ -128,57 +128,8 @@ export async function processAllUserDocuments(
   }
 }
 
-/**
- * Extract text content from document JSON content
- */
-function extractTextFromContent(content: any): string {
-  if (typeof content === 'string') {
-    return content
-  }
-
-  if (typeof content === 'object' && content !== null) {
-    // Handle different content structures
-    if (content.html) {
-      return stripHtml(content.html)
-    }
-    
-    if (content.plainText) {
-      return content.plainText
-    }
-
-    if (content.text) {
-      return content.text
-    }
-
-    // If it's an array of content blocks
-    if (Array.isArray(content)) {
-      return content
-        .map(block => {
-          if (typeof block === 'string') return block
-          if (block.text) return block.text
-          if (block.content) return block.content
-          return ''
-        })
-        .join('\n')
-    }
-
-    // Try to extract text from any nested structure
-    return JSON.stringify(content)
-  }
-
-  return ''
-}
-
-/**
- * Strip HTML tags from text, excluding image data
- */
-function stripHtml(html: string): string {
-  return html
-    .replace(/<img[^>]*>/gi, ' ') // Remove img tags and their content
-    .replace(/<[^>]*>/g, ' ') // Remove remaining HTML tags
-    .replace(/\s+/g, ' ') // Normalize whitespace
-    .trim()
-}
+// Import centralized utilities
+import { extractTextFromContent, stripHtml } from './content-extraction-utils'
 
 /**
  * Get processing status for a document

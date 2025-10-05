@@ -142,14 +142,33 @@ export async function PATCH(
                     plainText: plainText,
                     wordCount: plainText.split(/\s+/).filter(Boolean).length
                 }
-            } else if (typeof content === 'object' && content.html) {
-                updateData.content = content
+            } else if (typeof content === 'object' && content !== null) {
+                // Handle object content (from saveDocument function)
+                if (content.html !== undefined) {
+                    // Clean the HTML content to remove pipe characters
+                    const cleanHtmlContent = content.html.replace(/\|+/g, '')
+                    
+                    updateData.content = {
+                        html: cleanHtmlContent,
+                        plainText: content.plainText || cleanHtmlContent.replace(/<[^>]*>/g, '').trim(),
+                        wordCount: content.wordCount || cleanHtmlContent.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length
+                    }
+                } else {
+                    // Fallback - treat as string
+                    updateData.content = {
+                        html: '',
+                        plainText: '',
+                        wordCount: 0
+                    }
+                }
             }
             
             console.log('API: Saving content structure:', {
                 originalContent: content,
                 updateDataContent: updateData.content,
-                contentType: typeof updateData.content
+                contentType: typeof content,
+                hasHtml: content?.html !== undefined,
+                htmlLength: content?.html?.length || 0
             })
         }
 

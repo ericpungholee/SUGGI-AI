@@ -11,16 +11,20 @@ The Writer Agent V2 implements a **RAG-first approach** with **preview-only edit
 ```
 src/lib/ai/
 ├── writer-agent-v2.ts          # Main Writer Agent V2 implementation
-├── mcp-tools.ts               # MCP tool interfaces and implementations
-├── writer-agent-v2.test.ts    # Test suite for the system
+├── enhanced-preview-operations.ts # Enhanced operations generator
+├── document-structure-analyzer.ts # Document structure analysis
+├── content-extraction-utils.ts   # Content extraction utilities
+├── writer-agent-workflow-test.ts # Workflow test suite
 └── ...
 
 src/app/api/
-└── writer-agent/
-    └── route.ts               # Updated API endpoint using V2 system
+└── chat/
+    └── route.ts               # Main API endpoint using Writer Agent V2
 
 src/components/editor/
-└── AIChatPanel.tsx            # Updated chat panel with approval workflow
+├── AIChatPanel.tsx            # Chat panel with approval workflow
+├── DirectEditManager.tsx      # Content insertion manager
+└── CursorEditor.tsx           # Main editor component
 
 CURSOR_SYSTEM_INSTRUCTION.md   # Complete system instruction for copy-paste
 ```
@@ -150,64 +154,56 @@ Copy the content from `CURSOR_SYSTEM_INSTRUCTION.md` and paste it as your global
 
 ### 2. API Usage
 
+The Writer Agent V2 is integrated into the main chat API endpoint:
+
 ```typescript
-// Process a user request
-const response = await fetch('/api/writer-agent', {
+// Send a writing request through the chat API
+const response = await fetch('/api/chat', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    userAsk: 'Make this text more friendly',
-    selectionText: 'The current implementation is suboptimal.',
+    message: 'Write a summary about AI developments',
     documentId: 'doc-123',
-    action: 'process',
-    useWebSearch: false
+    documentContent: 'Current document content...',
+    forceWebSearch: false
   })
 })
 
 const result = await response.json()
-// result.type === 'preview'
-// result.data contains PreviewOps
-// result.message contains approval message
+// result.message contains generated content
+// result.metadata.writerAgentV2 contains full Writer Agent V2 data
+// result.metadata.shouldTriggerLiveEdit indicates if content should be inserted
 ```
 
-### 3. Apply Changes
+### 3. Component Integration
+
+The Writer Agent V2 is automatically used when writing requests are detected:
 
 ```typescript
-// Apply approved changes
-const applyResponse = await fetch('/api/writer-agent', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    action: 'apply',
-    pending_change_id: 'change_123456789'
-  })
-})
-```
-
-### 4. Reject Changes
-
-```typescript
-// Reject changes
-const rejectResponse = await fetch('/api/writer-agent', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    action: 'revert',
-    pending_change_id: 'change_123456789'
-  })
-})
+// AIChatPanel automatically handles Writer Agent V2 responses
+// DirectEditManager handles content insertion
+// CursorEditor coordinates the approval workflow
 ```
 
 ## 🔄 Workflow
 
+### Fixed Workflow (v2.1)
 1. **User sends message** → Chat panel detects Writer Agent keywords
-2. **Route** → Determines task type and source needs
-3. **Retrieve** → Gets RAG context and web results if needed
-4. **Plan** → Creates instruction with context references
-5. **Execute** → Generates preview operations
-6. **Show preview** → Displays changes with "Approve/Deny" buttons
-7. **User approves** → Changes are applied to the document
-8. **User rejects** → Changes are discarded
+2. **ROUTE** → Writer Agent V2 determines task type and source needs
+3. **PLAN** → Creates instruction with context references  
+4. **EXECUTE** → Generates preview operations
+5. **MESSAGE** → Creates approval message
+6. **Show approval UI** → Chat panel displays approval message with "Approve/Deny" buttons
+7. **Apply content** → DirectEditManager inserts content with pending styling
+8. **User approves** → Content is accepted and saved to document
+9. **User rejects** → Content is removed from document
+
+### Key Improvements
+- ✅ **Proper step ordering**: Approval UI appears before content insertion
+- ✅ **No duplicate implementations**: Single Writer Agent V2 pipeline
+- ✅ **Better error handling**: Clear error messages for failed requests
+- ✅ **Simplified API**: Dedicated `/api/writer-agent/` endpoint
+- ✅ **Synchronized components**: AIChatPanel, DirectEditManager, and CursorEditor work together
 
 ## 🧪 Testing
 

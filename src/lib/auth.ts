@@ -109,5 +109,5 @@ export const authOptions: NextAuthOptions = {
         signUp: '/auth/register'
     },
     secret: NEXTAUTH_SECRET,
-    trustHost: true,
+    trustHost: true
 }

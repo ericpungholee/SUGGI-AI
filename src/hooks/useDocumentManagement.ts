@@ -32,10 +32,41 @@ export const useDocumentManagement = (
     // Agent typing state - prevents auto-save during agent typing
     const [isAgentTyping, setIsAgentTyping] = useState(false)
 
+    // Ref to prevent content update loops
+    const isUpdatingContentRef = useRef(false)
+    
+    // Ref to track if user is actively typing
+    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const isUserActivelyTypingRef = useRef(false)
+
     // Prevent hydration mismatch by only running on client
     useEffect(() => {
         setMounted(true)
     }, [])
+
+    // Function to mark user as actively typing
+    const markUserTyping = useCallback(() => {
+        isUserActivelyTypingRef.current = true
+        
+        // Clear existing timeout
+        if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current)
+        }
+        
+        // Set timeout to mark user as not typing and sync content after 500ms
+        typingTimeoutRef.current = setTimeout(() => {
+            isUserActivelyTypingRef.current = false
+            
+            // Update content state after user stops typing
+            if (editorRef.current) {
+                const currentContent = editorRef.current.innerHTML
+                if (currentContent !== content) {
+                    console.log('🔄 Syncing content state after typing stopped')
+                    setContent(currentContent)
+                }
+            }
+        }, 500)
+    }, [content, editorRef])
 
     // Helper function to extract text content from any object structure
     const extractTextFromObject = (obj: any): string | null => {
@@ -67,6 +98,7 @@ export const useDocumentManagement = (
             .trim()
         
         // If after cleaning it's empty or just whitespace, return empty string
+        // This is intentional - empty documents should be saved as empty
         if (!cleanContent || cleanContent === '' || cleanContent.replace(/<[^>]*>/g, '').trim() === '') {
             return ''
         }
@@ -96,8 +128,11 @@ export const useDocumentManagement = (
                 })
                 
                 // Handle content that might be JSON or string
-                let documentContent = '<p>Start writing your document here...</p>'
-                if (document.content) {
+                let documentContent = ''
+                let hasContentFromDatabase = false
+                let isIntentionallyEmpty = false
+                
+                if (document.content !== null && document.content !== undefined) {
                     console.log('🔍 Loading document content:', {
                         contentType: typeof document.content,
                         content: document.content,
@@ -106,23 +141,27 @@ export const useDocumentManagement = (
                     })
                     
                     if (typeof document.content === 'string') {
-                        // Legacy string content - validate it's not empty or just whitespace
-                        const trimmedContent = document.content.trim()
-                        if (trimmedContent && trimmedContent !== '{}' && trimmedContent !== 'null' && trimmedContent !== 'undefined') {
-                            documentContent = document.content
+                        // Legacy string content - even if empty, it's from database
+                        documentContent = document.content
+                        hasContentFromDatabase = true
+                        if (documentContent === '') {
+                            isIntentionallyEmpty = true
                         }
                     } else if (typeof document.content === 'object' && document.content !== null) {
                         // Modern JSON content structure
-                        if (document.content.html && typeof document.content.html === 'string') {
-                            const trimmedHtml = document.content.html.trim()
-                            if (trimmedHtml && trimmedHtml !== '{}' && trimmedHtml !== 'null' && trimmedHtml !== 'undefined') {
-                                documentContent = document.content.html
+                        if (document.content.html !== undefined && typeof document.content.html === 'string') {
+                            documentContent = document.content.html
+                            hasContentFromDatabase = true
+                            if (documentContent === '') {
+                                isIntentionallyEmpty = true
                             }
-                        } else if (document.content.plainText && typeof document.content.plainText === 'string') {
+                        } else if (document.content.plainText !== undefined && typeof document.content.plainText === 'string') {
                             // If no HTML but we have plain text, wrap it in a paragraph
                             const trimmedPlainText = document.content.plainText.trim()
-                            if (trimmedPlainText) {
-                                documentContent = `<p>${document.content.plainText}</p>`
+                            documentContent = trimmedPlainText ? `<p>${document.content.plainText}</p>` : ''
+                            hasContentFromDatabase = true
+                            if (documentContent === '') {
+                                isIntentionallyEmpty = true
                             }
                         } else {
                             // Check if the object itself contains valid content (fallback)
@@ -132,25 +171,28 @@ export const useDocumentManagement = (
                                 const textContent = extractTextFromObject(document.content)
                                 if (textContent) {
                                     documentContent = `<p>${textContent}</p>`
+                                    hasContentFromDatabase = true
                                 }
                             }
                         }
                     }
                 }
                 
-                console.log('📄 Final document content to display:', documentContent)
+                console.log('📄 Final document content to display:', {
+                    documentContent,
+                    hasContentFromDatabase,
+                    isIntentionallyEmpty,
+                    contentLength: documentContent.length
+                })
                 
-                // If we still don't have valid HTML, use default content
-                if (!documentContent || 
-                    documentContent === '{}' || 
-                    documentContent === 'null' || 
-                    documentContent === 'undefined' || 
-                    documentContent.trim() === '' ||
-                    documentContent === '[]' ||
-                    documentContent === '""' ||
-                    documentContent === "''") {
-                    console.log('⚠️ Using default content - no valid content found')
+                // Only use default content if we have NO content field from the database at all
+                if (!hasContentFromDatabase) {
+                    console.log('⚠️ No content field from database - using default content')
                     documentContent = '<p>Start writing your document here...</p>'
+                } else if (isIntentionallyEmpty) {
+                    // User intentionally deleted all content - keep it empty
+                    console.log('📝 User intentionally deleted all content - keeping empty')
+                    documentContent = ''
                 }
                 
                 console.log('📝 Setting editor content:', documentContent)
@@ -267,24 +309,66 @@ export const useDocumentManagement = (
         if (content && content !== originalContent) {
             onContentChange?.(content)
         }
+        
+        // Ensure editor content is synchronized when content state changes
+        // But only if we're not currently updating or user is actively typing
+        // AND there's no pending agent content
+        if (editorRef.current && content !== editorRef.current.innerHTML && !isUpdatingContentRef.current && !isUserActivelyTypingRef.current) {
+            // Check if there's pending agent content that should not be overwritten
+            const hasPendingAgentContent = editorRef.current.querySelector('.agent-text-block[data-is-approved="false"]')
+            
+            if (!hasPendingAgentContent) {
+                console.log('🔄 Syncing editor content with state')
+                isUpdatingContentRef.current = true
+                editorRef.current.innerHTML = content
+                isUpdatingContentRef.current = false
+            } else {
+                console.log('⏸️ Skipping content sync - pending agent content detected')
+            }
+        }
     }, [content, onContentChange, originalContent])
 
-    // Check for unsaved changes (content and title)
+    // Check for unsaved changes (content and title) - using periodic check to avoid cursor issues
     useEffect(() => {
-        if (documentId !== 'new') {
-            const hasContentChanges = originalContent !== content
+        if (documentId === 'new') {
+            setHasUnsavedChanges(false)
+            return
+        }
+
+        const checkUnsavedChanges = () => {
+            // Get current editor content directly from DOM instead of relying on content state
+            const currentEditorContent = editorRef.current?.innerHTML || ''
+            const hasContentChanges = originalContent !== currentEditorContent
             const hasTitleChanges = documentTitle.trim() !== originalTitle.trim()
             const hasChanges = hasContentChanges || hasTitleChanges
+            
+            console.log('🔍 Checking unsaved changes:', {
+                originalContent: originalContent.substring(0, 50) + '...',
+                currentEditorContent: currentEditorContent.substring(0, 50) + '...',
+                originalLength: originalContent.length,
+                currentLength: currentEditorContent.length,
+                hasContentChanges,
+                hasTitleChanges,
+                hasChanges,
+                documentId
+            })
+            
             setHasUnsavedChanges(hasChanges)
             
             // Clear justSaved state when user makes changes
             if (hasChanges && justSaved) {
                 setJustSaved(false)
             }
-        } else {
-            setHasUnsavedChanges(false)
         }
-    }, [content, originalContent, documentId, documentTitle, originalTitle, justSaved])
+
+        // Check immediately
+        checkUnsavedChanges()
+
+        // Set up periodic check every 500ms to detect changes without interfering with typing
+        const interval = setInterval(checkUnsavedChanges, 500)
+
+        return () => clearInterval(interval)
+    }, [originalContent, documentId, documentTitle, originalTitle, justSaved, editorRef])
 
     // Save document function
     const saveDocument = useCallback(async (contentToSave: string, showSuccessMessage = true) => {
@@ -338,7 +422,7 @@ export const useDocumentManagement = (
         }
     }, [documentId, documentTitle])
 
-    // Auto-save content periodically - only for user writings
+    // Auto-save content periodically - only for user writings (not agent content)
     useEffect(() => {
         if (!mounted || documentId === 'new' || !hasUnsavedChanges || !isUserTyping) return
         
@@ -350,6 +434,12 @@ export const useDocumentManagement = (
                 
                 // Only save if content is actually different from what was last saved
                 if (currentContent !== originalContent) {
+                    console.log('💾 Auto-saving user content:', {
+                        isUserTyping,
+                        isAgentTyping,
+                        contentLength: currentContent.length,
+                        hasChanges: currentContent !== originalContent
+                    })
                     saveDocument(currentContent, false)
                 }
             }
@@ -360,15 +450,28 @@ export const useDocumentManagement = (
 
     // Manual save function
     const handleManualSave = useCallback(async () => {
-        if (documentId === 'new') return
+        if (documentId === 'new') {
+            console.log('⚠️ Cannot save new document')
+            return
+        }
+        
+        console.log('💾 Manual save triggered:', {
+            documentId,
+            hasEditorRef: !!editorRef.current,
+            hasUnsavedChanges,
+            currentContent: content.substring(0, 100) + '...'
+        })
         
         // Get current editor content and clean it up
         const rawContent = editorRef.current?.innerHTML || ''
         const contentToSave = cleanEditorContent(rawContent)
         
-        console.log('💾 Manual save - Original:', editorRef.current?.innerHTML, 'Cleaned:', contentToSave)
+        console.log('💾 Manual save - Raw content length:', rawContent.length, 'Cleaned content length:', contentToSave.length)
+        console.log('💾 Manual save - Raw content:', rawContent.substring(0, 200))
+        console.log('💾 Manual save - Cleaned content:', contentToSave.substring(0, 200))
+        
         await saveDocument(contentToSave, true)
-    }, [documentId, saveDocument, cleanEditorContent, editorRef])
+    }, [documentId, saveDocument, cleanEditorContent, editorRef, hasUnsavedChanges, content])
 
     // Delete document function
     const handleDeleteDocument = useCallback(async () => {
@@ -433,6 +536,8 @@ export const useDocumentManagement = (
         handleManualSave,
         handleDeleteDocument,
         handleNavigation,
-        cleanEditorContent
+        cleanEditorContent,
+        isUpdatingContentRef,
+        markUserTyping
     }
 }

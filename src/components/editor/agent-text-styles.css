@@ -5,15 +5,15 @@
 }
 
 .agent-text-block[data-is-approved="false"] {
-  color: #1e40af;
-  background: rgba(59, 130, 246, 0.15);
-  border-bottom: 2px solid #3b82f6;
+  color: #6b7280;
+  background: rgba(107, 114, 128, 0.1);
+  border-bottom: 1px solid #d1d5db;
   padding: 2px 4px;
   border-radius: 3px;
 }
 
 .agent-text-block[data-is-approved="false"]:hover {
-  background: rgba(59, 130, 246, 0.25);
+  background: rgba(107, 114, 128, 0.15);
   transform: scale(1.02);
 }
 
@@ -59,9 +59,9 @@
 }
 
 .agent-text-overlay.pending {
-  background: rgba(59, 130, 246, 0.15);
-  border: 2px solid #3b82f6;
-  color: #1e40af;
+  background: rgba(107, 114, 128, 0.1);
+  border: 1px solid #d1d5db;
+  color: #6b7280;
 }
 
 .agent-text-overlay.approved {
@@ -71,9 +71,9 @@
 }
 
 .agent-text-overlay.typing {
-  background: rgba(59, 130, 246, 0.2);
-  border: 2px solid #3b82f6;
-  color: #1e40af;
+  background: rgba(107, 114, 128, 0.15);
+  border: 1px solid #d1d5db;
+  color: #6b7280;
   animation: pulse 1.5s ease-in-out infinite;
 }
 
@@ -87,50 +87,6 @@
   50% { opacity: 0.7; }
 }
 
-/* Approval buttons */
-.agent-approval-buttons {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 8px;
-  opacity: 0.8;
-}
-
-.agent-approve-btn {
-  background: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 4px 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  transition: all 0.2s ease;
-}
-
-.agent-approve-btn:hover {
-  background: #16a34a;
-}
-
-.agent-reject-btn {
-  background: #ef4444;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 4px 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  transition: all 0.2s ease;
-}
-
-.agent-reject-btn:hover {
-  background: #dc2626;
-}
 
 /* Typing indicator */
 .agent-typing-indicator {

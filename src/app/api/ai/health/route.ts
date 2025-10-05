@@ -4,7 +4,6 @@ import { authOptions } from '@/lib/auth'
 import { hybridLearnedRouter } from '@/lib/ai/hybrid-learned-router'
 import { embeddingService } from '@/lib/ai/embedding-service'
 import { learnedClassifier } from '@/lib/ai/learned-classifier'
-import { llmMetaClassifier } from '@/lib/ai/llm-meta-classifier'
 import { routerService } from '@/lib/ai/router-service'
 import { ragAdapter } from '@/lib/ai/rag-adapter'
 
@@ -28,7 +27,6 @@ export async function GET(request: NextRequest) {
       hybridRouter: await checkHybridRouter(),
       embeddingService: await checkEmbeddingService(),
       learnedClassifier: await checkLearnedClassifier(),
-      llmMetaClassifier: await checkLLMMetaClassifier(),
       routerService: await checkRouterService(),
       ragAdapter: await checkRAGAdapter()
     }
@@ -164,29 +162,6 @@ async function checkLearnedClassifier(): Promise<HealthCheck> {
   }
 }
 
-async function checkLLMMetaClassifier(): Promise<HealthCheck> {
-  try {
-    // Test with a simple query
-    const testResult = await llmMetaClassifier.getConfidence('test query', {})
-    
-    return {
-      status: 'healthy',
-      message: 'LLM meta-classifier operational',
-      metrics: {
-        confidence: testResult,
-        available: true
-      },
-      lastChecked: new Date().toISOString()
-    }
-  } catch (error) {
-    return {
-      status: 'unhealthy',
-      message: `LLM meta-classifier check failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      lastChecked: new Date().toISOString()
-    }
-  }
-}
 
 async function checkRouterService(): Promise<HealthCheck> {
   try {
@@ -266,7 +241,7 @@ function generateHealthRecommendations(healthChecks: Record<string, HealthCheck>
     recommendations.push('Retrain the learned classifier with more data')
   }
 
-  if (healthChecks.llmMetaClassifier.status !== 'healthy') {
+  if (false) { // Removed llmMetaClassifier check
     recommendations.push('Check LLM API connectivity and configuration')
   }
 

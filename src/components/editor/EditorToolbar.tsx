@@ -160,7 +160,7 @@ export default function EditorToolbar({
                             maxLength={100}
                         />
                     )}
-                    {documentTitle.length > 80 && !isLoading && (
+                    {documentTitle && documentTitle.length > 80 && !isLoading && (
                         <div className="text-xs text-gray-400 mt-1">
                             {documentTitle.length}/100 characters
                         </div>
@@ -178,14 +178,25 @@ export default function EditorToolbar({
             {/* Save Button and Status */}
             <div className="flex items-center gap-0.5 mr-1">
                 <button
-                    onClick={onSave}
+                    onClick={() => {
+                        console.log('🔘 Save button clicked:', {
+                            documentId,
+                            isSaving,
+                            hasUnsavedChanges,
+                            justSaved,
+                            saveError
+                        })
+                        onSave()
+                    }}
                     disabled={isSaving || documentId === 'new'}
                     className={`p-1 rounded-lg transition-all ${
                         justSaved
                             ? 'bg-white text-blue-600 border-2 border-blue-500'
                             : isSaving
                                 ? 'bg-gray-100 text-gray-600 cursor-not-allowed'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                : hasUnsavedChanges
+                                    ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                     title={documentId === 'new' ? 'Save document first' : hasUnsavedChanges ? 'Save document (Ctrl+S)' : 'All changes saved'}
                     suppressHydrationWarning
