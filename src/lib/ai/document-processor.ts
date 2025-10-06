@@ -128,8 +128,41 @@ export async function processAllUserDocuments(
   }
 }
 
-// Import centralized utilities
-import { extractTextFromContent, stripHtml } from './content-extraction-utils'
+// Utility functions for content extraction
+function extractTextFromContent(content: any): string {
+  if (typeof content === 'string') {
+    return content
+  }
+  
+  if (typeof content === 'object' && content !== null) {
+    if (content.type === 'doc' && Array.isArray(content.content)) {
+      return content.content
+        .map((item: any) => {
+          if (item.type === 'paragraph' && Array.isArray(item.content)) {
+            return item.content
+              .map((p: any) => p.text || '')
+              .join('')
+          }
+          return item.text || ''
+        })
+        .join('\n')
+    }
+    
+    // Fallback: try to extract text from any text properties
+    if (content.text) {
+      return content.text
+    }
+    
+    // Last resort: stringify the object
+    return JSON.stringify(content)
+  }
+  
+  return ''
+}
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+}
 
 /**
  * Get processing status for a document

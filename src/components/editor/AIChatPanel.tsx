@@ -252,8 +252,8 @@ export default function AIChatPanel({
         shouldTriggerLiveEdit: result.metadata?.shouldTriggerLiveEdit,
         directPaste: result.metadata?.directPaste,
         intent: result.metadata?.intent,
-        hasWriterAgentV2: !!result.metadata?.writerAgentV2,
-        writerAgentTask: result.metadata?.writerAgentV2?.routerOut?.task,
+        hasLangGraphWriterAgent: !!result.metadata?.langGraphWriterAgent,
+        writerAgentTask: result.metadata?.langGraphWriterAgent?.task,
         fullResult: result
       })
 

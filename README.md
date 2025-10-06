@@ -89,20 +89,21 @@ SUGGI-AI fixes this by putting everything in one place: your documents, AI chat,
 - **NextAuth.js** - Authentication with OAuth providers
 
 ### **AI & Machine Learning**
-- **OpenAI GPT-5 nano** - Fast, cost-effective model for classification and routing
-- **OpenAI GPT-4o** - Main language model for content generation and complex tasks
+- **OpenAI GPT-5** - Latest model (August 2025) with unified architecture and 256K context window
 - **OpenAI text-embedding-3-large** - Document embeddings (3072 dimensions)
 - **Pinecone** - Vector database for semantic search and similarity matching
-- **LangChain** - AI workflow orchestration and prompt management
-- **LangGraph** - Advanced AI agent workflows for complex editing tasks
+- **LangGraph** - Advanced AI agent workflows with stateful, multi-step processing
+- **RAG Orchestrator** - Intelligent retrieval-augmented generation system
+- **Hybrid Learned Router** - Smart query classification and intent detection
 
 ### **Performance & Optimization**
 - **Vector Search** - Sub-second document retrieval using Pinecone
-- **Query Classification** - Smart routing with GPT-5 nano to reduce costs
+- **Query Classification** - Smart routing with hybrid learned router
 - **Response Caching** - Intelligent caching system for repeated queries
-- **Tiered Models** - Right model for each task to optimize cost/performance
+- **LangGraph Workflows** - Stateful, multi-step AI processing with conditional logic
 - **Document Chunking** - Adaptive chunking strategy for optimal RAG performance
-- **Context Compression** - AI-powered context summarization to reduce tokens
+- **Web Search Integration** - Robust web search with timeout handling and fallback
+- **Incremental Vectorization** - Efficient document processing and updates
 
 ## 🔧 Technical Challenges & Solutions
 
@@ -119,11 +120,12 @@ SUGGI-AI fixes this by putting everything in one place: your documents, AI chat,
 **Problem**: AI responses were slow, especially with context retrieval and processing.
 
 **Solution**: Multi-layered performance optimization:
-- **GPT-5 nano for routing**: Fast, cheap model for query classification and simple tasks
-- **Tiered model system**: Right model for each task (nano for classification, main model for generation)
+- **LangGraph Workflows**: Stateful, multi-step AI processing with conditional logic
+- **Hybrid Learned Router**: Smart query classification and intent detection
 - **Response caching**: Conversation memory with intelligent cache management
 - **Vector search optimization**: Pinecone provides sub-second semantic search
-- **Query classification**: Smart routing prevents unnecessary heavy model calls
+- **RAG Orchestrator**: Intelligent retrieval-augmented generation system
+- **Web Search Integration**: Robust web search with timeout handling and fallback
 
 ### **Challenge 3: Real-Time Editing with Style Preservation**
 **Problem**: AI editing often breaks the user's writing style and voice.
@@ -148,10 +150,11 @@ SUGGI-AI fixes this by putting everything in one place: your documents, AI chat,
 **Problem**: AI API costs can spiral out of control with heavy usage.
 
 **Solution**: Intelligent cost optimization:
-- **Query classification**: Routes simple tasks to cheaper models (GPT-5 nano)
+- **Hybrid Learned Router**: Smart query classification and intent detection
 - **Response deduplication**: Caches similar queries to avoid redundant API calls
 - **Context compression**: Reduces token usage while maintaining quality
-- **Smart model selection**: Uses most cost-effective model for each task type
+- **LangGraph Workflows**: Efficient stateful processing with conditional logic
+- **RAG Orchestrator**: Optimized retrieval-augmented generation system
 
 ## 🚀 Quick Start
 
@@ -216,10 +219,11 @@ Open [http://localhost:3000](http://localhost:3000) and start writing!
 - Context from other documents available instantly
 
 ### **4. Smart Performance**
-- GPT-5 nano for fast, cheap responses
+- GPT-5 with 256K context window for comprehensive understanding
+- LangGraph workflows for stateful, multi-step AI processing
 - Vector search for instant document retrieval
 - Cached responses for repeated queries
-- Smart routing (edit vs. question detection)
+- Hybrid learned router for smart query classification
 
 ## 💡 Why I Built This
 
@@ -246,8 +250,34 @@ So I built SUGGI-AI to solve these problems:
 
 ### OpenAI Setup
 1. Get API key from [OpenAI](https://platform.openai.com)
-2. Ensure access to GPT-5 nano and text-embedding-3-large
+2. Ensure access to GPT-5 and text-embedding-3-large
 3. Add API key to environment variables
+
+## 🚀 Recent Improvements (2025)
+
+### **LangGraph Migration**
+- **Migrated to LangGraph**: Advanced AI agent workflows with stateful, multi-step processing
+- **ROUTE → RETRIEVE_CONTEXT → PLAN → EXECUTE → END**: Streamlined workflow pipeline
+- **Conditional Logic**: Smart decision-making based on query type and context
+- **Better Accuracy**: Improved AI responses through structured workflow management
+
+### **Enhanced Web Search**
+- **GPT-5 Integration**: Latest model with 256K context window and unified architecture
+- **Robust Timeout Handling**: 45s timeout with automatic fallback for reliability
+- **Error Recovery**: Graceful handling of "Request was aborted" errors
+- **Fallback System**: Automatic retry with simpler queries when main search fails
+
+### **Codebase Optimization**
+- **Cleaned Up**: Removed duplicate implementations and unused test code
+- **50% Fewer Files**: Streamlined from 32 to 16 core AI files
+- **Self-Contained**: No external dependencies on deleted utility files
+- **Production Ready**: Clean, focused codebase with clear separation of concerns
+
+### **RAG System Enhancement**
+- **RAG Orchestrator**: Intelligent retrieval-augmented generation system
+- **Hybrid Learned Router**: Smart query classification and intent detection
+- **Incremental Vectorization**: Efficient document processing and updates
+- **Context Compression**: AI-powered context summarization to reduce tokens
 
 ## 🎯 The Bottom Line
 

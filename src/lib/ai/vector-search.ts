@@ -924,4 +924,34 @@ export async function getDocumentStats(userId: string): Promise<{
 }
 
 // Import centralized utility
-import { extractTextFromContent } from './content-extraction-utils'
+// Utility function for content extraction
+function extractTextFromContent(content: any): string {
+  if (typeof content === 'string') {
+    return content
+  }
+  
+  if (typeof content === 'object' && content !== null) {
+    if (content.type === 'doc' && Array.isArray(content.content)) {
+      return content.content
+        .map((item: any) => {
+          if (item.type === 'paragraph' && Array.isArray(item.content)) {
+            return item.content
+              .map((p: any) => p.text || '')
+              .join('')
+          }
+          return item.text || ''
+        })
+        .join('\n')
+    }
+    
+    // Fallback: try to extract text from any text properties
+    if (content.text) {
+      return content.text
+    }
+    
+    // Last resort: stringify the object
+    return JSON.stringify(content)
+  }
+  
+  return ''
+}

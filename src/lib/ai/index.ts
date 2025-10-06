@@ -60,29 +60,10 @@ export { learnedClassifier } from './learned-classifier'
 export { routerService } from './router-service'
 export type { IntentClassification, RouterContext, RouterFeatures, RouterResponse } from './core/types'
 
-export { fillInstructionJSON, generateSystemPrompt, validateInstructionJSON, repairInstructionJSON } from './instruction-json'
-export type { InstructionJSON, ContextRef } from './core/types'
-
-export { verifyInstruction, validateResponse, generateVerificationReport } from './rag-verification'
-export type { VerificationResult, VerificationOptions } from './core/types'
-
 export { createRAGOrchestrator, processRAGQuery } from './rag-orchestrator'
 export type { RAGResponse } from './core/types'
 
-export { getRAGConfig } from './rag-config'
-export type { RAGConfig } from './core/types'
-
-// Unified Services
-export { 
-  unifiedSearchService, 
-  unifiedSearch, 
-  searchDocuments, 
-  searchFolders 
-} from './unified-search'
-export type { 
-  UnifiedSearchOptions, 
-  UnifiedSearchResult 
-} from './unified-search'
+// Note: Unified search removed - using specific search implementations instead
 
 
 // MCP Tools

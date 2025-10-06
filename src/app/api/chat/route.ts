@@ -7,10 +7,7 @@ import { routerService } from '@/lib/ai/router-service'
 import { RouterContext } from '@/lib/ai/intent-schema'
 import { getChatModel, getRoutingModel } from '@/lib/ai/core/models'
 
-// Note: Content generation is now handled by WriterAgentV2
-
-// Import Writer Agent V2 for sophisticated content generation
-import { WriterAgentV2 } from '@/lib/ai/writer-agent-v2'
+// Note: Content generation is now handled by LangGraph Writer Agent
 
 /**
  * Determine whether web search results should be delivered as chat response or editor content
@@ -80,7 +77,7 @@ Examples:
 /**
  * Generate formatted content for the editor based on web search results
  */
-// Content generation is now handled by WriterAgentV2
+// Content generation is now handled by LangGraph Writer Agent
 
 export async function POST(request: NextRequest) {
   try {
@@ -218,7 +215,7 @@ export async function POST(request: NextRequest) {
           
           if (contentDecision.shouldGenerateEditorContent) {
             // Generate content for editor
-            // Content generation is now handled by WriterAgentV2
+            // Content generation is now handled by LangGraph Writer Agent
             const editorContent = webSearchText
             return NextResponse.json({
               message: 'Content will be written to the document.',
@@ -445,67 +442,73 @@ Current conversation context: ${conversationHistory.length > 0 ? 'Previous messa
       conversationHistory.some((msg: any) => msg.role === 'assistant' && 
         (msg.content.includes('stock') || msg.content.includes('company') || msg.content.includes('price')))
 
-    // For writing requests, use Writer Agent V2 for sophisticated content generation
+    // For writing requests, use LangGraph Writer Agent for improved accuracy
     if (shouldTriggerLiveEdit) {
-      console.log('✍️ Writing request detected - using Writer Agent V2')
+      console.log('✍️ Writing request detected - using LangGraph Writer Agent')
       try {
-        // Create Writer Agent V2 instance
-        const writerAgent = new WriterAgentV2({
-          userId: session.user.id,
-          documentId: documentId || undefined,
-          enableWebSearch: forceWebSearch || routerResult.classification.slots.needs_recency,
-          maxTokens: maxTokens
-        })
-
-        // Process request through Writer Agent V2 pipeline
-        const result = await writerAgent.processRequest(message, documentContent)
+        // Import LangGraph writer agent
+        const { processWritingRequest } = await import('@/lib/ai/langgraph-writer-agent')
         
-        console.log('✅ Writer Agent V2 completed:', {
-          task: result.routerOut.task,
-          confidence: result.routerOut.confidence,
-          operationsCount: result.previewOps.ops?.length || 0,
-          approvalMessage: result.approvalMessage.substring(0, 100) + '...'
+        // Process request through LangGraph workflow
+        const result = await processWritingRequest(
+          message,
+          documentContent || '',
+          documentId || '',
+          session.user.id
+        )
+        
+        console.log('✅ LangGraph Writer Agent completed:', {
+          task: result.task,
+          confidence: result.confidence,
+          operationsCount: result.previewOps?.length || 0,
+          approvalMessage: result.approvalMessage?.substring(0, 100) + '...',
+          sources: result.sources?.length || 0
         })
 
         // Extract content from preview operations
         let content = ''
-        if (result.previewOps.ops && result.previewOps.ops.length > 0) {
+        if (result.previewOps && result.previewOps.length > 0) {
           // Extract text content from operations
-          const textOps = result.previewOps.ops.filter(op => op.text)
+          const textOps = result.previewOps.filter(op => op.text)
           content = textOps.map(op => op.text).join('\n\n')
           
           console.log('📝 Extracted content from operations:', {
-            operationsCount: result.previewOps.ops.length,
+            operationsCount: result.previewOps.length,
             textOpsCount: textOps.length,
             contentLength: content.length,
             contentPreview: content.substring(0, 100) + '...'
           })
         } else {
           // Fallback to approval message if no operations
-          content = result.approvalMessage
+          content = result.approvalMessage || 'No operations generated'
           console.log('⚠️ No operations found, using approval message as content')
         }
 
-        // Always return Writer Agent V2 results for writing requests
+        // Always return LangGraph Writer Agent results for writing requests
         if (content && content.trim() !== '') {
           return NextResponse.json({
             message: content,
             metadata: {
-              task: result.routerOut.task,
+              task: result.task,
               useWebSearch: forceWebSearch || routerResult.classification.slots.needs_recency,
               shouldTriggerLiveEdit: true,
               intent: routerResult.classification.intent,
-              confidence: result.routerOut.confidence,
+              confidence: result.confidence,
               routerProcessingTime: routerResult.processing_time,
               fallbackUsed: routerResult.fallback_used,
               forceWebSearch,
               directPaste: true,
-              // Include Writer Agent V2 specific metadata
-              writerAgentV2: {
-                routerOut: result.routerOut,
+              // Include LangGraph Writer Agent specific metadata
+              langGraphWriterAgent: {
+                task: result.task,
+                confidence: result.confidence,
+                needs: result.needs,
                 instruction: result.instruction,
                 previewOps: result.previewOps,
-                approvalMessage: result.approvalMessage
+                approvalMessage: result.approvalMessage,
+                sources: result.sources,
+                processingTime: result.processingTime,
+                error: result.error
               }
             }
           })
@@ -514,18 +517,18 @@ Current conversation context: ${conversationHistory.length > 0 ? 'Previous messa
           return NextResponse.json({
             message: 'I understand you want me to write content, but I wasn\'t able to generate anything. Please try rephrasing your request or provide more context.',
             metadata: {
-              task: result.routerOut.task,
+              task: result.task,
               useWebSearch: false,
               shouldTriggerLiveEdit: false,
               intent: routerResult.classification.intent,
-              confidence: result.routerOut.confidence,
-              error: 'No content generated'
+              confidence: result.confidence,
+              error: result.error || 'No content generated'
             }
           })
         }
       } catch (e) {
-        console.error('Writer Agent V2 error:', e)
-        console.error('Writer Agent V2 error details:', {
+        console.error('LangGraph Writer Agent error:', e)
+        console.error('LangGraph Writer Agent error details:', {
           message: e instanceof Error ? e.message : 'Unknown error',
           stack: e instanceof Error ? e.stack : undefined
         })

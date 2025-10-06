@@ -1,8 +1,20 @@
 import { ragAdapter, RagChunk, buildEvidenceBundle } from './rag-adapter'
 import { routerService } from './router-service'
 import { RouterContext } from './intent-schema'
-import { fillInstructionJSON, InstructionJSON, generateSystemPrompt } from './instruction-json'
-import { verifyInstruction, VerificationResult, validateResponse } from './rag-verification'
+// Types and interfaces
+interface InstructionJSON {
+  task: string
+  inputs: Record<string, any>
+  context_refs: string[]
+  constraints: string[]
+}
+
+interface VerificationResult {
+  isValid: boolean
+  confidence: number
+  issues: string[]
+  suggestions: string[]
+}
 import { generateChatCompletion } from './openai'
 import { getChatModel, getRoutingModel } from './core/models'
 
@@ -523,17 +535,83 @@ Examples:
    * Check if the response should trigger live editing
    */
   private shouldTriggerLiveEdit(content: string, task: string): boolean {
-    const { shouldTriggerLiveEdit } = require('./content-extraction-utils')
-    return shouldTriggerLiveEdit(content, task)
+    // Simple heuristic: if task involves editing and content is substantial
+    const editTasks = ['rewrite', 'edit', 'modify', 'update', 'revise', 'improve']
+    const isEditTask = editTasks.some(editTask => task.toLowerCase().includes(editTask))
+    const hasSubstantialContent = content.length > 50
+    
+    return isEditTask && hasSubstantialContent
   }
 
   /**
    * Extract content for live editing
-   * Delegates to centralized utility
    */
   private extractContentForLiveEdit(content: string): string {
-    const { extractContentForLiveEdit } = require('./content-extraction-utils')
-    return extractContentForLiveEdit(content)
+    // Remove markdown formatting and clean up the content
+    return content
+      .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold
+      .replace(/\*(.*?)\*/g, '$1') // Remove italic
+      .replace(/`(.*?)`/g, '$1') // Remove code
+      .replace(/#{1,6}\s*/g, '') // Remove headers
+      .replace(/\n{3,}/g, '\n\n') // Normalize line breaks
+      .trim()
+  }
+}
+
+// Utility functions for instruction processing
+function fillInstructionJSON(task: string, inputs: Record<string, any>, contextRefs: string[], constraints: string[]): InstructionJSON {
+  return {
+    task,
+    inputs,
+    context_refs: contextRefs,
+    constraints
+  }
+}
+
+function generateSystemPrompt(instruction: InstructionJSON): string {
+  return `You are an AI assistant. Task: ${instruction.task}. Constraints: ${instruction.constraints.join(', ')}.`
+}
+
+function verifyInstruction(instruction: InstructionJSON): VerificationResult {
+  const issues: string[] = []
+  const suggestions: string[] = []
+  
+  if (!instruction.task) {
+    issues.push('Missing task description')
+    suggestions.push('Provide a clear task description')
+  }
+  
+  if (instruction.context_refs.length === 0) {
+    suggestions.push('Consider adding context references')
+  }
+  
+  return {
+    isValid: issues.length === 0,
+    confidence: issues.length === 0 ? 0.9 : 0.5,
+    issues,
+    suggestions
+  }
+}
+
+function validateResponse(content: string): VerificationResult {
+  const issues: string[] = []
+  const suggestions: string[] = []
+  
+  if (!content || content.trim().length === 0) {
+    issues.push('Empty response')
+    suggestions.push('Provide a meaningful response')
+  }
+  
+  if (content.length < 10) {
+    issues.push('Response too short')
+    suggestions.push('Provide more detailed content')
+  }
+  
+  return {
+    isValid: issues.length === 0,
+    confidence: issues.length === 0 ? 0.9 : 0.5,
+    issues,
+    suggestions
   }
 }
 

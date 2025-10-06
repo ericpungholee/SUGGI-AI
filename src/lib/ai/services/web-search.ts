@@ -15,7 +15,7 @@ export type { Citation, WebSearchOptions, WebSearchResult } from '../core/types'
 export async function webSearch({
   prompt,
   model = getWebSearchModel(),
-  timeoutMs = 30_000, // Reduced to 30s for better reliability
+  timeoutMs = 45_000, // Increased to 45s for better reliability
   maxResults = 8,
   includeImages = false,
   searchRegion = "US",
@@ -60,25 +60,28 @@ export async function webSearch({
 
       // Poll for completion if response is incomplete with proper timeout handling
       let attempts = 0
-      const maxAttempts = 5 // Increased attempts for better reliability
+      const maxAttempts = 8 // Increased attempts for better reliability
       while (resp.status === 'incomplete' && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 1000)) // Increased delay for stability
+        await new Promise(resolve => setTimeout(resolve, 2000)) // Increased delay for stability
         
         try {
           // Create new controller for each poll request
           const pollController = new AbortController();
-          const pollTimeoutId = setTimeout(() => pollController.abort(), 15000); // 15s timeout for polls
+          const pollTimeoutId = setTimeout(() => pollController.abort(), 20000); // 20s timeout for polls
           
           resp = await openai.responses.retrieve(resp.id, {}, { 
             signal: pollController.signal,
-            timeout: 15000 
+            timeout: 20000 
           });
           
           clearTimeout(pollTimeoutId);
         } catch (pollError) {
           console.warn('Error polling for completion:', pollError)
           clearTimeout(pollTimeoutId);
-          break
+          // Don't break immediately, try a few more times
+          if (attempts >= maxAttempts - 1) {
+            break
+          }
         }
         attempts++
       }
@@ -155,16 +158,24 @@ export async function webSearch({
   } catch (error) {
     console.error('❌ Web Search Error:', error);
     
-    // Try fallback approach on timeout or incomplete response
-    if (error instanceof Error) {
-      if (error.message.includes('timeout') || error.message.includes('Request timed out') || error.message.includes('incomplete')) {
-        console.log('🔄 Main web search failed, trying fallback approach...');
-        try {
-          return await fallbackWebSearch({ prompt, model, timeoutMs, maxResults, includeImages, searchRegion, language });
-        } catch (fallbackError) {
-          console.error('❌ Fallback web search also failed:', fallbackError);
-          throw new Error('Web search timed out. The search is taking longer than expected. Please try again with a simpler query or try again later.');
-        }
+    // Check if this is a timeout or abort error
+    const isTimeoutError = error instanceof Error && (
+      error.message.includes('timeout') || 
+      error.message.includes('Request timed out') || 
+      error.message.includes('incomplete') ||
+      error.message.includes('aborted') ||
+      error.message.includes('Request was aborted') ||
+      error.message.includes('AbortError') ||
+      (error as any)?.name === 'AbortError'
+    );
+    
+    if (isTimeoutError) {
+      console.log('🔄 Main web search failed due to timeout/abort, trying fallback approach...');
+      try {
+        return await fallbackWebSearch({ prompt, model, timeoutMs: 30000, maxResults, includeImages, searchRegion, language });
+      } catch (fallbackError) {
+        console.error('❌ Fallback web search also failed:', fallbackError);
+        throw new Error('Web search timed out. The search is taking longer than expected. Please try again with a simpler query or try again later.');
       }
     }
     
@@ -183,7 +194,7 @@ export async function fallbackWebSearch(args: WebSearchOptions): Promise<WebSear
     
     // Create AbortController for fallback timeout handling
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout for fallback
+    const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s timeout for fallback
     
     try {
       // Use a simpler approach with shorter timeout
