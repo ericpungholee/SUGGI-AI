@@ -99,13 +99,14 @@ async function routeNode(state: WriterAgentState): Promise<Partial<WriterAgentSt
 
 User Query: {userQuery}
 Document Context: {documentContent}
+Web Search Available: {hasWebSearch}
 
 Classify the task as one of: rewrite, summarize, extend, outline, critique, fact_check, reference_insert, compare, table_create, table_edit
 
 Determine what context is needed:
 - selection_text: Does it need the current selection?
 - doc_context: none, local, project, or workspace?
-- web_context: no, recommended, or required?
+- web_context: no, recommended, or required? (Set to "required" if web search data is available and task involves current information)
 - precision: low, medium, or high?
 
 Respond in JSON format:
@@ -119,7 +120,7 @@ Respond in JSON format:
     "precision": "precision_level"
   }}
 }}`,
-    inputVariables: ['userQuery', 'documentContent']
+    inputVariables: ['userQuery', 'documentContent', 'hasWebSearch']
   })
 
   try {
@@ -127,7 +128,8 @@ Respond in JSON format:
       new SystemMessage("You are a writing task classifier. Respond only with valid JSON."),
       new HumanMessage(await routerPrompt.format({
         userQuery: state.userQuery,
-        documentContent: state.documentContent || ''
+        documentContent: state.documentContent || '',
+        hasWebSearch: state.retrievedContext ? 'Yes' : 'No'
       }))
     ])
 
@@ -170,8 +172,7 @@ async function retrieveContextNode(state: WriterAgentState): Promise<Partial<Wri
   }
 
   try {
-    // For now, use a simple context retrieval approach
-    // TODO: Integrate with Pinecone index properly
+    // Use document retrieval for context (already integrated with vector search)
     const context = await getRelevantDocuments(
       state.userQuery,
       state.userId,
@@ -347,7 +348,12 @@ export async function processWritingRequest(
   userQuery: string,
   documentContent: string,
   documentId: string,
-  userId: string
+  userId: string,
+  webSearchData?: {
+    webSearchText: string;
+    webSearchCitations: any[];
+    forceWebSearch: boolean;
+  }
 ): Promise<WriterAgentState> {
   const workflow = createWriterAgentWorkflow()
   
@@ -355,7 +361,15 @@ export async function processWritingRequest(
     userQuery,
     documentContent,
     documentId,
-    userId
+    userId,
+    retrievedContext: webSearchData ? `
+Web Search Results:
+${webSearchData.webSearchText}
+
+Sources:
+${webSearchData.webSearchCitations.map((citation, index) => `${index + 1}. ${citation.title || citation.domain || 'Source'}: ${citation.url}`).join('\n')}
+` : undefined,
+    sources: webSearchData?.webSearchCitations || []
   }
 
   try {

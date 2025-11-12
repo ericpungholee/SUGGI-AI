@@ -1,6 +1,6 @@
 'use client'
-import { Brain, Search, Bot, Layers, MessageSquare, Globe } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { Brain, Search, Bot, Layers, MessageSquare, Globe } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
 
 const features = [
   {
@@ -39,49 +39,49 @@ const features = [
     description: 'Access current information from the web when you need it, seamlessly integrated.',
     color: 'from-gray-700 to-gray-800'
   },
-];
+]
 
 export default function Features() {
-  const [visibleCards, setVisibleCards] = useState<number[]>([]);
-  const ref = useRef<HTMLDivElement>(null);
+  const [visibleCards, setVisibleCards] = useState<number[]>([])
+  const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            const index = parseInt(entry.target.getAttribute('data-index') || '0');
-            setVisibleCards((prev) => [...new Set([...prev, index])]);
+            const index = parseInt(entry.target.getAttribute('data-index') || '0')
+            setVisibleCards((prev) => [...new Set([...prev, index])])
           }
-        });
+        })
       },
       { threshold: 0.1 }
-    );
+    )
 
-    const cards = ref.current?.querySelectorAll('.feature-card');
-    cards?.forEach((card, index) => observer.observe(card));
+    const cards = ref.current?.querySelectorAll('.feature-card')
+    cards?.forEach((card, index) => observer.observe(card))
 
-    return () => observer.disconnect();
-  }, []);
+    return () => observer.disconnect()
+  }, [])
 
   return (
     <section id="features" className="py-24 px-6 bg-gradient-to-b from-white to-stone-light/30">
       <div className="max-w-7xl mx-auto">
         {/* Section header */}
         <div className="text-center mb-20">
-          <h2 className="text-4xl md:text-5xl lg:text-6xl font-serif text-ink mb-6">
-            Writing, refined.
+          <h2 className="text-3xl md:text-4xl font-serif text-ink mb-6">
+            How We Do It
           </h2>
-          <p className="text-lg md:text-xl text-ink/60 max-w-3xl mx-auto leading-relaxed">
-            Every feature thoughtfully crafted to support your creative process and enhance your writing experience.
+          <p className="text-lg text-ink/70 max-w-3xl mx-auto">
+            Six core features that make Suggi different from every other writing app:
           </p>
         </div>
 
         {/* Features grid */}
         <div ref={ref} className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
           {features.map((feature, index) => {
-            const Icon = feature.icon;
-            const isVisible = visibleCards.includes(index);
+            const Icon = feature.icon
+            const isVisible = visibleCards.includes(index)
 
             return (
               <div
@@ -96,19 +96,20 @@ export default function Features() {
                 <div className="w-14 h-14 bg-white border-2 border-black rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
                   <Icon className="w-7 h-7 text-black" strokeWidth={1.5} />
                 </div>
-                
+
                 {/* Content */}
-                <h3 className="text-xl font-semibold text-black mb-3 group-hover:text-gray-600 transition-colors duration-300">
+                <h3 className="text-xl font-serif text-black mb-3 group-hover:text-gray-600 transition-colors duration-300">
                   {feature.title}
                 </h3>
                 <p className="text-black/70 leading-relaxed group-hover:text-black/80 transition-colors duration-300">
                   {feature.description}
                 </p>
               </div>
-            );
+            )
           })}
         </div>
       </div>
     </section>
-  );
+  )
 }
+

@@ -12,7 +12,7 @@ export default function SettingsContent() {
     })
 
     const handleSaveProfile = () => {
-        // TODO: Implement profile update API call
+        // Note: Profile update functionality will be implemented in future version
         setIsEditingProfile(false)
     }
 
@@ -25,13 +25,13 @@ export default function SettingsContent() {
     }
 
     const handleExportData = () => {
-        // TODO: Implement data export functionality
+        // Note: Data export functionality will be implemented in future version
         alert('Data export functionality coming soon!')
     }
 
     const handleDeleteAccount = () => {
         if (confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
-            // TODO: Implement account deletion
+            // Note: Account deletion functionality will be implemented in future version
             alert('Account deletion functionality coming soon!')
         }
     }

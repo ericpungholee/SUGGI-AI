@@ -1,46 +1,5 @@
-# Dependencies
-node_modules/
-*/node_modules/
-
-# Environment variables
+node_modules
 .env
-.env.local
-.env.production.local
-
-# Build outputs
 .next/
-out/
-dist/
-build/
-
-# Generated files
-/generated/prisma
-prisma/generated/
-
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage directory used by tools like istanbul
-coverage/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
+*.log
 .DS_Store
-Thumbs.db
-
-# Documentation (excluded from upload)
-README.md
-.env.backup

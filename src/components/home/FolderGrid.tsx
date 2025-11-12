@@ -1,225 +1,164 @@
 'use client'
-import { Folder, MoreVertical, Plus } from "lucide-react";
-import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import CreateFolderModal from "./CreateFolderModal";
-import FolderOptionsModal from "./FolderOptionsModal";
+import { Folder, MoreVertical, Plus, RefreshCw } from "lucide-react"
+import Link from "next/link"
+import { useState, useEffect, useCallback } from "react"
+import { useSession } from "next-auth/react"
 
-interface Folder {
-    id: string;
-    name: string;
-    count: number;
-    color: string;
-    icon?: string;
+interface FolderData {
+    id: string
+    name: string
+    icon?: string
+    documentCount?: number
+    lastModified: string
 }
 
 interface FolderGridProps {
-    showCreateButton?: boolean;
-    gridDensity?: 'compact' | 'comfortable' | 'spacious';
+    gridDensity?: 'compact' | 'comfortable' | 'spacious'
+    showCreateButton?: boolean
 }
 
-export default function FolderGrid({ showCreateButton = true, gridDensity = 'comfortable' }: FolderGridProps) {
-    const [folders, setFolders] = useState<Folder[]>([])
+const gridDensityClasses = {
+    compact: 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3',
+    comfortable: 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4',
+    spacious: 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+}
+
+export default function FolderGrid({ gridDensity = 'comfortable', showCreateButton = true }: FolderGridProps) {
+    const [folders, setFolders] = useState<FolderData[]>([])
     const [loading, setLoading] = useState(true)
-    const [error, setError] = useState<string | null>(null)
-    const [showCreateModal, setShowCreateModal] = useState(false)
-    const [showOptionsModal, setShowOptionsModal] = useState(false)
-    const [selectedFolder, setSelectedFolder] = useState<Folder | null>(null)
     const { data: session } = useSession()
-    const router = useRouter()
 
-    // Get grid classes based on density
-    const getGridClasses = (density: string) => {
-        switch (density) {
-            case 'compact':
-                return 'grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3'
-            case 'comfortable':
-                return 'grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4'
-            case 'spacious':
-                return 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6'
-            default:
-                return 'grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4'
-        }
-    }
-
-    // Get card classes based on density
-    const getCardClasses = (density: string) => {
-        const baseClasses = 'group relative bg-white border border-brown-light/20 rounded-xl hover:shadow-md transition-all hover:-translate-y-0.5 cursor-pointer'
-        switch (density) {
-            case 'compact':
-                return `${baseClasses} p-3`
-            case 'comfortable':
-                return `${baseClasses} p-4`
-            case 'spacious':
-                return `${baseClasses} p-6`
-            default:
-                return `${baseClasses} p-4`
-        }
-    }
-
-    useEffect(() => {
-        if (session?.user) {
-            fetchFolders()
-        }
-    }, [session])
-
-    const fetchFolders = async () => {
+    const fetchFolders = useCallback(async () => {
         try {
             setLoading(true)
-            setError(null)
-            
             const response = await fetch('/api/folders')
             if (response.ok) {
                 const data = await response.json()
                 setFolders(data)
             } else {
-                const errorData = await response.json()
-                setError(errorData.error || 'Failed to fetch folders')
+                console.error('Failed to fetch folders')
                 setFolders([])
             }
         } catch (error) {
-            setError('Network error occurred')
+            console.error('Error fetching folders:', error)
             setFolders([])
         } finally {
             setLoading(false)
         }
-    }
+    }, [])
 
-    const handleCreateFolder = () => {
-        setShowCreateModal(true)
-    }
-
-    const handleFolderCreated = () => {
+    useEffect(() => {
         fetchFolders()
-    }
-
-    const handleMoreOptions = (e: React.MouseEvent, folder: Folder) => {
-        e.preventDefault()
-        e.stopPropagation()
-        setSelectedFolder(folder)
-        setShowOptionsModal(true)
-    }
-
-    const handleFolderClick = (folder: Folder) => {
-        router.push(`/folders/${folder.id}`)
-    }
-
-    const handleFolderUpdated = () => {
-        fetchFolders()
-    }
-
-    const handleRetry = () => {
-        fetchFolders()
-    }
+    }, [fetchFolders])
 
     if (loading) {
         return (
-            <div className={getGridClasses(gridDensity)}>
-                {[...Array(4)].map((_, i) => (
-                    <div key={i} className={`${getCardClasses(gridDensity)} animate-pulse`}>
-                        <div className='w-12 h-12 bg-gray-200 rounded-lg mb-3'></div>
-                        <div className='h-4 bg-gray-200 rounded mb-2'></div>
-                        <div className='h-3 bg-gray-200 rounded'></div>
+            <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-black pb-4 mb-6">
+                    <h2 className="text-lg font-semibold text-ink">Folders</h2>
+                </div>
+                <div className={`grid ${gridDensityClasses[gridDensity]}`}>
+                    {[...Array(6)].map((_, i) => (
+                        <div key={i} className='bg-white border border-black rounded-xl p-5 animate-pulse'>
+                            <div className='h-5 bg-gray-200 rounded mb-3'></div>
+                            <div className='h-4 bg-gray-200 rounded'></div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )
+    }
+
+    if (folders.length === 0 && !showCreateButton) {
+        return (
+            <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-black pb-4 mb-6">
+                    <h2 className="text-lg font-semibold text-ink">Folders</h2>
+                </div>
+                <div className="text-center py-12">
+                    <div className="w-16 h-16 mx-auto mb-4 bg-white border border-black rounded-full flex items-center justify-center">
+                        <Folder className="w-8 h-8 text-black/40" />
                     </div>
-                ))}
-            </div>
-        )
-    }
-
-    if (error) {
-        return (
-            <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
-                    <Folder className="w-8 h-8 text-red-600" />
+                    <h3 className="text-lg font-medium text-ink/70 mb-2">No folders yet</h3>
+                    <p className="text-ink/50">Create a folder to organize your documents</p>
                 </div>
-                <h3 className="text-lg font-medium text-ink/70 mb-2">Error loading folders</h3>
-                <p className="text-ink/50 mb-6">{error}</p>
-                <button 
-                    onClick={handleRetry}
-                    className="inline-flex items-center gap-2 bg-brown-medium text-white px-4 py-2 rounded-lg hover:bg-brown-dark transition-colors"
-                    style={{ color: 'white' }}
-                >
-                    <Plus className="w-4 h-4" style={{ color: 'white' }} />
-                    <span style={{ color: 'white' }}>Retry</span>
-                </button>
-            </div>
-        )
-    }
-
-    if (folders.length === 0) {
-        return (
-            <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 bg-stone-light rounded-full flex items-center justify-center">
-                    <Folder className="w-8 h-8 text-ink/40" />
-                </div>
-                <h3 className="text-lg font-medium text-ink/70 mb-2">No folders yet</h3>
-                <p className="text-ink/50 mb-6">Create your first folder to organize your documents</p>
-                <button 
-                    onClick={handleCreateFolder}
-                    className="inline-flex items-center justify-center bg-white w-12 h-12 rounded-lg hover:bg-gray-100 transition-colors shadow-sm border border-gray-200"
-                    title="Create Folder"
-                    style={{ backgroundColor: 'white', borderColor: '#e5e7eb' }}
-                >
-                    <Plus className="w-6 h-6 text-black" style={{ color: 'black' }} />
-                </button>
             </div>
         )
     }
 
     return (
-        <>
-            {showCreateButton && (
-                <div className="mb-6 flex justify-between items-center">
-                    <h2 className="text-lg font-medium text-ink">Your Folders</h2>
+        <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-black pb-4 mb-6">
+                <h2 className="text-lg font-semibold text-ink">Folders</h2>
+                <div className="flex items-center gap-2">
+                    {showCreateButton && (
+                        <Link
+                            href="/folders"
+                            className="p-2 text-black/40 hover:text-black transition-colors"
+                            title="Create Folder"
+                        >
+                            <Plus className="w-5 h-5" />
+                        </Link>
+                    )}
                     <button
-                        onClick={handleCreateFolder}
-                        className="inline-flex items-center justify-center bg-white w-12 h-12 rounded-lg hover:bg-gray-100 transition-colors shadow-sm border border-gray-200"
-                        title="Create New Folder"
-                        style={{ backgroundColor: 'white', borderColor: '#e5e7eb' }}
+                        onClick={() => fetchFolders()}
+                        className="p-2 text-black/40 hover:text-black transition-colors"
+                        title="Refresh"
                     >
-                        <Plus className="w-6 h-6 text-black" style={{ color: 'black' }} />
+                        <RefreshCw className="w-5 h-5" />
                     </button>
                 </div>
-            )}
-            
-            <div className={getGridClasses(gridDensity)}>
-                {folders.map((folder) => (
-                    <div
-                        key={folder.id}
-                        className={getCardClasses(gridDensity)}
-                        onClick={() => handleFolderClick(folder)}
+            </div>
+            <div className={`grid ${gridDensityClasses[gridDensity]}`}>
+                {showCreateButton && (
+                    <Link
+                        href="/folders"
+                        className="bg-white border-2 border-dashed border-black rounded-xl p-6 hover:border-black hover:bg-gray-50 transition-colors flex flex-col items-center justify-center min-h-[120px] group"
                     >
-                        <button 
-                            className='absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-stone-light rounded'
-                            onClick={(e) => handleMoreOptions(e, folder)}
-                            type="button"
-                        >
-                            <MoreVertical className='w-4 h-4 text-ink/40' />
-                        </button>
-                        <div className={`w-12 h-12 ${folder.color} rounded-lg flex items-center justify-center mb-3`}>
-                            <Folder className='w-6 h-6 text-ink/60' />
+                        <Plus className="w-8 h-8 text-black mb-2" />
+                    </Link>
+                )}
+                {folders.map((folder) => (
+                    <Link
+                        key={folder.id}
+                        href={`/folders/${folder.id}`}
+                        className="bg-white border border-black rounded-xl p-5 hover:bg-gray-50 transition-all group"
+                    >
+                        <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <div className="w-10 h-10 rounded-lg border border-black flex items-center justify-center flex-shrink-0">
+                                    <Folder className="w-5 h-5 text-black" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="font-semibold text-ink truncate group-hover:text-black/70 transition-colors">
+                                        {folder.name}
+                                    </h3>
+                                    {folder.documentCount !== undefined && (
+                                        <p className="text-xs text-ink/60 mt-1">
+                                            {folder.documentCount} {folder.documentCount === 1 ? 'document' : 'documents'}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                            <button
+                                onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-100 rounded"
+                            >
+                                <MoreVertical className="w-4 h-4 text-black" />
+                            </button>
                         </div>
-                        <h3 className='font-medium text-ink text-sm mb-1 line-clamp-2'>{folder.name}</h3>
-                        <p className='text-xs text-ink/40'>{folder.count} items</p>
-                    </div>
+                        {folder.lastModified && (
+                            <p className="text-xs text-ink/50">
+                                Modified {new Date(folder.lastModified).toLocaleDateString()}
+                            </p>
+                        )}
+                    </Link>
                 ))}
             </div>
-
-            {/* Create Folder Modal */}
-            <CreateFolderModal
-                isOpen={showCreateModal}
-                onClose={() => setShowCreateModal(false)}
-                onFolderCreated={handleFolderCreated}
-            />
-
-            {/* Folder Options Modal */}
-            <FolderOptionsModal
-                isOpen={showOptionsModal}
-                onClose={() => setShowOptionsModal(false)}
-                folder={selectedFolder}
-                onFolderUpdated={handleFolderUpdated}
-            />
-        </>
+        </div>
     )
 }
+

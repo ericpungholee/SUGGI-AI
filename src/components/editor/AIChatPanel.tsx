@@ -2,7 +2,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { X, Send, User, GripVertical, Feather, Paperclip, Loader2, Check, XCircle, Globe } from 'lucide-react'
-// import { AIEditorAgent } from '@/lib/ai/editor-agent' // Removed - unused
 import { getCursorContext } from '@/lib/editor/position-utils'
 
 interface AIChatPanelProps {
@@ -205,18 +204,55 @@ export default function AIChatPanel({
 
     try {
       // Build conversation history including the current user message
-      const allMessages = [...messages, userMessage]
-      const conversationHistory = allMessages.slice(-10).map(msg => ({
-        role: msg.type === 'user' ? 'user' : 'assistant',
-        content: msg.content
-      }))
+      // Wait for state update to complete before building conversation history
+      await new Promise(resolve => setTimeout(resolve, 0))
       
+      setMessages(prev => {
+        const allMessages = [...prev]
+        const conversationHistory = allMessages.slice(-10).map(msg => ({
+          role: msg.type === 'user' ? 'user' : 'assistant',
+          content: msg.content
+        }))
+        
+        console.log('💬 Built conversation history:', {
+          totalMessages: allMessages.length,
+          conversationHistoryLength: conversationHistory.length,
+          historyPreview: conversationHistory.map(msg => ({
+            role: msg.role,
+            contentPreview: msg.content.substring(0, 50) + '...'
+          }))
+        })
+        
+        // Send the message with the conversation history
+        sendMessageWithHistory(message, conversationHistory, cursorContext)
+        
+        return prev
+      })
+    } catch (error) {
+      console.error('Error sending message:', error)
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant',
+        content: 'Sorry, I encountered an error. Please try again.',
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, errorMessage])
+      setIsLoading(false)
+    }
+  }
+
+  const sendMessageWithHistory = async (message: string, conversationHistory: any[], cursorContext: any) => {
+    try {
       console.log('💬 Sending conversation history with context:', {
         messageCount: conversationHistory.length,
         lastMessage: conversationHistory[conversationHistory.length - 1]?.content?.substring(0, 50) + '...',
         documentContentLength: documentContent?.length || 0,
         cursorPosition: cursorContext.cursorPosition,
-        selectionLength: cursorContext.selection.length
+        selectionLength: cursorContext.selection.length,
+        conversationHistoryPreview: conversationHistory.map(msg => ({
+          role: msg.role,
+          contentPreview: msg.content.substring(0, 50) + '...'
+        }))
       })
       
       console.log('🔍 AIChatPanel making API call...')

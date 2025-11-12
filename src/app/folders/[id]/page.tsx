@@ -74,11 +74,11 @@ export default async function FolderPage({ params }: FolderPageProps) {
     };
 
     return (
-        <div className="flex h-screen bg-stone-light">
+        <div className="flex h-screen bg-white">
             {/* SideBar */}
             <ClientOnly fallback={
-                <aside className="w-64 bg-white border-r border-brown-light/20 flex flex-col">
-                    <div className="h-16 border-b border-brown-light/20"></div>
+                <aside className="w-64 bg-white border-r border-black flex flex-col">
+                    <div className="h-16 border-b border-black"></div>
                     <div className="p-4"></div>
                 </aside>
             }>
@@ -86,16 +86,16 @@ export default async function FolderPage({ params }: FolderPageProps) {
             </ClientOnly>
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 flex flex-col overflow-hidden bg-white">
                 {/* Header */}
                 <ClientOnly fallback={
-                    <header className="h-16 bg-white border-b border-brown-light/20"></header>
+                    <header className="h-16 bg-white border-b border-black"></header>
                 }>
                     <HomeHeader />
                 </ClientOnly>
 
                 {/* Content */}
-                <main className="flex-1 overflow-y-auto px-8 py-6">
+                <main className="flex-1 overflow-y-auto px-8 py-6 bg-white">
                     {/* Breadcrumb */}
                     <div className="mb-6">
                         <nav className="flex items-center space-x-2 text-sm text-ink/60 mb-2">

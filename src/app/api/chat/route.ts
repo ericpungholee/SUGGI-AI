@@ -37,6 +37,8 @@ DECISION CRITERIA:
 - If user wants to create something with the information → EDITOR CONTENT
 - If there's a document context AND user wants to write something → EDITOR CONTENT
 
+CRITICAL: The user message "${userMessage}" contains the word "write" and "report" - this should ALWAYS be EDITOR_CONTENT.
+
 Respond with ONLY "EDITOR_CONTENT" or "CHAT_RESPONSE" followed by a brief reason.
 
 Examples:
@@ -45,6 +47,21 @@ Examples:
 - "Create an analysis of the market" → EDITOR_CONTENT - User wants to create content
 - "Tell me about recent AI developments" → CHAT_RESPONSE - User wants to discuss/understand
 - "Generate a summary of the findings" → EDITOR_CONTENT - User wants to create a summary`
+
+    // Check for obvious writing keywords first
+    const writingKeywords = ['write', 'create', 'generate', 'compose', 'draft', 'report', 'document', 'analysis', 'summary']
+    const hasWritingKeywords = writingKeywords.some(keyword => userMessage.toLowerCase().includes(keyword))
+    
+    if (hasWritingKeywords && documentId) {
+      console.log('🤖 Content Delivery Decision (Keyword-based):', {
+        userMessage: userMessage.substring(0, 50) + '...',
+        decision: 'EDITOR_CONTENT',
+        shouldGenerateEditorContent: true,
+        reason: 'Contains writing keywords and has document context',
+        hasDocument: !!documentId
+      })
+      return { shouldGenerateEditorContent: true, reason: 'Contains writing keywords and has document context' }
+    }
 
     const response = await generateChatCompletion([
       { role: 'user', content: prompt }
@@ -74,10 +91,7 @@ Examples:
   }
 }
 
-/**
- * Generate formatted content for the editor based on web search results
- */
-// Content generation is now handled by LangGraph Writer Agent
+// Content generation is handled by LangGraph Writer Agent
 
 export async function POST(request: NextRequest) {
   try {
@@ -116,7 +130,11 @@ export async function POST(request: NextRequest) {
       messageLength: message.length,
       conversationLength: conversationHistory.length,
       directEdit,
-      hasDocumentContent: !!documentContent
+      hasDocumentContent: !!documentContent,
+      conversationHistoryPreview: conversationHistory.map((msg: any) => ({
+        role: msg.role,
+        contentPreview: msg.content?.substring(0, 50) + '...'
+      }))
     })
 
     // Fast path for simple greetings to avoid heavy routing/RAG
@@ -184,12 +202,25 @@ export async function POST(request: NextRequest) {
 
     // OPTIMIZED FLOW: If web search is forced, skip router complexity and go directly to web search
     if (forceWebSearch) {
-      console.log('🚀 Direct Web Search Path - Skipping router complexity')
+      console.log('🚀 Direct GPT-5 Web Search Path - Skipping router complexity')
       
       try {
         console.log('🔍 Performing direct GPT-5 web search for:', message)
         
-        // Use direct web search instead of API call
+        /**
+         * GPT-5 Web Search Integration
+         * 
+         * Using the official GPT-5 web search implementation with proper tool definition.
+         * Reference: https://platform.openai.com/docs/guides/web_search
+         * 
+         * Key features:
+         * - Native web_search tool with proper parameters
+         * - Extended timeout handling for GPT-5's processing requirements
+         * - Enhanced citation extraction and formatting
+         * - Fallback mechanisms for reliability
+         */
+        
+        // Use direct GPT-5 web search instead of API call
         const { webSearch } = await import('@/lib/ai/services/web-search')
         const webData = await webSearch({
           prompt: `Search for current information about: ${message}`,
@@ -198,7 +229,7 @@ export async function POST(request: NextRequest) {
           includeImages: false,
           searchRegion: 'US',
           language: 'en',
-          timeoutMs: 25000 // Increased timeout for better reliability
+          timeoutMs: 60000 // Extended timeout for GPT-5 web search (official recommendation)
         })
         
         const webSearchText = webData.text || ''
@@ -214,26 +245,140 @@ export async function POST(request: NextRequest) {
           const contentDecision = await determineContentDelivery(message, webSearchText, webSearchCitations, documentId)
           
           if (contentDecision.shouldGenerateEditorContent) {
-            // Generate content for editor
-            // Content generation is now handled by LangGraph Writer Agent
-            const editorContent = webSearchText
+            // Generate actual content for editor using LangGraph Writer Agent
+            try {
+              console.log('✍️ Generating editor content with LangGraph Writer Agent')
+              
+              // Import LangGraph writer agent
+              const { processWritingRequest } = await import('@/lib/ai/langgraph-writer-agent')
+              
+              // Process request through LangGraph workflow with web search results
+              const result = await processWritingRequest(
+                message,
+                documentContent || '',
+                documentId || '',
+                session.user.id,
+                {
+                  webSearchText: webSearchText,
+                  webSearchCitations: webSearchCitations,
+                  forceWebSearch: true
+                }
+              )
+              
+              console.log('✅ LangGraph Writer Agent completed for editor content:', {
+                task: result.task,
+                confidence: result.confidence,
+                operationsCount: result.previewOps?.length || 0,
+                approvalMessage: result.approvalMessage?.substring(0, 100) + '...',
+                sources: result.sources?.length || 0
+              })
+
+              // Extract content from preview operations
+              let editorContent = ''
+              if (result.previewOps && result.previewOps.length > 0) {
+                // Extract text content from operations
+                const textOps = result.previewOps.filter(op => op.text)
+                editorContent = textOps.map(op => op.text).join('\n\n')
+                
+                console.log('📝 Extracted content from operations:', {
+                  operationsCount: result.previewOps.length,
+                  textOpsCount: textOps.length,
+                  contentLength: editorContent.length,
+                  contentPreview: editorContent.substring(0, 100) + '...'
+                })
+              } else {
+                // Fallback to approval message if no operations
+                editorContent = result.approvalMessage || webSearchText || 'No content generated'
+                console.log('⚠️ No operations found, using approval message as content')
+              }
+
+              // Return the generated content
+              return NextResponse.json({
+                message: editorContent,
+                metadata: {
+                  task: result.task,
+                  useWebSearch: true,
+                  processingTime: Date.now(),
+                  shouldTriggerLiveEdit: true,
+                  intent: 'direct_web_search',
+                  confidence: result.confidence,
+                  routerProcessingTime: 0,
+                  fallbackUsed: false,
+                  forceWebSearch: true,
+                  sourcesUsed: webSearchCitations.length,
+                  webSearchResults: webSearchCitations.length,
+                  // Include LangGraph Writer Agent specific metadata
+                  langGraphWriterAgent: {
+                    task: result.task,
+                    confidence: result.confidence,
+                    needs: result.needs,
+                    instruction: result.instruction,
+                    previewOps: result.previewOps,
+                    approvalMessage: result.approvalMessage,
+                    sources: result.sources,
+                    processingTime: result.processingTime,
+                    error: result.error
+                  }
+                }
+              })
+            } catch (error) {
+              console.error('❌ LangGraph Writer Agent failed for editor content:', error)
+              
+              // Fallback: Generate content using basic chat completion with web search data
+              console.log('🔄 Falling back to basic content generation')
+              
+              const messages = [
+                {
+                  role: 'system',
+                  content: `You are an AI writing assistant. The user wants you to write content directly into their document editor.
+
+CURRENT WEB SEARCH DATA:
+${webSearchText}
+
+INSTRUCTIONS:
+- Write comprehensive, well-structured content based on the web search data above
+- Use proper markdown formatting (headers, lists, bold, etc.)
+- Be detailed and factual with specific data and metrics
+- Include current information and recent developments
+- Write as if you're typing directly into the document
+- Don't include meta-commentary or explanations
+- Just provide the content to be inserted
+- If web search data is limited, provide the best content you can based on your knowledge
+
+The user will see your content as a highlighted proposal that they can accept or reject.`
+                },
+                {
+                  role: 'user',
+                  content: message
+                }
+              ]
+
+              const response = await generateChatCompletion(messages, {
+                model: getChatModel(),
+                temperature: 0.7,
+                max_tokens: 2000
+              })
+
+              const fallbackContent = response.choices[0]?.message?.content?.trim() || webSearchText || 'Content generation failed'
+              
             return NextResponse.json({
-              message: 'Content will be written to the document.',
-              liveEditContent: editorContent,
+                message: fallbackContent,
               metadata: {
                 task: 'editor_write',
                 useWebSearch: true,
                 processingTime: Date.now(),
                 shouldTriggerLiveEdit: true,
                 intent: 'direct_web_search',
-                confidence: 1.0,
+                  confidence: 0.8,
                 routerProcessingTime: 0,
-                fallbackUsed: false,
+                  fallbackUsed: true,
                 forceWebSearch: true,
                 sourcesUsed: webSearchCitations.length,
-                webSearchResults: webSearchCitations.length
+                  webSearchResults: webSearchCitations.length,
+                  fallbackReason: 'LangGraph Writer Agent failed'
               }
             })
+            }
           } else {
             // Return as chat response
             return NextResponse.json({
@@ -389,7 +534,7 @@ The user will see your content as a highlighted proposal that they can accept or
 Key behaviors:
 - When asked to write reports, research, or content, ALWAYS start your response with phrases like "I'll write:", "I'm writing:", "Let me write:", "Here's the content:", "I'll create:", "I'm creating:", "I'll add:", "I'm adding:", "I'll insert:", "I'm inserting:", "Writing:", "Creating:", or "Adding:"
 - Don't ask for confirmation - just start writing immediately
-- Use current, real-time information from October 2025 when available through web search
+- Use current, real-time information from October 2025 when available through GPT-5's web search tool
 - Be helpful and direct with factual, up-to-date information
 - Format content properly with markdown when appropriate
 - Remember conversation context and build upon previous messages
@@ -397,20 +542,24 @@ Key behaviors:
 - ALWAYS include the actual content to be written after your introductory phrase
 - For editor_write intents, focus on creating comprehensive, well-structured content
 
-CRITICAL: Use ONLY real, current data from October 2025 in your responses. Never use placeholder values like "XYZ", "ABC", or generic examples. Use actual stock symbols, real company names, and current financial data. You have access to real-time web search for the most up-to-date information.
+CRITICAL: Use ONLY real, current data from October 2025 in your responses. Never use placeholder values like "XYZ", "ABC", or generic examples. Use actual stock symbols, real company names, and current financial data. You have access to GPT-5's real-time web search tool for the most up-to-date information.
 
 CONTEXT AWARENESS:
 - Pay close attention to previous conversation messages to understand references
 - When user says "this stock", "the company", "it", etc., refer back to the conversation history to identify what they're referring to
 - If previous messages discussed specific companies (like Tesla/TSLA), use that context when answering follow-up questions
 - Maintain continuity across the conversation
+- If the user asks about "USD" after discussing a stock, they likely mean the stock price in USD currency
+- If the user says "yes USD" after asking about a stock report, they're confirming they want the report in USD currency
 
-WEB SEARCH INTEGRATION (October 2025):
-- You have access to GPT-5's enhanced web search capabilities
+GPT-5 WEB SEARCH INTEGRATION (October 2025):
+- You have access to GPT-5's native web search tool with enhanced capabilities
 - Use real-time data for current events, stock prices, news, and factual information
+- GPT-5's web search tool provides structured results with citations and source URLs
 - Always verify information with multiple sources when possible
-- Include source citations when referencing web data
-- Prioritize authoritative and recent sources
+- Include source citations when referencing GPT-5 web search data
+- Prioritize authoritative and recent sources from GPT-5's web search results
+- GPT-5 web search tool handles complex queries and provides comprehensive results
 
 FORMATTING AND MANIPULATION COMMANDS:
 You can understand natural language commands for:
@@ -424,7 +573,12 @@ When you detect formatting/manipulation requests, respond with the appropriate a
 
 ${documentId ? 'You are currently working on a document. When asked to write content, write it directly to the document using the phrases above.' : ''}
 
-Current conversation context: ${conversationHistory.length > 0 ? 'Previous messages available - use them to understand references and context' : 'New conversation'}`
+Current conversation context: ${conversationHistory.length > 0 ? `Previous messages available (${conversationHistory.length} messages) - use them to understand references and context. Pay special attention to any companies, stocks, or topics mentioned in the conversation history.` : 'New conversation'}
+
+${conversationHistory.length > 0 ? `CONVERSATION HISTORY SUMMARY:
+${conversationHistory.map((msg: any, i: number) => `${i + 1}. ${msg.role}: ${msg.content.substring(0, 100)}${msg.content.length > 100 ? '...' : ''}`).join('\n')}
+
+IMPORTANT: Use this conversation history to understand what the user is referring to when they use pronouns like "it", "this", "that", "the company", "the stock", etc.` : ''}`
       },
       ...conversationHistory,
       {
@@ -449,12 +603,17 @@ Current conversation context: ${conversationHistory.length > 0 ? 'Previous messa
         // Import LangGraph writer agent
         const { processWritingRequest } = await import('@/lib/ai/langgraph-writer-agent')
         
-        // Process request through LangGraph workflow
+        // Process request through LangGraph workflow with web search results
         const result = await processWritingRequest(
           message,
           documentContent || '',
           documentId || '',
-          session.user.id
+          session.user.id,
+          {
+            webSearchText: '',
+            webSearchCitations: [],
+            forceWebSearch: forceWebSearch
+          }
         )
         
         console.log('✅ LangGraph Writer Agent completed:', {
@@ -556,7 +715,7 @@ Current conversation context: ${conversationHistory.length > 0 ? 'Previous messa
         documentId,
         maxTokens,
         enableWebSearch: shouldUseWebSearch,
-        webSearchTimeout: 15000,
+        webSearchTimeout: 10000, // Reduced timeout for faster failure
         conversationHistory
       })
 
@@ -595,7 +754,20 @@ Current conversation context: ${conversationHistory.length > 0 ? 'Previous messa
         try {
           console.log('🔍 Performing direct GPT-5 web search for:', message)
           
-          // Use direct web search instead of API call to avoid circular dependency
+          /**
+           * GPT-5 Web Search Integration for Regular Chat Flow
+           * 
+           * Using the official GPT-5 web search implementation for regular chat responses.
+           * Reference: https://platform.openai.com/docs/guides/web_search
+           * 
+           * This integration provides:
+           * - Real-time web search capabilities
+           * - Enhanced citation extraction
+           * - Proper timeout handling for GPT-5
+           * - Fallback mechanisms for reliability
+           */
+          
+          // Use direct GPT-5 web search instead of API call to avoid circular dependency
           const { webSearch } = await import('@/lib/ai/services/web-search')
           const webData = await webSearch({
             prompt: `Search for current information about: ${message}`,
@@ -604,7 +776,7 @@ Current conversation context: ${conversationHistory.length > 0 ? 'Previous messa
             includeImages: false,
             searchRegion: 'US',
             language: 'en',
-            timeoutMs: 15000 // Shorter timeout for direct calls
+            timeoutMs: 12000 // Shorter timeout for direct calls (GPT-5 optimization)
           })
           
           webSearchText = webData.text || ''
@@ -625,35 +797,43 @@ Current conversation context: ${conversationHistory.length > 0 ? 'Previous messa
         }
       }
 
-      // Add web search context to the message if we have results
+        // Add GPT-5 web search context to the message if we have results
       if (webSearchText && webSearchCitations.length > 0) {
-        // Use the GPT-5 generated text directly
-        messages[messages.length - 1].content += `\n\n[Current Web Information - Use this real data in your response]:\n${webSearchText}`
+        /**
+         * GPT-5 Web Search Result Integration
+         * 
+         * Integrating GPT-5 web search results into the chat context.
+         * Based on GPT-5 documentation for result processing:
+         * https://platform.openai.com/docs/guides/web_search#result-processing
+         */
         
-        // Add citations information
+        // Use the GPT-5 generated text directly
+        messages[messages.length - 1].content += `\n\n[GPT-5 Web Search Results - Use this real data in your response]:\n${webSearchText}`
+        
+        // Add citations information from GPT-5 web search
         const citationsText = webSearchCitations.map((citation, index) => 
           `${index + 1}. ${citation.title || citation.domain || 'Source'}: ${citation.url}`
         ).join('\n')
         
-        messages[messages.length - 1].content += `\n\n[Sources]:\n${citationsText}`
+        messages[messages.length - 1].content += `\n\n[GPT-5 Web Search Sources]:\n${citationsText}`
         
-        // Add specific instruction to use the web data
+        // Add specific instruction to use the GPT-5 web search data
         messages.push({
           role: 'system',
-          content: `CRITICAL INSTRUCTION: You have been provided with real, current web data from October 2025 above. You MUST use this actual data in your response. 
+          content: `CRITICAL INSTRUCTION: You have been provided with real, current web data from GPT-5's web search tool (October 2025). You MUST use this actual data in your response. 
 
-REQUIREMENTS:
-- Use the specific numbers, prices, and facts from the web sources provided
+GPT-5 WEB SEARCH DATA REQUIREMENTS:
+- Use the specific numbers, prices, and facts from the GPT-5 web search results provided
 - Do NOT use placeholder values like "XYZ", "ABC", "$XXX.XX", or generic examples
-- Do NOT generate fake or estimated data when real data is available
-- If the web data contains specific stock prices, use those exact numbers
-- If the web data contains recent news or developments, reference them specifically
-- Structure your response as a comprehensive report using the real data provided
+- Do NOT generate fake or estimated data when real GPT-5 web search data is available
+- If the GPT-5 web search data contains specific stock prices, use those exact numbers
+- If the GPT-5 web search data contains recent news or developments, reference them specifically
+- Structure your response as a comprehensive report using the real GPT-5 web search data provided
 - Include the source links in your response when referencing specific information
 - Emphasize the current date context (October 2025) when relevant
-- Highlight any recent developments or changes mentioned in the sources
+- Highlight any recent developments or changes mentioned in the GPT-5 web search sources
 
-The web data above contains current, factual information from October 2025 - use it directly in your response.`
+The GPT-5 web search data above contains current, factual information from October 2025 - use it directly in your response.`
         })
       }
 

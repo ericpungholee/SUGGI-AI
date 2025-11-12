@@ -119,61 +119,68 @@ export default function RecentDocumentGrid() {
 
     if (loading) {
         return (
-            <div className='grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'>
-                {[...Array(4)].map((_, i) => (
-                    <div key={i} className='bg-white border border-brown-light/20 rounded-xl p-5 animate-pulse'>
-                        <div className='h-5 bg-gray-200 rounded mb-3'></div>
-                        <div className='h-4 bg-gray-200 rounded mb-2'></div>
-                        <div className='h-3 bg-gray-200 rounded'></div>
-                    </div>
-                ))}
+            <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-black pb-4 mb-6">
+                    <h2 className="text-lg font-semibold text-ink">Recent Documents</h2>
+                </div>
+                <div className='grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'>
+                    {[...Array(4)].map((_, i) => (
+                        <div key={i} className='bg-white border border-black rounded-xl p-5 animate-pulse'>
+                            <div className='h-5 bg-gray-200 rounded mb-3'></div>
+                            <div className='h-4 bg-gray-200 rounded mb-2'></div>
+                            <div className='h-3 bg-gray-200 rounded'></div>
+                        </div>
+                    ))}
+                </div>
             </div>
         )
     }
 
     if (documents.length === 0) {
         return (
-            <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 bg-stone-light rounded-full flex items-center justify-center">
-                    <Clock className="w-8 h-8 text-ink/40" />
+            <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-black pb-4 mb-6">
+                    <h2 className="text-lg font-semibold text-ink">Recent Documents</h2>
                 </div>
-                <h3 className="text-lg font-medium text-ink/70 mb-2">No recent documents</h3>
-                <p className="text-ink/50 mb-6">Start writing to see your recent documents here</p>
-                <button 
-                    onClick={handleCreateDocument}
-                    className="inline-flex items-center gap-2 bg-brown-medium text-white px-4 py-2 rounded-lg hover:bg-brown-dark transition-colors"
-                    style={{ color: 'white' }}
-                >
-                    <Plus className="w-4 h-4" style={{ color: 'white' }} />
-                    <span style={{ color: 'white' }}>Create Document</span>
-                </button>
+                <div className="text-center py-12">
+                    <div className="w-16 h-16 mx-auto mb-4 bg-white border border-black rounded-full flex items-center justify-center">
+                        <Clock className="w-8 h-8 text-black/40" />
+                    </div>
+                    <h3 className="text-lg font-medium text-ink/70 mb-2">No recent documents</h3>
+                    <p className="text-ink/50 mb-6">Start writing to see your recent documents here</p>
+                    <button 
+                        onClick={handleCreateDocument}
+                        className="inline-flex items-center justify-center p-2 border border-black rounded-lg hover:bg-gray-100 transition-colors"
+                        title="Create Document"
+                    >
+                        <Plus className="w-5 h-5 text-black" />
+                    </button>
+                </div>
             </div>
         )
     }
 
     return (
-        <div>
-            {/* Header with refresh button */}
-            <div className="flex justify-between items-center mb-4">
+        <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-black pb-4 mb-6">
                 <div>
-                    <h2 className="text-lg font-medium text-ink/70">Recently Modified</h2>
+                    <h2 className="text-lg font-semibold text-ink">Recent Documents</h2>
                     <p className="text-sm text-ink/50">Documents sorted by last modified date</p>
                 </div>
                 <div className="flex gap-2">
                     <button
                         onClick={handleRefresh}
-                        className="p-2 hover:bg-stone-light rounded-lg transition-colors"
+                        className="p-2 text-black/40 hover:text-black transition-colors"
                         title="Refresh documents"
                     >
-                        <RefreshCw className="w-4 h-4 text-ink/60" />
+                        <RefreshCw className="w-5 h-5" />
                     </button>
                     <button
                         onClick={handleCreateDocument}
-                        className="inline-flex items-center gap-2 bg-brown-medium text-white px-3 py-2 rounded-lg hover:bg-brown-dark transition-colors text-sm"
-                        style={{ color: 'white' }}
+                        className="p-2 text-black/40 hover:text-black transition-colors"
+                        title="Create Document"
                     >
-                        <Plus className="w-4 h-4" style={{ color: 'white' }} />
-                        <span style={{ color: 'white' }}>New Document</span>
+                        <Plus className="w-5 h-5" />
                     </button>
                 </div>
             </div>
@@ -181,31 +188,31 @@ export default function RecentDocumentGrid() {
             {/* Documents grid */}
             <div className='grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'>
                 {documents.map((doc) => (
-                    <div key={doc.id} className='group bg-white border border-brown-light/20 rounded-xl p-5 hover:shadow-md transition-all hover:-translate-0.5'>
+                    <div key={doc.id} className='group bg-white border border-black rounded-xl p-5 hover:bg-gray-50 transition-all'>
                         <div className='flex items-start justify-between mb-3'>
-                            <FileText className='w-5 h-5 text-brown-medium' />
+                            <FileText className='w-5 h-5 text-black' />
                             <div className='flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity'>
                                 <button
                                     onClick={(e) => toggleStar(doc.id, e)}
-                                    className="p-1 hover:bg-stone-light rounded transition-colors"
+                                    className="p-1 hover:bg-gray-100 rounded transition-colors"
                                     type="button"
                                 >
-                                    <Bookmark className={`w-4 h-4 ${starredDocs.has(doc.id) ? 'fill-black text-black' : 'text-ink/40'}`} />
+                                    <Bookmark className={`w-4 h-4 ${starredDocs.has(doc.id) ? 'fill-black text-black' : 'text-black/40'}`} />
                                 </button>
                                 <button
                                     onClick={handleMoreOptions}
-                                    className="p-1 hover:bg-stone-light rounded transition-colors"
+                                    className="p-1 hover:bg-gray-100 rounded transition-colors"
                                     type="button"
                                 >
-                                    <MoreVertical className='w-4 h-4 text-ink/40' />
+                                    <MoreVertical className='w-4 h-4 text-black' />
                                 </button>
                             </div>
                         </div>
                         
                         <Link href={`/editor/${doc.id}`} className="block">
-                            <h3 className="font-medium text-ink mb-2 line-clamp-1 hover:text-brown-medium transition-colors">{doc.title}</h3>
-                            <p className="text-sm text-ink/60 mb-3 line-clamp-2">{doc.preview}</p>
-                            <div className="flex items-center justify-between text-xs text-ink/40">
+                            <h3 className="font-medium text-black mb-2 line-clamp-1 hover:text-black/70 transition-colors">{doc.title}</h3>
+                            <p className="text-sm text-black/60 mb-3 line-clamp-2">{doc.preview}</p>
+                            <div className="flex items-center justify-between text-xs text-black/40">
                                 <div className="flex items-center gap-1">
                                     <Clock className='w-3 h-3' />
                                     <span>{doc.lastModified}</span>

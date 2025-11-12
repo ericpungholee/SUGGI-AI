@@ -5,12 +5,30 @@ import GoogleProvider from 'next-auth/providers/google'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 
+// Test database connection
+async function testDatabaseConnection() {
+  try {
+    await prisma.$queryRaw`SELECT 1`
+    return true
+  } catch (error) {
+    console.error('Database connection failed:', error)
+    return false
+  }
+}
+
 // Ensure we have a secret for JWT signing
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || 'fallback-secret-key-for-development-only'
 const NEXTAUTH_URL = process.env.NEXTAUTH_URL || 'http://localhost:3000'
 
 export const authOptions: NextAuthOptions = {
     adapter: PrismaAdapter(prisma),
+    debug: process.env.NODE_ENV === 'development',
+    // Add fallback for database connection issues
+    pages: {
+        signIn: '/auth/login',
+        signUp: '/auth/register',
+        error: '/auth/error' // Custom error page
+    },
     providers: [
         CredentialsProvider({
             name: 'credentials',
@@ -25,6 +43,13 @@ export const authOptions: NextAuthOptions = {
                 }
 
                 try {
+                    // Test database connection first
+                    const dbConnected = await testDatabaseConnection()
+                    if (!dbConnected) {
+                        console.error('❌ Database connection failed')
+                        throw new Error('Database connection failed')
+                    }
+
                     console.log('🔍 Attempting to find user:', credentials.email)
                     const user = await prisma.user.findUnique({
                         where: { email: credentials.email }
@@ -60,7 +85,6 @@ export const authOptions: NextAuthOptions = {
         GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID!,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-            checks: ["none"], // Disable state checks temporarily to test
         }),
     ],
     session: {
@@ -79,6 +103,35 @@ export const authOptions: NextAuthOptions = {
                 session.user.id = token.id as string
             }
             return session
+        }
+    },
+    // Add error handling
+    logger: {
+        error(code, metadata) {
+            console.error('NextAuth Error:', code, metadata)
+        },
+        warn(code) {
+            console.warn('NextAuth Warning:', code)
+        },
+        debug(code, metadata) {
+            if (process.env.NODE_ENV === 'development') {
+                console.log('NextAuth Debug:', code, metadata)
+            }
+        }
+    },
+    // Add error handling for authentication failures
+    events: {
+        async signIn({ user, account, profile }) {
+            console.log('🔐 User signed in:', user.email)
+        },
+        async signOut({ session, token }) {
+            console.log('🔐 User signed out:', session?.user?.email || token?.email)
+        },
+        async session({ session, token }) {
+            console.log('🔐 Session created:', session?.user?.email)
+        },
+        async error({ error, message }) {
+            console.error('NextAuth Error Event:', { error, message })
         }
     },
     useSecureCookies: false, // Critical for localhost development
@@ -103,10 +156,6 @@ export const authOptions: NextAuthOptions = {
                 maxAge: 24 * 60 * 60, // 24 hours in seconds
             }
         }
-    },
-    pages: {
-        signIn: '/auth/login',
-        signUp: '/auth/register'
     },
     secret: NEXTAUTH_SECRET,
     trustHost: true

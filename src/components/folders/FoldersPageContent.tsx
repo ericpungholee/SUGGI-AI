@@ -13,14 +13,7 @@ export default function FoldersPageContent({ gridDensity = 'comfortable' }: Fold
     const { results, isLoading, query, hasSearched, search, clearSearch } = useFolderSearch();
 
     return (
-        <main className="flex-1 overflow-y-auto px-8 py-6">
-            <div className="mb-6 flex justify-between items-center">
-                <div>
-                    <h1 className="text-2xl font-bold text-ink mb-2">Folders</h1>
-                    <p className="text-ink/60">Organize your documents into folders</p>
-                </div>
-                <CreateFolderButton />
-            </div>
+        <main className="flex-1 overflow-y-auto px-8 py-6 bg-white">
             
             {/* Search Bar */}
             <FolderSearchBar 

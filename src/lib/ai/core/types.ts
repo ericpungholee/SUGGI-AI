@@ -11,7 +11,6 @@ export interface ChatCompletionOptions {
   max_tokens?: number;
   stream?: boolean;
   abortSignal?: AbortSignal;
-  useWebSearch?: boolean;
   tools?: Array<{ type: string; [key: string]: any }>;
   tool_choice?: 'auto' | { type: string };
 }

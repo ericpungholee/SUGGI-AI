@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { robustWebSearch } from "@/lib/ai/services/web-search";
+import { webSearch } from "@/lib/ai/services/web-search";
 import { getWebSearchModel } from "@/lib/ai/core/models";
 
 export const runtime = "nodejs";
@@ -41,14 +41,14 @@ async function testWebSearch() {
   
   const testQuery = "Tesla stock price October 2025";
   
-  const result = await robustWebSearch({
+  const result = await webSearch({
     prompt: `Search for current information about: ${testQuery}`,
     model: getWebSearchModel(),
     maxResults: 5,
     includeImages: false,
     searchRegion: 'US',
     language: 'en',
-    timeoutMs: 20000 // Reduced timeout
+    timeoutMs: 15000 // Reduced timeout for testing
   });
 
   console.log('✅ Web Search Test Results:', {

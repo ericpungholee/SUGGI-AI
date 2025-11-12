@@ -33,14 +33,14 @@ export default function SearchResults({ results, query, isLoading, onClose }: Se
 
     if (isLoading) {
         return (
-            <div className="mb-6 bg-white border border-brown-light/20 rounded-xl p-6">
+            <div className="mb-6 bg-white border border-black rounded-xl p-6">
                 <div className="flex items-center gap-3 mb-4">
-                    <Search className="w-5 h-5 text-brown-medium" />
+                    <Search className="w-5 h-5 text-black" />
                     <h3 className="text-lg font-medium text-ink">Searching...</h3>
                 </div>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {[...Array(6)].map((_, i) => (
-                        <div key={i} className="bg-stone-light rounded-xl p-4 animate-pulse">
+                        <div key={i} className="bg-white border border-black rounded-xl p-4 animate-pulse">
                             <div className="w-8 h-8 bg-gray-200 rounded-lg mb-3"></div>
                             <div className="h-4 bg-gray-200 rounded mb-2"></div>
                             <div className="h-3 bg-gray-200 rounded mb-2"></div>
@@ -54,9 +54,9 @@ export default function SearchResults({ results, query, isLoading, onClose }: Se
 
     if (results.length === 0 && query) {
         return (
-            <div className="mb-6 bg-white border border-brown-light/20 rounded-xl p-6">
+            <div className="mb-6 bg-white border border-black rounded-xl p-6">
                 <div className="flex items-center gap-3 mb-4">
-                    <Search className="w-5 h-5 text-brown-medium" />
+                    <Search className="w-5 h-5 text-black" />
                     <h3 className="text-lg font-medium text-ink">No results found</h3>
                 </div>
                 <p className="text-ink/60">
@@ -74,17 +74,17 @@ export default function SearchResults({ results, query, isLoading, onClose }: Se
     const folders = results.filter(result => result.type === 'folder')
 
     return (
-        <div className="mb-6 bg-white border border-brown-light/20 rounded-xl p-6">
+        <div className="mb-6 bg-white border border-black rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                    <Search className="w-5 h-5 text-brown-medium" />
+                    <Search className="w-5 h-5 text-black" />
                     <h3 className="text-lg font-medium text-ink">
                         Search Results for "{query}"
                     </h3>
                 </div>
                 <button
                     onClick={onClose}
-                    className="text-ink/40 hover:text-ink/60 transition-colors"
+                    className="text-black/40 hover:text-black transition-colors p-1"
                 >
                     <X className="w-5 h-5" />
                 </button>
@@ -102,23 +102,23 @@ export default function SearchResults({ results, query, isLoading, onClose }: Se
                             <Link
                                 key={doc.id}
                                 href={`/editor/${doc.id}`}
-                                className="group relative bg-white border border-brown-light/20 rounded-xl p-5 hover:shadow-md transition-all hover:-translate-y-0.5"
+                                className="group relative bg-white border border-black rounded-xl p-5 hover:bg-gray-50 transition-all"
                             >
                                 <div className="flex items-start justify-between mb-3">
-                                    <FileText className="w-5 h-5 text-brown-medium" />
+                                    <FileText className="w-5 h-5 text-black" />
                                     {doc.starred && (
                                         <Bookmark className="w-4 h-4 fill-black text-black" />
                                     )}
                                 </div>
-                                <h5 className="font-medium text-ink mb-2 line-clamp-1 group-hover:text-brown-medium transition-colors">
+                                <h5 className="font-medium text-black mb-2 line-clamp-1 group-hover:text-black/70 transition-colors">
                                     {doc.title}
                                 </h5>
                                 {doc.preview && (
-                                    <p className="text-sm text-ink/60 mb-3 line-clamp-2">
+                                    <p className="text-sm text-black/60 mb-3 line-clamp-2">
                                         {doc.preview}
                                     </p>
                                 )}
-                                <div className="flex items-center justify-between text-xs text-ink/40">
+                                <div className="flex items-center justify-between text-xs text-black/40">
                                     <div className="flex items-center gap-1">
                                         <Clock className="w-3 h-3" />
                                         <span>{doc.lastModified}</span>
@@ -145,15 +145,15 @@ export default function SearchResults({ results, query, isLoading, onClose }: Se
                             <Link
                                 key={folder.id}
                                 href={`/folders/${folder.id}`}
-                                className="group bg-stone-light rounded-xl p-4 hover:bg-stone-light/80 transition-all hover:-translate-y-0.5 hover:shadow-md"
+                                className="group bg-white border border-black rounded-xl p-4 hover:bg-gray-50 transition-all"
                             >
-                                <div className="w-12 h-12 bg-brown-light/30 rounded-lg flex items-center justify-center mb-3">
-                                    <Folder className="w-6 h-6 text-ink/60" />
+                                <div className="w-12 h-12 bg-white border border-black rounded-lg flex items-center justify-center mb-3">
+                                    <Folder className="w-6 h-6 text-black" />
                                 </div>
-                                <h5 className="font-medium text-ink text-sm mb-1 line-clamp-2 group-hover:text-brown-medium transition-colors">
+                                <h5 className="font-medium text-black text-sm mb-1 line-clamp-2 group-hover:text-black/70 transition-colors">
                                     {folder.title}
                                 </h5>
-                                <div className="flex items-center gap-1 text-xs text-ink/40">
+                                <div className="flex items-center gap-1 text-xs text-black/40">
                                     <Clock className="w-3 h-3" />
                                     <span>{folder.lastModified}</span>
                                 </div>

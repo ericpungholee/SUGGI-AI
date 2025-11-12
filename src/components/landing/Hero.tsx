@@ -65,13 +65,16 @@ export default function Hero() {
     const timer = setInterval(() => {
       setAnimationKey(prev => prev + 1)
     }, 10000)
-    
+
     return () => clearInterval(timer)
   }, [])
 
   // Typing animations for the main slogan with 10 second repeat
   const firstLine = useTypingAnimation("Talk with your documents,", 80, 0, 0, animationKey)
-  const secondLine = useTypingAnimation("automate your writing.", 80, 2000, 0, animationKey) // Start after first line completes
+  // Calculate delay based on first line completion time: ~80ms per char * 27 chars = ~2160ms, add buffer
+  const firstLineDuration = "Talk with your documents,".length * 80 + 300
+  // Second line starts after calculated delay (ensures first line completes first)
+  const secondLine = useTypingAnimation("automate your writing.", 80, firstLineDuration, 0, animationKey)
 
   return (
     <section className="relative min-h-screen flex items-center justify-center px-6 overflow-hidden">
@@ -87,36 +90,47 @@ export default function Hero() {
           }`}>
           <span className="block">
             {firstLine.displayedText}
-            {firstLine.displayedText.length > 0 && !firstLine.isComplete && <span className="typing-cursor">|</span>}
+            {!firstLine.isComplete && secondLine.displayedText.length === 0 && (
+              <span key="cursor-1" className="typing-cursor" aria-hidden="true"></span>
+            )}
           </span>
-          <span className="block mt-3 text-brown-medium">
-            {secondLine.displayedText}
-            {secondLine.displayedText.length > 0 && !secondLine.isComplete && <span className="typing-cursor">|</span>}
-          </span>
+          {firstLine.isComplete && (
+            <span className="block mt-3 text-brown-medium">
+              {secondLine.displayedText}
+              {secondLine.displayedText.length > 0 && !secondLine.isComplete && (
+                <span key="cursor-2" className="typing-cursor" aria-hidden="true"></span>
+              )}
+            </span>
+          )}
         </h1>
 
         {/* Subtitle */}
         <p className={`text-lg md:text-xl text-ink/70 mb-12 max-w-3xl mx-auto leading-relaxed transition-all duration-1000 delay-200 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
           }`}>
-          AI that understands all your documents. Write, chat, and discover across your entire knowledge base in one unified workspace.
+          The writing app that understands your entire knowledge base. Write, search, organize, and automate all in one place.
         </p>
 
-        {/* CTA buttons */}
-        <div className={`flex flex-col sm:flex-row gap-4 justify-center transition-all duration-1000 delay-300 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+        {/* CTA Buttons */}
+        <div className={`flex flex-col sm:flex-row gap-4 justify-center transition-all duration-1000 delay-400 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
           }`}>
-          <button className="px-8 py-4 bg-transparent border-2 border-ink/20 text-ink rounded-full text-lg font-medium hover:border-ink/40 hover:bg-ink/5 transition-all duration-300">
-            See How It Works
-          </button>
-          <Link
-            href={session ? "/home" : "/auth/login"}
-            className="px-8 py-4 bg-ink text-paper rounded-full text-lg font-medium hover:bg-ink/90 transition-all duration-300 hover:shadow-xl transform hover:-translate-y-1 active:translate-y-0 border-2 border-ink"
-          >
-            {session ? "Open App" : "Start Writing"}
-          </Link>
+          {session?.user ? (
+            <Link
+              href="/home"
+              className="px-8 py-4 bg-ink text-paper rounded-full text-lg font-medium hover:bg-ink/90 transition-all duration-300 hover:shadow-xl transform hover:-translate-y-1 active:translate-y-0 border-2 border-ink"
+            >
+              Go to Dashboard
+            </Link>
+          ) : (
+            <Link
+              href="/auth/register"
+              className="px-8 py-4 bg-ink text-paper rounded-full text-lg font-medium hover:bg-ink/90 transition-all duration-300 hover:shadow-xl transform hover:-translate-y-1 active:translate-y-0 border-2 border-ink"
+            >
+              Start Writing
+            </Link>
+          )}
         </div>
-
-
       </div>
     </section>
   )
 }
+

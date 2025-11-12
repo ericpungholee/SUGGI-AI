@@ -1,30 +1,34 @@
-'use client'
-import { useState, useCallback } from 'react'
-import { use } from 'react'
-import CursorEditor from '@/components/editor/CursorEditor'
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import ClientOnly from "@/components/ui/ClientOnly";
+import CursorEditor from "@/components/editor/CursorEditor";
 
-export default function EditorPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
-  const [content, setContent] = useState('')
+interface EditorPageProps {
+    params: Promise<{ id: string }>;
+}
 
-  const handleContentChange = useCallback(async (newContent: string) => {
-    setContent(newContent)
+export default async function EditorPage({ params }: EditorPageProps) {
+    const session = await getServerSession(authOptions);
     
-    // Note: The Editor component handles its own saving via saveDocument function
-    // This callback is just for tracking content changes in the parent component
-    console.log('📝 Content changed in parent component:', newContent.substring(0, 100) + '...')
-  }, [id])
+    if (!session?.user) {
+        redirect('/auth/login');
+    }
 
-  return (
-    <div className="h-screen flex flex-col bg-white">
-      {/* Main Editor Area */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Editor */}
-        <CursorEditor 
-          documentId={id} 
-          onContentChange={handleContentChange}
-        />
-      </div>
-    </div>
-  )
+    const { id } = await params;
+
+    return (
+        <div className="h-screen bg-white overflow-hidden">
+            <ClientOnly fallback={
+                <div className="h-full flex items-center justify-center">
+                    <div className="text-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black mx-auto mb-4"></div>
+                        <p className="text-ink/70">Loading editor...</p>
+                    </div>
+                </div>
+            }>
+                <CursorEditor documentId={id} />
+            </ClientOnly>
+        </div>
+    );
 }

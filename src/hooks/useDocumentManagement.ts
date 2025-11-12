@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation'
 
 export const useDocumentManagement = (
     documentId: string,
-    editorRef: React.RefObject<HTMLDivElement>,
+    editorRef: React.RefObject<HTMLDivElement | null>,
     onContentChange?: (content: string) => void
 ) => {
     const router = useRouter()

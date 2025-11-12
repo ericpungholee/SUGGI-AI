@@ -25,7 +25,7 @@ interface RowResizeData {
 }
 
 export const useTableOperations = (
-    editorRef: React.RefObject<HTMLDivElement>,
+    editorRef: React.RefObject<HTMLDivElement | null>,
     saveToUndoStack: (content: string) => void,
     updateFormatState: () => void
 ) => {

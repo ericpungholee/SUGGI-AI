@@ -155,7 +155,7 @@ export class LearnedClassifier {
     // and retrain periodically. For now, we'll just log it.
     console.log(`📝 Feedback: "${query}" should be "${correctIntent}" not "${predictedIntent}"`)
     
-    // TODO: Implement incremental learning or add to retraining queue
+    // Note: Feedback is logged for future model improvements
   }
 
   /**

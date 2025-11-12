@@ -34,7 +34,7 @@ export default function HomePageWrapper({ hasContent, folders, documents }: Home
             />
 
             {/* Content */}
-            <main className="flex-1 overflow-y-auto px-8 py-6">
+            <main className="flex-1 overflow-y-auto px-8 py-6 bg-white">
                 <HomeContent 
                     hasContent={hasContent}
                     folders={folders}

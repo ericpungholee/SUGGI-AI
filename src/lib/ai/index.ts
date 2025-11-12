@@ -4,7 +4,7 @@ export { generateChatCompletion, generateEmbedding, generateEmbeddings } from '.
 export type { ChatMessage, ChatCompletionOptions, EmbeddingOptions } from './core/types'
 
 // Web search services
-export { webSearch, robustWebSearch, fallbackWebSearch } from './services/web-search'
+export { webSearch, fallbackWebSearch } from './services/web-search'
 export type { WebSearchOptions, WebSearchResult, Citation } from './core/types'
 
 // Embedding services
@@ -62,9 +62,6 @@ export type { IntentClassification, RouterContext, RouterFeatures, RouterRespons
 
 export { createRAGOrchestrator, processRAGQuery } from './rag-orchestrator'
 export type { RAGResponse } from './core/types'
-
-// Note: Unified search removed - using specific search implementations instead
-
 
 // MCP Tools
 export { 

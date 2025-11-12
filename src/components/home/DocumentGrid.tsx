@@ -1,11 +1,11 @@
 'use client'
-import { FileText, MoreVertical, Bookmark, Clock, RefreshCw, Trash2, Edit3, Plus } from "lucide-react"
+import { FileText, MoreVertical, Bookmark, Clock, Plus, RefreshCw } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect, useCallback } from "react"
 import { useSession } from "next-auth/react"
-import { useRouter } from "next/navigation"
+import DocumentCard from "@/components/ui/DocumentCard"
 
-interface Document {
+interface DocumentData {
     id: string
     title: string
     preview: string
@@ -16,52 +16,20 @@ interface Document {
 
 interface DocumentGridProps {
     gridDensity?: 'compact' | 'comfortable' | 'spacious'
+    showCreateButton?: boolean
 }
 
-export default function DocumentGrid({ gridDensity = 'comfortable' }: DocumentGridProps) {
-    const [documents, setDocuments] = useState<Document[]>([])
+const gridDensityClasses = {
+    compact: 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3',
+    comfortable: 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4',
+    spacious: 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+}
+
+export default function DocumentGrid({ gridDensity = 'comfortable', showCreateButton = true }: DocumentGridProps) {
+    const [documents, setDocuments] = useState<DocumentData[]>([])
     const [loading, setLoading] = useState(true)
     const [starredDocs, setStarredDocs] = useState<Set<string>>(new Set())
-    const [showMoreOptions, setShowMoreOptions] = useState<string | null>(null)
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
-    const [isDeleting, setIsDeleting] = useState(false)
-    const [mounted, setMounted] = useState(false)
     const { data: session } = useSession()
-    const router = useRouter()
-
-    // Get grid classes based on density
-    const getGridClasses = (density: string) => {
-        switch (density) {
-            case 'compact':
-                return 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-3'
-            case 'comfortable':
-                return 'grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'
-            case 'spacious':
-                return 'grid md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6'
-            default:
-                return 'grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'
-        }
-    }
-
-    // Get card classes based on density
-    const getCardClasses = (density: string) => {
-        const baseClasses = 'group relative bg-white border border-brown-light/20 rounded-xl hover:shadow-md transition-all hover:-translate-0.5'
-        switch (density) {
-            case 'compact':
-                return `${baseClasses} p-3`
-            case 'comfortable':
-                return `${baseClasses} p-5`
-            case 'spacious':
-                return `${baseClasses} p-6`
-            default:
-                return `${baseClasses} p-5`
-        }
-    }
-
-    // Prevent hydration mismatch by only running on client
-    useEffect(() => {
-        setMounted(true)
-    }, [])
 
     const fetchDocuments = useCallback(async () => {
         try {
@@ -70,8 +38,7 @@ export default function DocumentGrid({ gridDensity = 'comfortable' }: DocumentGr
             if (response.ok) {
                 const data = await response.json()
                 setDocuments(data)
-                // Initialize starred state from fetched data
-                const starredIds = new Set<string>(data.filter((doc: Document) => doc.starred).map((doc: Document) => doc.id))
+                const starredIds = new Set<string>(data.filter((doc: DocumentData) => doc.starred).map((doc: DocumentData) => doc.id))
                 setStarredDocs(starredIds)
             } else {
                 console.error('Failed to fetch documents')
@@ -95,7 +62,6 @@ export default function DocumentGrid({ gridDensity = 'comfortable' }: DocumentGr
         
         const isCurrentlyStarred = starredDocs.has(docId)
         
-        // Optimistically update UI
         setStarredDocs(prev => {
             const newSet = new Set(prev)
             if (newSet.has(docId)) {
@@ -106,7 +72,6 @@ export default function DocumentGrid({ gridDensity = 'comfortable' }: DocumentGr
             return newSet
         })
 
-        // Update star status in database via API
         try {
             const response = await fetch(`/api/documents/${docId}`, {
                 method: 'PATCH',
@@ -119,7 +84,6 @@ export default function DocumentGrid({ gridDensity = 'comfortable' }: DocumentGr
             })
 
             if (!response.ok) {
-                // Revert optimistic update on error
                 setStarredDocs(prev => {
                     const newSet = new Set(prev)
                     if (isCurrentlyStarred) {
@@ -132,7 +96,6 @@ export default function DocumentGrid({ gridDensity = 'comfortable' }: DocumentGr
                 console.error('Failed to update star status')
             }
         } catch (error) {
-            // Revert optimistic update on error
             setStarredDocs(prev => {
                 const newSet = new Set(prev)
                 if (isCurrentlyStarred) {
@@ -146,234 +109,113 @@ export default function DocumentGrid({ gridDensity = 'comfortable' }: DocumentGr
         }
     }
 
-    const handleDeleteDocument = async (docId: string) => {
+    const handleDelete = async (docId: string) => {
         try {
-            setIsDeleting(true)
             const response = await fetch(`/api/documents/${docId}`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
+                method: 'DELETE'
             })
-
             if (response.ok) {
-                // Remove document from local state
                 setDocuments(prev => prev.filter(doc => doc.id !== docId))
-                setShowDeleteConfirm(null)
-            } else {
-                const errorData = await response.json()
-                console.error('Failed to delete document:', errorData.error)
-                // You could show an error toast here
             }
         } catch (error) {
             console.error('Error deleting document:', error)
-            // You could show an error toast here
-        } finally {
-            setIsDeleting(false)
         }
-    }
-
-    const handleMoreOptions = (e: React.MouseEvent, docId: string) => {
-        e.preventDefault()
-        e.stopPropagation()
-        // Toggle the more options menu for this specific document
-        setShowMoreOptions(showMoreOptions === docId ? null : docId)
-    }
-
-
-    const handleRefresh = () => {
-        fetchDocuments()
-    }
-
-    const handleCreateDocument = () => {
-        router.push('/editor/new')
-    }
-
-    // Close more options menu when clicking outside
-    useEffect(() => {
-        if (!mounted) return
-        
-        const handleClickOutside = (event: MouseEvent) => {
-            if (showMoreOptions && !(event.target as Element).closest('.more-options-container')) {
-                setShowMoreOptions(null)
-            }
-        }
-
-        document.addEventListener('mousedown', handleClickOutside)
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside)
-        }
-    }, [showMoreOptions, mounted])
-
-    // Don't render until mounted to prevent hydration mismatch
-    if (!mounted) {
-        return (
-            <div className={getGridClasses(gridDensity)}>
-                {[...Array(4)].map((_, i) => (
-                    <div key={i} className={`${getCardClasses(gridDensity)} animate-pulse`}>
-                        <div className='h-5 bg-gray-200 rounded mb-3'></div>
-                        <div className='h-4 bg-gray-200 rounded mb-2'></div>
-                        <div className='h-3 bg-gray-200 rounded'></div>
-                    </div>
-                ))}
-            </div>
-        )
     }
 
     if (loading) {
         return (
-            <div className={getGridClasses(gridDensity)}>
-                {[...Array(4)].map((_, i) => (
-                    <div key={i} className={`${getCardClasses(gridDensity)} animate-pulse`}>
-                        <div className='h-5 bg-gray-200 rounded mb-3'></div>
-                        <div className='h-4 bg-gray-200 rounded mb-2'></div>
-                        <div className='h-3 bg-gray-200 rounded'></div>
+            <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-black pb-4 mb-6">
+                    <h2 className="text-lg font-semibold text-ink">All Documents</h2>
+                    <div className="flex items-center gap-2">
+                        {showCreateButton && (
+                            <Link
+                                href="/editor/new"
+                                className="p-2 text-black/40 hover:text-black transition-colors"
+                                title="Create Document"
+                            >
+                                <Plus className="w-5 h-5" />
+                            </Link>
+                        )}
                     </div>
-                ))}
+                </div>
+                <div className={`grid ${gridDensityClasses[gridDensity]}`}>
+                    {[...Array(6)].map((_, i) => (
+                        <div key={i} className='bg-white border border-black rounded-xl p-5 animate-pulse'>
+                            <div className='h-5 bg-gray-200 rounded mb-3'></div>
+                            <div className='h-4 bg-gray-200 rounded mb-2'></div>
+                            <div className='h-3 bg-gray-200 rounded'></div>
+                        </div>
+                    ))}
+                </div>
             </div>
         )
     }
 
-    if (documents.length === 0) {
+    if (documents.length === 0 && !showCreateButton) {
         return (
-            <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 bg-stone-light rounded-full flex items-center justify-center">
-                    <FileText className="w-8 h-8 text-ink/40" />
+            <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-black pb-4 mb-6">
+                    <h2 className="text-lg font-semibold text-ink">All Documents</h2>
                 </div>
-                <h3 className="text-lg font-medium text-ink/70 mb-2">No documents yet</h3>
-                <p className="text-ink/50 mb-6">Create your first document to get started</p>
-                <button 
-                    onClick={handleCreateDocument}
-                    className="inline-flex items-center gap-2 bg-brown-medium text-white px-4 py-2 rounded-lg hover:bg-brown-dark transition-colors"
-                    style={{ color: 'white' }}
-                >
-                    <Plus className="w-4 h-4" style={{ color: 'white' }} />
-                    <span style={{ color: 'white' }}>Create Document</span>
-                </button>
+                <div className="text-center py-12">
+                    <div className="w-16 h-16 mx-auto mb-4 bg-white border border-black rounded-full flex items-center justify-center">
+                        <FileText className="w-8 h-8 text-black/40" />
+                    </div>
+                    <h3 className="text-lg font-medium text-ink/70 mb-2">No documents yet</h3>
+                    <p className="text-ink/50">Start writing to see your documents here</p>
+                </div>
             </div>
         )
     }
 
     return (
-        <div>
-            {/* Header with new document button */}
-            <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-medium text-ink/70">Documents</h2>
-                <button
-                    onClick={handleCreateDocument}
-                    className="inline-flex items-center justify-center bg-white w-12 h-12 rounded-lg hover:bg-gray-100 transition-colors shadow-sm border border-gray-200"
-                    title="Create New Document"
-                    style={{ backgroundColor: 'white', borderColor: '#e5e7eb' }}
-                >
-                    <Plus className="w-6 h-6 text-black" style={{ color: 'black' }} />
-                </button>
-            </div>
-            
-            {/* Documents grid */}
-            <div className={getGridClasses(gridDensity)}>
-                {documents.map((doc) => (
-                    <div key={doc.id} className={getCardClasses(gridDensity)}>
-                        <div className='flex items-start justify-between mb-3'>
-                            <FileText className='w-5 h-5 text-brown-medium' />
-                            <div className='flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity'>
-                                <button
-                                    onClick={(e) => toggleStar(doc.id, e)}
-                                    className="p-1 hover:bg-stone-light rounded transition-colors"
-                                    type="button"
-                                >
-                                    <Bookmark className={`w-4 h-4 ${starredDocs.has(doc.id) ? 'fill-black text-black' : 'text-ink/40'}`} />
-                                </button>
-                                <button
-                                    onClick={(e) => handleMoreOptions(e, doc.id)}
-                                    className="p-1 hover:bg-stone-light rounded transition-colors"
-                                    type="button"
-                                >
-                                    <MoreVertical className='w-4 h-4 text-ink/40' />
-                                </button>
-                            </div>
-                        </div>
-                        
-                        {/* More Options Menu */}
-                        {showMoreOptions === doc.id && (
-                            <div className="more-options-container absolute top-12 right-2 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-32">
-                                <div className="py-1">
-                                    <Link
-                                        href={`/editor/${doc.id}`}
-                                        className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                                    >
-                                        <Edit3 className="w-4 h-4" />
-                                        Edit
-                                    </Link>
-                                    <button
-                                        onClick={() => {
-                                            setShowMoreOptions(null) // Close the menu
-                                            setShowDeleteConfirm(doc.id) // Show delete confirmation
-                                        }}
-                                        className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors w-full text-left"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                        Delete
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                        
-                        <Link href={`/editor/${doc.id}`} className="block">
-                            <h3 className="font-medium text-ink mb-2 line-clamp-1 hover:text-brown-medium transition-colors">{doc.title}</h3>
-                            <p className="text-sm text-ink/60 mb-3 line-clamp-2">{doc.preview}</p>
-                            <div className="flex items-center justify-between text-xs text-ink/40">
-                                <div className="flex items-center gap-1">
-                                    <Clock className='w-3 h-3' />
-                                    <span>{doc.lastModified}</span>
-                                </div>
-                                <span>{doc.wordCount} words</span>
-                            </div>
+        <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-black pb-4 mb-6">
+                <h2 className="text-lg font-semibold text-ink">All Documents</h2>
+                <div className="flex items-center gap-2">
+                    {showCreateButton && (
+                        <Link
+                            href="/editor/new"
+                            className="p-2 text-black/40 hover:text-black transition-colors"
+                            title="Create Document"
+                        >
+                            <Plus className="w-5 h-5" />
                         </Link>
-                    </div>
+                    )}
+                    <button
+                        onClick={() => fetchDocuments()}
+                        className="p-2 text-black/40 hover:text-black transition-colors"
+                        title="Refresh"
+                    >
+                        <RefreshCw className="w-5 h-5" />
+                    </button>
+                </div>
+            </div>
+            <div className={`grid ${gridDensityClasses[gridDensity]}`}>
+                {showCreateButton && (
+                    <Link
+                        href="/editor/new"
+                        className="bg-white border-2 border-dashed border-black rounded-xl p-6 hover:border-black hover:bg-gray-50 transition-colors flex flex-col items-center justify-center min-h-[120px] group"
+                    >
+                        <Plus className="w-8 h-8 text-black mb-2" />
+                    </Link>
+                )}
+                {documents.map((doc) => (
+                    <DocumentCard
+                        key={doc.id}
+                        id={doc.id}
+                        title={doc.title}
+                        preview={doc.preview || ''}
+                        lastModified={doc.lastModified}
+                        wordCount={doc.wordCount}
+                        starred={starredDocs.has(doc.id)}
+                        onToggleStar={toggleStar}
+                        onDelete={handleDelete}
+                    />
                 ))}
             </div>
-
-            {/* Delete Confirmation Modal */}
-            {showDeleteConfirm && (
-                <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl p-6 max-w-md mx-4 shadow-2xl border border-gray-200 transform transition-all duration-200 scale-100">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                                <Trash2 className="w-5 h-5 text-red-600" />
-                            </div>
-                            <h3 className="text-lg font-semibold text-gray-900">Delete Document</h3>
-                        </div>
-                        <p className="text-gray-600 mb-6">
-                            Are you sure you want to delete this document? This action cannot be undone.
-                        </p>
-                        <div className="flex gap-3 justify-end">
-                            <button
-                                onClick={() => setShowDeleteConfirm(null)}
-                                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors font-medium"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={() => handleDeleteDocument(showDeleteConfirm)}
-                                disabled={isDeleting}
-                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium"
-                            >
-                                {isDeleting ? (
-                                    <>
-                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                        Deleting...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Trash2 className="w-4 h-4" />
-                                        Delete Document
-                                    </>
-                                )}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     )
 }
+

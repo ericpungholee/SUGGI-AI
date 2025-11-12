@@ -142,7 +142,7 @@ export class RAGOrchestrator {
       if (useWeb && this.options.enableWebSearch) {
         // Extract search terms from the user prompt, removing writing instructions
         const searchQuery = await this.extractSearchTerms(ask)
-        webResults = await this.performWebSearch(searchQuery, this.options.webSearchTimeout!)
+        webResults = await this.searchWeb(searchQuery)
       }
 
       // 5. Build evidence bundle
@@ -236,21 +236,6 @@ export class RAGOrchestrator {
     return lowConfidence || poorCoverage
   }
 
-  /**
-   * Perform web search with timeout
-   */
-  private async performWebSearch(query: string, timeoutMs: number): Promise<any[]> {
-    try {
-      // Use a simple web search implementation
-      // For production, you'd want to use a proper search API like SerpAPI, Google Custom Search, etc.
-      const searchResults = await this.searchWeb(query)
-      
-      return searchResults
-    } catch (error) {
-      console.error('Web search failed:', error)
-      return []
-    }
-  }
 
   /**
    * Extract search terms from user prompt, removing writing instructions
@@ -346,7 +331,7 @@ Return only the search terms:`
         includeImages: false,
         searchRegion: 'US',
         language: 'en',
-        timeoutMs: 20000 // Reduced timeout
+        timeoutMs: 60000 // Extended timeout for GPT-5
       })
       
       console.log('✅ Web search completed, found', result.citations.length, 'citations')

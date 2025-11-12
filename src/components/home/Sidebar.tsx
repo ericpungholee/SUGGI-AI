@@ -1,108 +1,104 @@
 'use client'
-import Link from 'next/link'
-import { useRouter, usePathname } from 'next/navigation'
-import { Home, FileText, Folder, Clock, Bookmark, Settings, Plus, User, LogOut, Feather } from 'lucide-react'
-import { useState } from 'react'
+
 import { useSession, signOut } from 'next-auth/react'
+import { usePathname, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { 
+  Home, 
+  FileText, 
+  Folder, 
+  Star, 
+  Clock, 
+  Search, 
+  Settings,
+  LogOut,
+  User,
+  Feather
+} from 'lucide-react'
+
+const navigation = [
+  { name: 'Home', href: '/home', icon: Home },
+  { name: 'Documents', href: '/documents', icon: FileText },
+  { name: 'Folders', href: '/folders', icon: Folder },
+  { name: 'Starred', href: '/starred', icon: Star },
+  { name: 'Recent', href: '/recent', icon: Clock },
+  { name: 'Search', href: '/search', icon: Search },
+  { name: 'Settings', href: '/settings', icon: Settings },
+]
 
 export default function Sidebar() {
-  const [isCollapsed, setIsCollapsed] = useState(false)
-  const router = useRouter()
-  const pathname = usePathname()
   const { data: session } = useSession()
+  const pathname = usePathname()
+  const router = useRouter()
 
-  const menuItems = [
-    { icon: Home, label: 'Home', href: '/home' },
-    { icon: Folder, label: 'Folders', href: '/folders' },
-    { icon: FileText, label: 'Documents', href: '/documents' },
-    { icon: Clock, label: 'Recent', href: '/recent' },
-    { icon: Bookmark, label: 'Saved', href: '/starred' },
-    { icon: Settings, label: 'Settings', href: '/settings' },
-  ]
-
-  const handleNewDocument = () => {
-    // Navigate to the editor with 'new' route - ID will be generated server-side
-    router.push('/editor/new')
+  const handleSignOut = async () => {
+    await signOut({ redirect: false })
+    router.push('/auth/login')
   }
 
   return (
-    <aside className={`${
-      isCollapsed ? 'w-16' : 'w-64'
-    } bg-white border-r border-brown-light/20 flex flex-col transition-all duration-300`}>
-      {/* Logo */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-brown-light/20">
-        <Link href={session ? "/home" : "/"} className={`flex items-center gap-2 ${isCollapsed ? 'hidden' : 'flex'}`}>
-          <Feather className="w-6 h-6 text-brown-medium" />
-          <span className="font-serif text-2xl text-ink">Suggi</span>
+    <aside className="w-64 bg-white border-r border-black flex flex-col h-full">
+      {/* Logo/Header */}
+      <div className="h-16 border-b border-black flex items-center px-6">
+        <Link href="/home" className="flex items-center gap-2">
+          <Feather className="w-8 h-8 text-brown-medium" />
+          <span className="text-3xl font-serif text-ink">Suggi</span>
         </Link>
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-2 hover:bg-stone-light rounded-lg transition-all duration-300 hover:shadow-md transform hover:scale-105 active:scale-95"
-        >
-          <svg className="w-5 h-5 text-ink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </button>
       </div>
-
-      {/* New Document Button */}
-      <div className="p-4">
-        <button 
-          onClick={handleNewDocument}
-          className={`w-full flex items-center justify-center gap-2 px-4 py-3 bg-ink text-paper rounded-xl hover:bg-ink/90 transition-all duration-300 hover:shadow-xl transform hover:-translate-y-1 active:translate-y-0 ${
-            isCollapsed ? 'px-3' : ''
-          }`}>
-          <Plus className="w-5 h-5" />
-          {!isCollapsed && <span>New Document</span>}
-        </button>
-      </div>
-
-
 
       {/* Navigation */}
-      <nav className="flex-1 px-2">
-        {menuItems.map((item, index) => {
-          const Icon = item.icon
-          const isActive = pathname === item.href
-          return (
-            <Link
-              key={index}
-              href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 mb-1 rounded-lg transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 ${
-                isActive 
-                  ? 'bg-stone-light text-ink shadow-md' 
-                  : 'text-ink/60 hover:bg-stone-light/50 hover:text-ink hover:shadow-sm'
-              }`}
-            >
-              <Icon className="w-5 h-5 flex-shrink-0" />
-              {!isCollapsed && <span>{item.label}</span>}
-            </Link>
-          )
-        })}
+      <nav className="flex-1 overflow-y-auto px-4 py-4">
+        <ul className="space-y-1">
+          {navigation.map((item) => {
+            const Icon = item.icon
+            const isActive = pathname === item.href || 
+              (item.href !== '/home' && pathname?.startsWith(item.href))
+            
+            return (
+              <li key={item.name}>
+                <Link
+                  href={item.href}
+                  className={`
+                    flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+                    ${isActive 
+                      ? 'bg-ink text-white' 
+                      : 'text-ink/70 hover:bg-stone-light hover:text-ink'
+                    }
+                  `}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span>{item.name}</span>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
       </nav>
 
-      {/* User Profile & Sign Out */}
-      <div className="p-4 border-t border-brown-light/20">
-        {session?.user && (
-          <div className="flex items-center gap-3 mb-3 px-3">
-            <div className="w-8 h-8 bg-brown-light/30 rounded-full flex items-center justify-center">
-              <User className="w-4 h-4 text-ink" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-ink truncate">{session.user.name}</p>
-              <p className="text-xs text-ink/60 truncate">{session.user.email}</p>
-            </div>
+      {/* User Section */}
+      <div className="border-t border-black p-4">
+        <div className="flex items-center gap-3 mb-3 px-2">
+          <div className="w-8 h-8 rounded-full bg-brown-light flex items-center justify-center">
+            <User className="w-5 h-5 text-ink/70" />
           </div>
-        )}
-        
-        <button 
-          onClick={() => signOut({ callbackUrl: '/' })}
-          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-ink/60 hover:bg-stone-light/50 hover:text-ink transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 hover:shadow-sm"
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-ink truncate">
+              {session?.user?.name || session?.user?.email || 'User'}
+            </p>
+            <p className="text-xs text-ink/60 truncate">
+              {session?.user?.email}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={handleSignOut}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-ink/70 hover:bg-stone-light hover:text-ink transition-colors"
         >
           <LogOut className="w-5 h-5" />
-          {!isCollapsed && <span>Sign out</span>}
+          <span>Sign Out</span>
         </button>
       </div>
     </aside>
   )
 }
+
