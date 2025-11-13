@@ -2,19 +2,21 @@
 .agent-text-block {
   position: relative;
   transition: all 0.3s ease;
+  pointer-events: auto;
+  display: inline;
 }
 
 .agent-text-block[data-is-approved="false"] {
-  color: #6b7280;
-  background: rgba(107, 114, 128, 0.1);
-  border-bottom: 1px solid #d1d5db;
-  padding: 2px 4px;
-  border-radius: 3px;
+  color: #6b7280 !important;
+  background: rgba(107, 114, 128, 0.08) !important;
+  border-bottom: 1px solid #d1d5db !important;
+  padding: 2px 0 !important;
+  border-radius: 2px !important;
+  transition: all 0.3s ease !important;
 }
 
 .agent-text-block[data-is-approved="false"]:hover {
-  background: rgba(107, 114, 128, 0.15);
-  transform: scale(1.02);
+  background: rgba(107, 114, 128, 0.12) !important;
 }
 
 .agent-text-block[data-is-approved="true"] {
@@ -56,6 +58,17 @@
   max-width: 80%;
   word-wrap: break-word;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Ensure editor is always interactive */
+[contenteditable="true"] {
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 1;
+}
+
+[contenteditable="true"] * {
+  pointer-events: auto;
 }
 
 .agent-text-overlay.pending {

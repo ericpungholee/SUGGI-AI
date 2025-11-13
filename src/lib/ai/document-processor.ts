@@ -129,7 +129,7 @@ export async function processAllUserDocuments(
 }
 
 // Utility functions for content extraction
-function extractTextFromContent(content: any): string {
+export function extractTextFromContent(content: any): string {
   if (typeof content === 'string') {
     return content
   }

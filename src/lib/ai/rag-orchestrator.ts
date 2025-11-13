@@ -1,6 +1,9 @@
 import { ragAdapter, RagChunk, buildEvidenceBundle } from './rag-adapter'
 import { routerService } from './router-service'
 import { RouterContext } from './intent-schema'
+import { generateChatCompletion } from './openai'
+import { getChatModel, getRoutingModel } from './core/models'
+
 // Types and interfaces
 interface InstructionJSON {
   task: string
@@ -15,8 +18,6 @@ interface VerificationResult {
   issues: string[]
   suggestions: string[]
 }
-import { generateChatCompletion } from './openai'
-import { getChatModel, getRoutingModel } from './core/models'
 
 export interface RAGOrchestratorOptions {
   userId: string
@@ -418,71 +419,6 @@ Return only the search terms:`
   }
 
   /**
-   * Check if query is relevant to user's documents using LLM
-   */
-  private async isQueryRelevantToDocuments(query: string, routerResult: any): Promise<boolean> {
-    try {
-      // Skip relevance check for certain task types that should always use web search
-      if (routerResult.classification.intent === 'web_search') {
-        return false
-      }
-
-      // Check if query is asking for current information that wouldn't be in documents
-      const currentInfoKeywords = [
-        'current', 'latest', 'recent', 'today', 'now', '2024', '2025',
-        'news', 'stock', 'price', 'market', 'financial', 'earnings',
-        'weather', 'time', 'date', 'live', 'real-time', 'real data'
-      ]
-      
-      const lowerQuery = query.toLowerCase()
-      const hasCurrentInfoKeywords = currentInfoKeywords.some(keyword => lowerQuery.includes(keyword))
-      
-      if (hasCurrentInfoKeywords) {
-        return false
-      }
-
-      // Use LLM to determine relevance
-      const relevancePrompt = `Analyze if this user query is asking about content that would likely be found in personal documents, notes, or files that the user has uploaded to their knowledge base.
-
-User Query: "${query}"
-
-Consider:
-- Is this asking about personal content, documents, or files?
-- Is this asking about general knowledge that wouldn't be in personal documents?
-- Is this asking for current information, news, or real-time data?
-- Is this asking for creative writing, analysis, or general conversation?
-
-Respond with ONLY "true" if the query is likely about personal documents/content, or "false" if it's about general knowledge, current events, or doesn't relate to personal documents.
-
-Examples:
-- "What did I write about Tesla?" → true
-- "Summarize my notes on AI" → true  
-- "What's the current Tesla stock price?" → false
-- "Write a story about robots" → false
-- "Give me an analysis on Tesla stock using real data" → false
-- "What's the weather today?" → false
-- "Create a table" → false (general writing, not document editing)
-- "Edit this paragraph" → true (document editing)
-- "Rewrite this section" → true (document editing)`
-
-      const response = await generateChatCompletion([
-        { role: 'user', content: relevancePrompt }
-      ], {
-        model: getRoutingModel(),
-        temperature: 0.1,
-        max_tokens: 10
-      })
-
-      const result = response.choices[0]?.message?.content?.trim().toLowerCase()
-      return result === 'true'
-    } catch (error) {
-      console.error('Error checking query relevance:', error)
-      // Default to true to be safe and use RAG
-      return true
-    }
-  }
-
-  /**
    * Calculate coverage based on unique sections
    */
   private calculateCoverage(chunks: RagChunk[]): number {
@@ -566,7 +502,7 @@ function verifyInstruction(instruction: InstructionJSON): VerificationResult {
     suggestions.push('Provide a clear task description')
   }
   
-  if (instruction.context_refs.length === 0) {
+  if (instruction.context_refs && instruction.context_refs.length === 0) {
     suggestions.push('Consider adding context references')
   }
   

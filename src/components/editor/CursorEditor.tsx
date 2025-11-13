@@ -2,7 +2,6 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { FormatState } from "@/types"
 import AIChatPanel from './AIChatPanel'
-import DirectEditManager from './DirectEditManager'
 import EditorToolbar from './EditorToolbar'
 import TableManager from './TableManager'
 import { useDocumentManagement } from '@/hooks/useDocumentManagement'
@@ -19,6 +18,8 @@ import {
     applyFontFamily 
 } from '@/lib/editor/formatting-utils'
 import { Trash2 } from "lucide-react"
+import { useAgentEditManager } from './AgentEditManager'
+import { formatAIContent } from './utils/aiContentFormatter'
 import './table-styles.css'
 import './agent-text-styles.css'
 
@@ -29,12 +30,11 @@ export default function CursorEditor({
   documentId: string
   onContentChange?: (content: string) => void
 }) {
-  // Direct reference to DirectEditManager
-  const directEditManagerRef = useRef<any>(null)
   const editorRef = useRef<HTMLDivElement>(null)
+  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   // isUpdatingContentRef is now managed by useDocumentManagement hook
-  const [undoStack, setUndoStack] = useState<string[]>([])
-  const [redoStack, setRedoStack] = useState<string[]>([])
+  const [undoStack, setUndoStack] = useState<Array<{ content: string; cursorPos: number | null }>>([])
+  const [redoStack, setRedoStack] = useState<Array<{ content: string; cursorPos: number | null }>>([])
   // isUndoRedo state removed - not used
   const [formatState, setFormatState] = useState<FormatState>({
     bold: false,
@@ -65,11 +65,71 @@ export default function CursorEditor({
 
   // Navigation is handled by useDocumentManagement hook
 
+  // Save cursor position before content change
+  const saveCursorPosition = useCallback(() => {
+    const selection = window.getSelection()
+    if (!selection || selection.rangeCount === 0 || !editorRef.current) return null
+    
+    const range = selection.getRangeAt(0)
+    const preCaretRange = range.cloneRange()
+    preCaretRange.selectNodeContents(editorRef.current)
+    preCaretRange.setEnd(range.endContainer, range.endOffset)
+    const caretOffset = preCaretRange.toString().length
+    
+    return caretOffset
+  }, [])
+
+  // Restore cursor position after content change
+  const restoreCursorPosition = useCallback((offset: number) => {
+    if (!editorRef.current) return
+    
+    const selection = window.getSelection()
+    if (!selection) return
+    
+    const range = document.createRange()
+    let currentOffset = 0
+    const walker = document.createTreeWalker(
+      editorRef.current,
+      NodeFilter.SHOW_TEXT,
+      null
+    )
+    
+    let node: Text | null = null
+    while (node = walker.nextNode() as Text | null) {
+      const nodeLength = node.textContent?.length || 0
+      if (currentOffset + nodeLength >= offset) {
+        range.setStart(node, offset - currentOffset)
+        range.setEnd(node, offset - currentOffset)
+        selection.removeAllRanges()
+        selection.addRange(range)
+        return
+      }
+      currentOffset += nodeLength
+    }
+    
+    // Fallback to end
+    range.selectNodeContents(editorRef.current)
+    range.collapse(false)
+    selection.removeAllRanges()
+    selection.addRange(range)
+  }, [])
+
   // Save content to undo stack
   const saveToUndoStack = useCallback((newContent: string) => {
-    setUndoStack(prev => [...prev, newContent].slice(-50))
+    if (!editorRef.current) return
+    
+    const cursorPos = saveCursorPosition()
+    
+    // Only save if content actually changed
+    setUndoStack(prev => {
+      const lastState = prev[prev.length - 1]
+      if (lastState && lastState.content === newContent) {
+        return prev // Don't add duplicate
+      }
+      return [...prev, { content: newContent, cursorPos }].slice(-50)
+    })
     setRedoStack([])
-  }, [])
+  }, [saveCursorPosition])
 
   // Update format state based on current selection
   const updateFormatState = useCallback(() => {
@@ -182,114 +242,61 @@ export default function CursorEditor({
     }
   })
 
-  // Handle content changes (moved to onInput handler to prevent loops)
+  // Agent edit manager for handling AI-generated edits
+  const agentEditManager = useAgentEditManager(editorRef, (newContent: string) => {
+    // Save to undo stack
+    saveToUndoStack(newContent)
+    updateFormatState()
+    // Notify parent
+    if (onContentChange) {
+      onContentChange(newContent)
+    }
+  })
 
-  // Handle applying AI-generated content through approval workflow
+  // Handle applying AI-generated content using AgentEditManager
   const handleApplyChanges = useCallback((contentToApply: string, cursorPosition?: string) => {
-    if (!editorRef.current) return
+    if (!agentEditManager) return
     
-    console.log('✍️ Applying AI content to editor (pending approval):', contentToApply.substring(0, 100) + '...')
-    
-    // Determine anchor position based on cursor position
-    let anchor: 'cursor' | 'end' | 'selection' = 'end'
-    if (cursorPosition === 'beginning') {
-      anchor = 'cursor'
-    } else if (cursorPosition === 'selection') {
-      anchor = 'selection'
-    } else if (cursorPosition === 'middle') {
-      anchor = 'cursor'
-    } else {
-      anchor = 'end'
-    }
-    
-    // Use DirectEditManager for consistent content insertion
-    console.log('🔍 DirectEditManager status:', {
-      hasRef: !!directEditManagerRef.current,
-      hasStartEdit: !!directEditManagerRef.current?.startEdit,
-      contentLength: contentToApply.length,
-      anchor
-    })
-    
-    if (directEditManagerRef.current && directEditManagerRef.current.startEdit) {
-      console.log('🚀 Using DirectEditManager with anchor:', anchor)
-      directEditManagerRef.current.startEdit(contentToApply, anchor)
-    } else {
-      console.error('❌ DirectEditManager not ready - content insertion failed', {
-        hasRef: !!directEditManagerRef.current,
-        hasStartEdit: !!directEditManagerRef.current?.startEdit
-      })
-      // Show error message to user
-      const errorMessage = 'Content generation failed - please try again.'
-      console.error('Content insertion failed:', errorMessage)
-    }
-  }, [])
-
-  // Content insertion is now handled by DirectEditManager for consistency
-
-
-  // Format AI content with proper structure
-  const formatAIContent = useCallback((content: string): string => {
-    // Convert markdown-like content to properly formatted HTML
-    if (!content.includes('<')) {
-      let formattedContent = content
+    // Handle delete all command - use AgentEditManager for pending state
+    if (contentToApply === '' || contentToApply.trim() === '') {
+      // Store original content before delete
+      const originalContent = editorRef.current?.innerHTML || ''
       
-      // Convert headings
-      formattedContent = formattedContent.replace(/^## (.+)$/gm, '<h2>$1</h2>')
-      formattedContent = formattedContent.replace(/^# (.+)$/gm, '<h1>$1</h1>')
-      
-      // Convert bullet points
-      formattedContent = formattedContent.replace(/^- (.+)$/gm, '<li>$1</li>')
-      formattedContent = formattedContent.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
-      
-      // Convert numbered lists
-      formattedContent = formattedContent.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
-      formattedContent = formattedContent.replace(/(<li>.*<\/li>)/gs, '<ol>$1</ol>')
-      
-      // Convert bold text
-      formattedContent = formattedContent.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      
-      // Convert italic text
-      formattedContent = formattedContent.replace(/\*(.+?)\*/g, '<em>$1</em>')
-      
-      // Split by double newlines to create paragraphs, but preserve HTML elements
-      const sections = formattedContent.split(/\n\s*\n/).filter(s => s.trim())
-      const processedSections = sections.map(section => {
-        const trimmed = section.trim()
-        
-        // Skip if already an HTML element
-        if (trimmed.startsWith('<h1>') || trimmed.startsWith('<h2>') || 
-            trimmed.startsWith('<ul>') || trimmed.startsWith('<ol>')) {
-          return trimmed
+      // Use AgentEditManager to apply delete in pending state
+      const editId = (agentEditManager as any).applyDeleteAll?.(originalContent)
+      if (editId) {
+        // Store edit ID in editor ref for chat panel access
+        if (editorRef.current) {
+          (editorRef.current as any).lastAgentEditId = editId
         }
-        
-        // Wrap in paragraph if it's plain text
-        return `<p>${trimmed}</p>`
-      })
+        return editId
+      }
       
-      return processedSections.join('')
+      // Fallback: if applyDeleteAll doesn't exist, just clear (but this shouldn't happen)
+      if (editorRef.current) {
+        editorRef.current.innerHTML = ''
+        saveToUndoStack('')
+        updateFormatState()
+        if (onContentChange) {
+          onContentChange('')
+        }
+      }
+      return ''
     }
     
-    return content
-  }, [])
-
-
-  // Handle reverting changes from AI
-  const handleRevertChanges = useCallback(() => {
-    console.log('🔄 Reverting AI changes - removing pending content')
+    // Format content if needed (convert markdown to HTML)
+    const formattedContent = formatAIContent(contentToApply)
     
-    // Use direct reference to DirectEditManager
-    if (directEditManagerRef.current && directEditManagerRef.current.rejectAllProposals) {
-      directEditManagerRef.current.rejectAllProposals()
-      console.log('✅ Used DirectEditManager to reject all proposals')
-    } else if (editorRef.current) {
-      // Fallback: direct DOM manipulation
-      const pendingElements = editorRef.current.querySelectorAll('.agent-text-block[data-is-approved="false"]')
-      pendingElements.forEach(element => {
-        element.remove()
-      })
-      console.log('✅ Removed all pending AI content')
+    // Apply edit using AgentEditManager (will show in gray)
+    const editId = agentEditManager.applyEdit(formattedContent, cursorPosition)
+    
+    // Store edit ID in editor ref for chat panel access
+    if (editorRef.current) {
+      (editorRef.current as any).lastAgentEditId = editId
     }
-  }, [])
+    
+    return editId
+  }, [agentEditManager, saveToUndoStack, updateFormatState, onContentChange, editorRef])
 
 
 
@@ -377,37 +384,76 @@ export default function CursorEditor({
     editorRef.current.focus()
   }, [saveToUndoStack, updateFormatState, onContentChange])
 
-  // Undo/Redo functionality
+  // Undo/Redo functionality with cursor preservation
   const undo = useCallback(() => {
-    if (undoStack.length === 0 || !editorRef.current) return
+    if (undoStack.length <= 1 || !editorRef.current) return // Need at least 2 items (current + previous)
     
     const currentContent = editorRef.current.innerHTML
-    const previousContent = undoStack[undoStack.length - 1]
+    const currentCursorPos = saveCursorPosition()
+    const previousState = undoStack[undoStack.length - 1]
     
-    setRedoStack(prev => [...prev, currentContent])
+    // Save current state to redo stack
+    setRedoStack(prev => [...prev, { content: currentContent, cursorPos: currentCursorPos }])
+    
+    // Remove last state from undo stack
     setUndoStack(prev => prev.slice(0, -1))
     
+    // Update editor content
     isUpdatingContentRef.current = true
-    editorRef.current.innerHTML = previousContent
+    editorRef.current.innerHTML = previousState.content
     isUpdatingContentRef.current = false
     
-    updateFormatState()
-  }, [undoStack, updateFormatState])
+    // Restore cursor position
+    requestAnimationFrame(() => {
+      if (previousState.cursorPos !== null) {
+        restoreCursorPosition(previousState.cursorPos)
+      } else {
+        // If no cursor pos saved, place at end
+        const range = document.createRange()
+        range.selectNodeContents(editorRef.current!)
+        range.collapse(false)
+        const selection = window.getSelection()
+        selection?.removeAllRanges()
+        selection?.addRange(range)
+      }
+      updateFormatState()
+    })
+  }, [undoStack, saveCursorPosition, restoreCursorPosition, updateFormatState])
 
   const redo = useCallback(() => {
     if (redoStack.length === 0 || !editorRef.current) return
     
-    const nextContent = redoStack[redoStack.length - 1]
+    const currentContent = editorRef.current.innerHTML
+    const currentCursorPos = saveCursorPosition()
+    const nextState = redoStack[redoStack.length - 1]
     
-    setUndoStack(prev => [...prev, editorRef.current!.innerHTML])
+    // Save current state to undo stack
+    setUndoStack(prev => [...prev, { content: currentContent, cursorPos: currentCursorPos }])
+    
+    // Remove last state from redo stack
     setRedoStack(prev => prev.slice(0, -1))
     
+    // Update editor content
     isUpdatingContentRef.current = true
-    editorRef.current.innerHTML = nextContent
+    editorRef.current.innerHTML = nextState.content
     isUpdatingContentRef.current = false
     
-    updateFormatState()
-  }, [redoStack, updateFormatState])
+    // Restore cursor position
+    requestAnimationFrame(() => {
+      if (nextState.cursorPos !== null) {
+        restoreCursorPosition(nextState.cursorPos)
+      } else {
+        // If no cursor pos saved, place at end
+        const range = document.createRange()
+        range.selectNodeContents(editorRef.current!)
+        range.collapse(false)
+        const selection = window.getSelection()
+        selection?.removeAllRanges()
+        selection?.addRange(range)
+      }
+      updateFormatState()
+    })
+  }, [redoStack, saveCursorPosition, restoreCursorPosition, updateFormatState])
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -449,20 +495,8 @@ export default function CursorEditor({
       }
     }
     
-    // Handle Enter key for lists
-    if (e.key === 'Enter') {
-      const selection = window.getSelection()
-      if (!selection || selection.rangeCount === 0) return
-      
-      const range = selection.getRangeAt(0)
-      const container = range.startContainer
-      const element = container.nodeType === Node.ELEMENT_NODE ? container as Element : container.parentElement
-      
-      if (element?.closest('li')) {
-        e.preventDefault()
-        // Let the browser handle list continuation
-      }
-    }
+    // Don't interfere with normal editing keys - let browser handle them
+    // Delete, Backspace, Enter, Arrow keys, etc. should work normally
   }, [undo, redo, handleFormat, handleManualSave])
 
   // Document management hook is now declared above
@@ -477,20 +511,56 @@ export default function CursorEditor({
     await handleDeleteDocument()
   }, [handleDeleteDocument])
 
-  // Load document content
+  // Load document content - only on initial load or document change
+  const previousDocumentIdRef = useRef<string>(documentId)
+  const isInitializedRef = useRef<boolean>(false)
+  
   useEffect(() => {
-    if (content && editorRef.current && !isUpdatingContentRef.current) {
+    // Only update if document ID changed (new document loaded)
+    if (previousDocumentIdRef.current !== documentId) {
+      previousDocumentIdRef.current = documentId
+      isInitializedRef.current = false
+      if (content && editorRef.current) {
+        isUpdatingContentRef.current = true
+        editorRef.current.innerHTML = content
+        isUpdatingContentRef.current = false
+        
+        // Initialize undo stack with initial content
+        setUndoStack([{ content, cursorPos: null }])
+        setRedoStack([])
+        
+        updateFormatState()
+      }
+    }
+  }, [documentId, updateFormatState])
+  
+  // Initialize editor with content on mount
+  useEffect(() => {
+    if (content && editorRef.current && !isInitializedRef.current && !isUpdatingContentRef.current) {
       isUpdatingContentRef.current = true
       editorRef.current.innerHTML = content
       isUpdatingContentRef.current = false
+      isInitializedRef.current = true
       
-      // Initialize undo stack
-      setUndoStack([content])
+      // Initialize undo stack with initial content
+      setUndoStack([{ content, cursorPos: null }])
       setRedoStack([])
       
-      updateFormatState()
+      // Focus editor after a brief delay
+      setTimeout(() => {
+        if (editorRef.current) {
+          editorRef.current.focus()
+          // Place cursor at end
+          const range = document.createRange()
+          range.selectNodeContents(editorRef.current)
+          range.collapse(false)
+          const selection = window.getSelection()
+          selection?.removeAllRanges()
+          selection?.addRange(range)
+        }
+      }, 100)
     }
-  }, [content, updateFormatState])
+  }, [content])
 
   // Table operations
   const tableOps = useTableOperations(
@@ -546,47 +616,89 @@ export default function CursorEditor({
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
         {/* Editor */}
-        <div className="flex-1 flex flex-col">
-          <div
-            ref={editorRef}
-            contentEditable
-            dir="ltr"
-            className="flex-1 p-6 overflow-y-auto focus:outline-none text-gray-900 leading-relaxed"
-            style={{
-              fontSize: '16px',
-              lineHeight: '1.6',
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              direction: 'ltr',
-              textAlign: 'left'
-            }}
-            onInput={(e) => {
-              if (isUpdatingContentRef.current) return
-              
-              const target = e.target as HTMLDivElement
-              const newContent = target.innerHTML
-              
-              // Mark that user is actively typing
-              markUserTyping()
-              
-              // Save to undo stack
-              saveToUndoStack(newContent)
-              
-              // Update format state
-              updateFormatState()
-              
-              // Don't update content state immediately to prevent cursor issues
-              // The markUserTyping() will handle content sync after user stops typing
-              
-              // Call parent callback
-              if (onContentChange) {
-                onContentChange(newContent)
-              }
-            }}
-            onKeyDown={handleKeyDown}
-            onMouseUp={updateFormatState}
-            onKeyUp={updateFormatState}
-            suppressContentEditableWarning={true}
-          />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
+            <div className="flex justify-center">
+              <div
+                ref={editorRef}
+                contentEditable
+                dir="ltr"
+              className="w-full max-w-4xl px-8 py-6 focus:outline-none text-gray-900 leading-relaxed"
+              style={{
+                fontSize: '16px',
+                lineHeight: '1.6',
+                fontFamily: 'system-ui, -apple-system, sans-serif',
+                minHeight: '100%',
+                pointerEvents: 'auto',
+                position: 'relative',
+                zIndex: 1,
+                caretColor: '#000000',
+                cursor: 'text'
+              }}
+              onClick={(e) => {
+                // Ensure editor gets focus on click
+                if (editorRef.current && document.activeElement !== editorRef.current) {
+                  editorRef.current.focus()
+                }
+              }}
+              onFocus={(e) => {
+                // Ensure cursor is visible when focused
+                const selection = window.getSelection()
+                if (selection && selection.rangeCount === 0) {
+                  const range = document.createRange()
+                  range.selectNodeContents(e.currentTarget)
+                  range.collapse(false)
+                  selection.addRange(range)
+                }
+              }}
+              onInput={(e) => {
+                if (isUpdatingContentRef.current) return
+                
+                const target = e.target as HTMLDivElement
+                const newContent = target.innerHTML
+                
+                // Mark that user is actively typing
+                markUserTyping()
+                
+                // Save to undo stack immediately on first change, then debounce
+                setUndoStack(prev => {
+                  // If this is the first edit (only initial state in stack), save immediately
+                  if (prev.length === 1) {
+                    const cursorPos = saveCursorPosition()
+                    return [...prev, { content: newContent, cursorPos }]
+                  }
+                  return prev
+                })
+                
+                // Clear previous timeout
+                if (undoTimeoutRef.current) {
+                  clearTimeout(undoTimeoutRef.current)
+                }
+                
+                // Save to undo stack (debounced to avoid too many entries)
+                undoTimeoutRef.current = setTimeout(() => {
+                  saveToUndoStack(newContent)
+                  undoTimeoutRef.current = null
+                }, 500)
+                
+                // Update format state
+                updateFormatState()
+                
+                // Don't update content state immediately to prevent cursor issues
+                // The markUserTyping() will handle content sync after user stops typing
+                
+                // Call parent callback
+                if (onContentChange) {
+                  onContentChange(newContent)
+                }
+              }}
+              onKeyDown={handleKeyDown}
+              onMouseUp={updateFormatState}
+              onKeyUp={updateFormatState}
+              suppressContentEditableWarning={true}
+              />
+            </div>
+          </div>
         </div>
 
         {/* AI Chat Panel */}
@@ -601,47 +713,15 @@ export default function CursorEditor({
               width={aiChatWidth}
               documentId={documentId}
               onApplyChanges={handleApplyChanges}
-              onRevertChanges={handleRevertChanges}
               editorRef={editorRef}
               documentContent={content}
+              agentEditManager={agentEditManager}
+              onContentChange={onContentChange}
             />
           </div>
         )}
       </div>
 
-      {/* Direct Edit Manager */}
-      <DirectEditManager
-        editorRef={editorRef}
-        onContentChange={(newContent: string) => {
-          // Handle content change from DirectEditManager
-          saveToUndoStack(newContent)
-          updateFormatState()
-          
-          // Update document state when content is approved (contains approved agent content)
-          const hasApprovedContent = newContent.includes('data-is-approved="true"') || 
-                                   newContent.includes('agent-text-block')
-          
-          if (hasApprovedContent) {
-            console.log('✅ Updating document state with approved content')
-            setContent(newContent)
-          }
-          
-          if (onContentChange) {
-            onContentChange(newContent)
-          }
-        }}
-        onContentInserted={(proposalId) => {
-          console.log('✅ Content inserted callback received:', proposalId)
-        }}
-        onManagerReady={(manager) => {
-          console.log('✅ DirectEditManager ready')
-          directEditManagerRef.current = manager
-          // Also attach to editor element for easy access
-          if (editorRef.current) {
-            (editorRef.current as any).directEditManager = manager
-          }
-        }}
-      />
 
       {/* Table Manager */}
       <TableManager

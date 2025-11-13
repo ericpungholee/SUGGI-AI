@@ -302,28 +302,29 @@ export const useDocumentManagement = (
         console.log('🔄 Content state changed:', {
             contentLength: content.length,
             originalContentLength: originalContent.length,
-            shouldNotifyParent: content && content !== originalContent
+            shouldNotifyParent: content !== originalContent,
+            isEmpty: content === ''
         })
         
-        // Only call onContentChange if content is not empty, different from original
-        if (content && content !== originalContent) {
+        // Call onContentChange if content is different from original (including empty)
+        if (content !== originalContent) {
             onContentChange?.(content)
         }
         
         // Ensure editor content is synchronized when content state changes
         // But only if we're not currently updating or user is actively typing
-        // AND there's no pending agent content
+        // AND only if the content is significantly different (to avoid cursor issues)
         if (editorRef.current && content !== editorRef.current.innerHTML && !isUpdatingContentRef.current && !isUserActivelyTypingRef.current) {
-            // Check if there's pending agent content that should not be overwritten
-            const hasPendingAgentContent = editorRef.current.querySelector('.agent-text-block[data-is-approved="false"]')
+            const currentContent = editorRef.current.innerHTML
+            // Only sync if content is substantially different (more than just whitespace)
+            const currentText = currentContent.replace(/<[^>]*>/g, '').trim()
+            const newText = content.replace(/<[^>]*>/g, '').trim()
             
-            if (!hasPendingAgentContent) {
+            if (currentText !== newText) {
                 console.log('🔄 Syncing editor content with state')
                 isUpdatingContentRef.current = true
                 editorRef.current.innerHTML = content
                 isUpdatingContentRef.current = false
-            } else {
-                console.log('⏸️ Skipping content sync - pending agent content detected')
             }
         }
     }, [content, onContentChange, originalContent])
